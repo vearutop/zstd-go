@@ -65,8 +65,16 @@ func newCDict(content []byte, dictSize uint64, level int) *cdict {
 		ms.loadLazyDict(len(content))
 		cd.nextToUpdate = ms.nextToUpdate
 		return cd
+	case stratBtLazy2:
+		cd.dictLen = len(content)
+		cd.long = make([]uint32, 1<<cd.cp.hashLog)
+		cd.short = make([]uint32, 1<<cd.cp.chainLog)
+		ms := &Encoder{buf: content, cp: cd.cp, long: cd.long, short: cd.short, lowLimit: windowStartIndex, dictLimit: windowStartIndex, loadedDictEnd: idxOf(len(content))}
+		ms.loadBtDict(len(content))
+		cd.nextToUpdate = ms.nextToUpdate
+		return cd
 	default:
-		return cd // ponytail: the binary-tree strategies are not ported
+		return cd // ponytail: the optimal parsers are not ported
 	}
 	cd.long = make([]uint32, 1<<cd.cp.hashLog)
 	cd.short = make([]uint32, 1<<cd.cp.chainLog)

@@ -367,6 +367,9 @@ func (e *Encoder) rowFind(ip, iend int, mls, rowLog uint32, mode int, off *uint3
 
 // searchMax is ZSTD_searchMax (hash chain or row hash).
 func (e *Encoder) searchMax(ip, iend int, mls, rowLog uint32, mode int, off *uint32) int {
+	if e.cp.strategy == stratBtLazy2 {
+		return e.btFindBestMatch(ip, iend, mls, mode, off)
+	}
 	if e.useRow {
 		return e.rowFind(ip, iend, mls, rowLog, mode, off)
 	}

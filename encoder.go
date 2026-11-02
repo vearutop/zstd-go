@@ -392,11 +392,11 @@ func (e *Encoder) matchFind(L, base, n int) {
 		default:
 			e.dfastNoDict(e.cp, start, end, e.dictLimit, false)
 		}
-	case stratGreedy, stratLazy, stratLazy2:
+	case stratGreedy, stratLazy, stratLazy2, stratBtLazy2:
 		if curr := uint32(start + windowStartIndex); curr > e.nextToUpdate+384 { // ZSTD_buildSeqStore: limited update after a very long match
 			e.nextToUpdate = curr - min(192, curr-e.nextToUpdate-384)
 		}
-		depth := int(e.cp.strategy - stratGreedy)
+		depth := min(int(e.cp.strategy-stratGreedy), 2)
 		switch {
 		case e.lowLimit < e.dictLimit: // ZSTD_window_hasExtDict
 			e.lazyExtDictGeneric(start, end, depth)
@@ -448,6 +448,12 @@ func (e *Encoder) fillDictTables(content []byte) {
 		saved := e.buf
 		e.buf = content
 		e.loadLazyDict(len(content))
+		e.buf = saved
+		return
+	case stratBtLazy2:
+		saved := e.buf
+		e.buf = content
+		e.loadBtDict(len(content))
 		e.buf = saved
 		return
 	}
