@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/cespare/xxhash/v2"
-	"github.com/klauspost/compress/huff0"
 )
 
 // FSE decoding table (libzstd FSE_DTable): sym, nbBits and the next-state base per state.
@@ -58,7 +57,7 @@ func (dt *dTable) build(norm []int16, log uint8, kind int) {
 		dt.e = make([]dEntry, size)
 	}
 	dt.e = dt.e[:size]
-	var next [64]uint16
+	var next [256]uint16
 	high := size - 1
 	for s, n := range norm {
 		if n == -1 {
@@ -108,7 +107,6 @@ var (
 
 // Decoder decompresses whole frames (single-shot, no goroutines); safe for concurrent use.
 // Frames with a dictionary id use the dictionary registered under it; frames without one use the id-0 (raw) dictionary, if any.
-// Huffman literal decoding is klauspost's huff0 (the encoder uses it too).
 type Decoder struct {
 	// MaxSize limits the decompressed bytes appended by one DecodeAll call; 0 means no limit.
 	MaxSize int
@@ -131,10 +129,11 @@ type decState struct {
 	blockStart    int // output length at the start of the current block
 	maxEnd        int
 	lits          []byte
-	huff          huff0.Scratch
-	huffDec       *huff0.Decoder // table for treeless literals
-	ll, of, ml    dTable         // tables of the current block (also the "repeat" tables of the next)
-	pll, pof, pml *dTable        // active tables: predefined, rle, built or dictionary's
+	huffTab       hufTable // table of the current frame's last compressed-literals block
+	hdec          hufDec
+	hdecValid     bool    // hdec holds the table for treeless literals
+	ll, of, ml    dTable  // tables of the current block (also the "repeat" tables of the next)
+	pll, pof, pml *dTable // active tables: predefined, rle, built or dictionary's
 	reps          [3]uint32
 	buf           []byte // padded copy of the sequence bitstream
 }
@@ -258,12 +257,14 @@ func (d *Decoder) frame(st *decState, src, dst []byte) ([]byte, []byte, error) {
 	st.bm = int(min(h.window, blockMax)) // libzstd: blocks are at most min(window size, 128 KiB)
 	st.reps = [3]uint32{1, 4, 8}
 	var dc []byte
-	st.huffDec = nil
+	st.hdecValid = false
 	st.pll, st.pof, st.pml = nil, nil, nil
 	if dict != nil {
 		dc = dict.content
 		st.reps = dict.reps
-		st.huffDec = dict.huffDec
+		if dict.huffDecOK {
+			st.hdec, st.hdecValid = dict.huffDecT, true
+		}
 		st.pll, st.pof, st.pml = dict.dll, dict.dof, dict.dml
 	}
 	for last := false; !last; {
@@ -470,21 +471,25 @@ func (st *decState) literals(in []byte) (lits, rest []byte, err error) {
 	}
 	data, rest := in[hl:hl+comp], in[hl+comp:]
 	if typ == 2 {
-		_, data, err = huff0.ReadTable(data, &st.huff)
-		if err != nil {
-			return nil, rest, err
+		tab, sz, _, ok := hufReadCTable(data)
+		if !ok {
+			return nil, rest, errCorrupt
 		}
-		st.huffDec = st.huff.Decoder()
-	} else if st.huffDec == nil {
+		st.huffTab = tab
+		st.hdec.build(&st.huffTab)
+		st.hdecValid = true
+		data = data[sz:]
+	} else if !st.hdecValid {
 		return nil, rest, errCorrupt
 	}
 	st.lits = growB(st.lits, regen)
+	var ok bool
 	if four {
-		lits, err = st.huffDec.Decompress4X(st.lits[:0:regen], data)
+		ok = st.hdec.decode4X(st.lits[:regen], data)
 	} else {
-		lits, err = st.huffDec.Decompress1X(st.lits[:0:regen], data)
+		ok = st.hdec.decode1X(st.lits[:regen], data)
 	}
-	if err != nil || len(lits) != regen {
+	if !ok {
 		return nil, rest, errCorrupt
 	}
 	return st.lits[:regen], rest, nil // full capacity again: the 16-byte copies read past the end

@@ -4,8 +4,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"sync"
-
-	"github.com/klauspost/compress/huff0"
 )
 
 const dictMagic = 0xEC30A437
@@ -15,10 +13,10 @@ type Dict struct {
 	id            uint32
 	content       []byte
 	reps          [3]uint32
-	huff          *huff0.Scratch // entropy table for literals, nil if none
-	ll, ml, of    *cTable        // repeat tables, nil if none
-	dll, dml, dof *dTable        // the same for decoding
-	huffDec       *huff0.Decoder
+	ll, ml, of    *cTable // repeat tables, nil if none
+	dll, dml, dof *dTable // the same for decoding
+	huffDecT      hufDec  // decoding table for the literal table
+	huffDecOK     bool
 	huffC         hufTable  // literal table for encoding
 	fse           fseTables // the dictionary's sequence tables for encoding
 	huffRepeat    hufRepeat // how a block may reuse it (libzstd's repeatMode of the dictionary)
@@ -33,7 +31,6 @@ func LoadDict(b []byte) (*Dict, error) {
 	d := &Dict{reps: [3]uint32{1, 4, 8}, raw: b}
 	if len(b) >= 8 && binary.LittleEndian.Uint32(b) == dictMagic {
 		d.id = binary.LittleEndian.Uint32(b[4:])
-		var err error
 		var rem []byte
 		ht, hsz, hasZero, ok := hufReadCTable(b[8:])
 		if !ok {
@@ -45,13 +42,8 @@ func LoadDict(b []byte) (*Dict, error) {
 			d.huffRepeat = hufRepeatValid
 		}
 		rem = b[8+hsz:]
-		// the decoder side uses klauspost's huff0, which rejects 12-bit tables libzstd accepts: go without it then
-		if d.huff, _, err = huff0.ReadTable(b[8:], nil); err != nil {
-			d.huff = nil
-		}
-		if d.huff != nil {
-			d.huffDec = d.huff.Decoder()
-		}
+		d.huffDecT.build(&d.huffC)
+		d.huffDecOK = true
 		var norms [3][]int16 // of, ml, ll
 		for i, t := range []struct {
 			dp     **dTable
