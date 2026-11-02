@@ -15,7 +15,11 @@ func (e *Encoder) writeLiterals(s []byte, base int) {
 		e.lit.Reuse = huff0.ReusePolicyNone
 		if base == 0 && e.dict != nil && e.dict.huff != nil {
 			e.lit.TransferCTable(e.dict.huff)
-			e.lit.Reuse = huff0.ReusePolicyPrefer
+			// like libzstd's preferRepeat: small literal runs take the dictionary table without building another
+			e.lit.Reuse = huff0.ReusePolicyAllow
+			if n <= 1024 {
+				e.lit.Reuse = huff0.ReusePolicyPrefer
+			}
 		}
 		var out []byte
 		var reused bool

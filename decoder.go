@@ -102,12 +102,17 @@ var (
 	ofPredefD = buildDTable(ofDefaultNorm, 5, kindOF)
 
 	errCorrupt = errors.New("zstd: corrupt input")
+	// ErrTooLarge is returned when the output exceeds Decoder.MaxSize.
+	ErrTooLarge = errors.New("zstd: decompressed size exceeds limit")
 )
 
 // Decoder decompresses whole frames (single-shot, no goroutines); safe for concurrent use.
 // Frames with a dictionary id use the dictionary registered under it; frames without one use the id-0 (raw) dictionary, if any.
 // Huffman literal decoding is klauspost's huff0 (the encoder uses it too).
 type Decoder struct {
+	// MaxSize limits the decompressed bytes appended by one DecodeAll call; 0 means no limit.
+	MaxSize int
+
 	dicts map[uint32]*Dict
 	pool  sync.Pool // *decState
 }
@@ -122,6 +127,9 @@ func NewDecoder(dicts ...*Dict) (*Decoder, error) {
 }
 
 type decState struct {
+	bm            int // max block size in the current frame
+	blockStart    int // output length at the start of the current block
+	maxEnd        int
 	lits          []byte
 	huff          huff0.Scratch
 	huffDec       *huff0.Decoder // table for treeless literals
@@ -145,6 +153,7 @@ func ContentSize(frame []byte) (uint64, bool) {
 }
 
 type frameHeader struct {
+	window   uint64
 	size     uint64
 	hasSize  bool
 	checksum bool
@@ -163,7 +172,10 @@ func parseHeader(b []byte) (h frameHeader, n int, err error) {
 	single := fhd&(1<<5) != 0
 	h.checksum = fhd&(1<<2) != 0
 	if !single {
-		n++ // window descriptor; ponytail: window size is not enforced, whole history is addressable
+		w := b[n] // window descriptor; ponytail: only used for the block size limit, offsets reach the whole history
+		n++
+		base := uint64(1) << (10 + w>>3)
+		h.window = base + base>>3*uint64(w&7)
 	}
 	dlen := [...]int{0, 1, 2, 4}[fhd&3]
 	flen := [...]int{0, 2, 4, 8}[fhd>>6]
@@ -177,6 +189,9 @@ func parseHeader(b []byte) (h frameHeader, n int, err error) {
 		h.dictID |= uint32(b[n+i]) << (8 * i)
 	}
 	n += dlen
+	if single {
+		h.window = 0
+	}
 	if flen > 0 {
 		h.hasSize = true
 		for i := 0; i < flen; i++ {
@@ -186,6 +201,9 @@ func parseHeader(b []byte) (h frameHeader, n int, err error) {
 			h.size += 256
 		}
 	}
+	if single {
+		h.window = h.size
+	}
 	return h, n + flen, nil
 }
 
@@ -193,6 +211,7 @@ func parseHeader(b []byte) (h frameHeader, n int, err error) {
 func (d *Decoder) DecodeAll(src, dst []byte) ([]byte, error) {
 	st := d.get()
 	defer d.pool.Put(st)
+	st.maxEnd = len(dst) + d.MaxSize
 	for len(src) > 0 {
 		if len(src) >= 8 && binary.LittleEndian.Uint32(src)&0xFFFFFFF0 == 0x184D2A50 {
 			n := int(binary.LittleEndian.Uint32(src[4:]))
@@ -224,7 +243,10 @@ func (d *Decoder) frame(st *decState, src, dst []byte) ([]byte, []byte, error) {
 	}
 	base := len(dst)
 	if h.hasSize {
-		if h.size > 1<<31 {
+		if h.size > 1<<31 || (d.MaxSize > 0 && h.size > uint64(d.MaxSize)) {
+			if h.size <= 1<<31 {
+				return dst, src, ErrTooLarge
+			}
 			return dst, src, errors.New("zstd: frame too large")
 		}
 		if h.size <= 64<<20 && cap(dst)-len(dst) < int(h.size)+wildPad { // larger claims grow on demand, a header must not force a big allocation
@@ -233,6 +255,7 @@ func (d *Decoder) frame(st *decState, src, dst []byte) ([]byte, []byte, error) {
 			dst = nd
 		}
 	}
+	st.bm = int(min(h.window, blockMax)) // libzstd: blocks are at most min(window size, 128 KiB)
 	st.reps = [3]uint32{1, 4, 8}
 	var dc []byte
 	st.huffDec = nil
@@ -251,7 +274,7 @@ func (d *Decoder) frame(st *decState, src, dst []byte) ([]byte, []byte, error) {
 		last = bh&1 != 0
 		typ, size := (bh>>1)&3, int(bh>>3)
 		src = src[3:]
-		if size > blockMax {
+		if size > st.bm {
 			return dst, src, errCorrupt
 		}
 		switch typ {
@@ -280,6 +303,9 @@ func (d *Decoder) frame(st *decState, src, dst []byte) ([]byte, []byte, error) {
 		default:
 			return dst, src, errCorrupt
 		}
+		if d.MaxSize > 0 && len(dst) > st.maxEnd {
+			return dst, src, ErrTooLarge
+		}
 		if h.hasSize && uint64(len(dst)-base) > h.size {
 			return dst, src, errCorrupt
 		}
@@ -301,6 +327,7 @@ func (d *Decoder) frame(st *decState, src, dst []byte) ([]byte, []byte, error) {
 
 // block decodes one compressed block, appending to out; base is where the frame's output starts, dc the dictionary content.
 func (st *decState) block(in, out []byte, base int, dc []byte) ([]byte, error) {
+	st.blockStart = len(out)
 	lits, in, err := st.literals(in)
 	if err != nil {
 		return out, err
@@ -325,6 +352,9 @@ func (st *decState) block(in, out []byte, base int, dc []byte) ([]byte, error) {
 		nb, in = int(in[1])+int(in[2])<<8+0x7F00, in[3:]
 	}
 	if nb == 0 {
+		if len(in) != 0 {
+			return out, errCorrupt // bytes after an empty sequences section
+		}
 		return append(out, lits...), nil
 	}
 	if len(in) < 1 {
@@ -399,12 +429,12 @@ func (st *decState) literals(in []byte) (lits, rest []byte, err error) {
 		}
 		in = in[hl:]
 		if typ == 0 {
-			if len(in) < n {
+			if len(in) < n || n > st.bm {
 				return nil, in, errCorrupt
 			}
 			return in[:n], in[n:], nil
 		}
-		if len(in) < 1 || n > blockMax {
+		if len(in) < 1 || n > st.bm {
 			return nil, in, errCorrupt
 		}
 		st.lits = growB(st.lits, n)
@@ -435,7 +465,7 @@ func (st *decState) literals(in []byte) (lits, rest []byte, err error) {
 		v := uint64(b) | uint64(in[1])<<8 | uint64(in[2])<<16 | uint64(in[3])<<24 | uint64(in[4])<<32
 		regen, comp, hl = int(v>>4&0x3FFFF), int(v>>22&0x3FFFF), 5
 	}
-	if len(in) < hl+comp || regen > blockMax {
+	if len(in) < hl+comp || regen > st.bm {
 		return nil, in, errCorrupt
 	}
 	data, rest := in[hl:hl+comp], in[hl+comp:]
@@ -533,7 +563,7 @@ func (st *decState) sequences(in []byte, nb int, lits, out []byte, base int, dc 
 			sm = uint32(me.ns) + r.get(me.nb)
 			so = uint32(oe.ns) + r.get(oe.nb)
 		}
-		if r.bad || li+llen > len(lits) || len(out)-base+llen+mlen > blockMax*64 {
+		if r.bad || li+llen > len(lits) || len(out)-st.blockStart+llen+mlen > st.bm {
 			return out, errCorrupt
 		}
 		var off uint32
@@ -587,6 +617,9 @@ func (st *decState) sequences(in []byte, nb int, lits, out []byte, base int, dc 
 		}
 	}
 	if r.bad || 8*(off0-r.off)+int(r.br)-int(br0) != total {
+		return out, errCorrupt
+	}
+	if len(out)-st.blockStart+len(lits)-li > st.bm {
 		return out, errCorrupt
 	}
 	return append(out, lits[li:]...), nil

@@ -35,9 +35,16 @@ func LoadDict(b []byte) (*Dict, error) {
 		var err error
 		var rem []byte
 		if d.huff, rem, err = huff0.ReadTable(b[8:], nil); err != nil {
-			return nil, err
+			// huff0 rejects tables libzstd accepts (12-bit codes); skip the table and go without literal table reuse.
+			hl := huffHeaderLen(b[8:])
+			if hl == 0 || hl > len(b)-8 {
+				return nil, err
+			}
+			d.huff, rem = nil, b[8+hl:]
 		}
-		d.huffDec = d.huff.Decoder()
+		if d.huff != nil {
+			d.huffDec = d.huff.Decoder()
+		}
 		for _, t := range []struct {
 			p      **cTable
 			dp     **dTable
@@ -92,3 +99,17 @@ func (d *Dict) Compress(dst, src []byte) []byte {
 	d.pool.Put(e)
 	return dst
 }
+
+// huffHeaderLen returns the byte length of a Huffman table description (weights), 0 if truncated.
+func huffHeaderLen(b []byte) int {
+	if len(b) < 1 {
+		return 0
+	}
+	if b[0] < 128 {
+		return 1 + int(b[0])
+	}
+	return 1 + (int(b[0])-127+1)/2
+}
+
+// Content returns the dictionary's raw content (shared, do not modify).
+func (d *Dict) Content() []byte { return d.content }
