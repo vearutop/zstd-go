@@ -15,7 +15,6 @@ r, _ := zstd.OpenSeekable(bytes.NewReader(seekable), int64(len(seekable)), decod
 ```
 
 Frames are single-segment with content size, an optional checksum (`Encoder.NoChecksum`) and the dictionary id.
-Level is about libzstd 3 (double-fast match finder, repcodes into the dictionary, dictionary FSE/Huffman tables reused).
 
 Streaming (independent frames, bounded memory, optional seek table):
 
@@ -27,13 +26,22 @@ io.Copy(dst, zstd.NewReader(out, dec))    // holds one frame at a time
 
 ## Status
 
-- Verified against libzstd's CLI and klauspost's decoder (round trips, fuzz). No cgo in the default build.
-- Blocks after the first in a >128 KB value match only within themselves and the dictionary.
-- Decoder: own FSE/sequence/dictionary code, klauspost `huff0` for Huffman literals; about klauspost `DecodeAll` speed, ~1.7x slower than libzstd on small frames. Window size is not enforced.
-- Not done: SIMD (the profile does not point at byte compares), optimal parsing, cross-frame matches in streams.
+Goal: functional parity with libzstd; output is meant to be **byte-identical** to libzstd, and the code is a
+function-by-function port of the C sources (match finders, Huffman, FSE selection, block splitting, frame header).
+
+- **Compression, level 3 (default), with and without a prepared dictionary: byte-identical** to
+  `ZSTD_compressCCtx` / `ZSTD_compress_usingCDict` (no checksum; the port adds the checksum when asked, like libzstd's flag).
+  Checked against libzstd with `-tags libzstd`: fixed suites (klauspost and libzstd fixtures, real data) and
+  15,000 randomized inputs up to 3 MB with five dictionaries, plus fuzzing.
+- Not ported yet: other levels (1, 2, 4 reuse the dfast code but have not been verified; 5+ need the lazy / optimal parsers),
+  the "loaded dictionary" API path (`ZSTD_CCtx_loadDictionary`), streaming compression semantics, long-distance matching,
+  multithreading, negative levels, the dictionary trainer.
+- Decoder: own FSE/sequence/dictionary code with libzstd's validation (block size, window, empty sequences); klauspost `huff0` for
+  Huffman literals (rejects 12-bit tables libzstd accepts). Window size is not enforced.
+- Streaming `Writer`/`Reader` use independent frames (not libzstd's streaming mode).
 
 ## Benchmarks
 
-`go test -bench .` runs the port against klauspost; `-tags libzstd` adds a cgo libzstd reference
-(edit the `#cgo` paths in `internal/ref`). `ZSTD_DATA=lines.log ZSTD_DICT=dict.bin go test -run Real -bench Real`
+`go test -bench .` runs the port against klauspost; `-tags libzstd` adds a cgo libzstd reference and the byte-exactness tests
+(`TestExact*`, `FuzzExact`; edit the `#cgo` paths in `internal/ref`). `ZSTD_DATA=lines.log ZSTD_DICT=dict.bin go test -run Real -bench Real`
 evaluates real data (first 3000 lines are the training set).
