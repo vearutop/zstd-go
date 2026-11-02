@@ -3,10 +3,12 @@ package zstd_test
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"os/exec"
 	"testing"
+	"testing/iotest"
 
 	kz "github.com/klauspost/compress/zstd"
 	zstd "github.com/vearutop/zstd-go"
@@ -363,4 +365,63 @@ func BenchmarkDecode(b *testing.B) {
 			dst, _ = dec.DecodeAll(fs[i&255], dst[:0])
 		}
 	})
+}
+
+func TestStreaming(t *testing.T) {
+	d, _ := loadDict(t)
+	dec, _ := zstd.NewDecoder(d)
+	src := bytes.Join(corpus(400, 8), nil)
+	for _, c := range []struct {
+		name     string
+		data     []byte
+		fs       int
+		chunk    int
+		seekable bool
+	}{
+		{"default", src, 0, 1000, false},
+		{"small frames", src, 4096, 777, true},
+		{"one write", src, 50000, len(src), true},
+		{"empty", nil, 0, 1, true},
+		{"tiny", []byte("x"), 0, 1, false},
+	} {
+		var buf bytes.Buffer
+		w := zstd.NewWriter(&buf, d)
+		w.FrameSize, w.Seekable = c.fs, c.seekable
+		for p := c.data; len(p) > 0; {
+			n := min(c.chunk, len(p))
+			if _, err := w.Write(p[:n]); err != nil {
+				t.Fatal(err)
+			}
+			p = p[n:]
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		frames := buf.Bytes()
+
+		got, err := io.ReadAll(iotest.OneByteReader(zstd.NewReader(bytes.NewReader(frames), dec)))
+		if err != nil || !bytes.Equal(got, c.data) {
+			t.Fatalf("%s: reader: %v (len %d want %d)", c.name, err, len(got), len(c.data))
+		}
+		if _, err := exec.LookPath("zstd"); err == nil {
+			cmd := exec.Command("zstd", "-d", "-q", "-c", "-D", "testdata/dict.bin")
+			cmd.Stdin = bytes.NewReader(frames)
+			if o, err := cmd.Output(); err != nil || !bytes.Equal(o, c.data) {
+				t.Fatalf("%s: cli: %v", c.name, err)
+			}
+		}
+		if c.seekable {
+			s, err := zstd.OpenSeekable(bytes.NewReader(frames), int64(len(frames)), func(dst, f []byte) ([]byte, error) { return dec.DecodeAll(f, dst) })
+			if err != nil || s.Size() != int64(len(c.data)) {
+				t.Fatalf("%s: seekable: %v", c.name, err)
+			}
+		}
+		if _, err := zstd.NewReader(bytes.NewReader(frames[:len(frames)/2]), dec).Read(make([]byte, 1<<20)); len(c.data) > 100 && err == nil {
+			// a cut stream must not decode silently to the end
+			all, err := io.ReadAll(zstd.NewReader(bytes.NewReader(frames[:len(frames)/2]), dec))
+			if err == nil && len(all) == len(c.data) {
+				t.Fatalf("%s: truncated stream read fully", c.name)
+			}
+		}
+	}
 }

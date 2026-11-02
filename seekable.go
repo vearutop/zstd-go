@@ -22,17 +22,20 @@ func (e *Encoder) EncodeSeekable(src, dst []byte, frameSize int) []byte {
 	if frameSize <= 0 || frameSize > 1<<30 {
 		frameSize = 1 << 30
 	}
-	type ent struct{ c, d, sum uint32 }
-	var table []ent
+	var table []seekEntry
 	for off := 0; off < len(src) || off == 0; off += frameSize {
 		chunk := src[off:min(off+frameSize, len(src))]
 		start := len(dst)
 		dst = e.EncodeAll(chunk, dst)
-		table = append(table, ent{uint32(len(dst) - start), uint32(len(chunk)), uint32(xxhash.Sum64(chunk))})
+		table = append(table, seekEntry{uint32(len(dst) - start), uint32(len(chunk)), uint32(xxhash.Sum64(chunk))})
 		if len(src) == 0 {
 			break
 		}
 	}
+	return appendSeekTable(dst, table)
+}
+
+func appendSeekTable(dst []byte, table []seekEntry) []byte {
 	dst = binary.LittleEndian.AppendUint32(dst, skippableMagic)
 	dst = binary.LittleEndian.AppendUint32(dst, uint32(len(table)*12+9))
 	for _, t := range table {
