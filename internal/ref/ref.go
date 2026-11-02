@@ -6,6 +6,7 @@ package ref
 /*
 #cgo CFLAGS: -I/opt/homebrew/include
 #cgo LDFLAGS: -L/opt/homebrew/lib -lzstd
+#define ZSTD_STATIC_LINKING_ONLY
 #include <zstd.h>
 */
 import "C"
@@ -30,10 +31,16 @@ func (d *Decompressor) Decompress(dst, src []byte) []byte {
 	return dst[:r]
 }
 
-// Compressor is a compressor with a prepared dictionary and a reused context.
+// Compressor is a compressor with a prepared dictionary (or none) and a reused context.
 type Compressor struct {
-	cd   *C.ZSTD_CDict
-	cctx *C.ZSTD_CCtx
+	cd    *C.ZSTD_CDict
+	cctx  *C.ZSTD_CCtx
+	level int
+}
+
+// NewNoDict returns a compressor without a dictionary (ZSTD_compressCCtx).
+func NewNoDict(level int) *Compressor {
+	return &Compressor{cctx: C.ZSTD_createCCtx(), level: level}
 }
 
 // New prepares dict at the given level.
@@ -47,6 +54,26 @@ func New(dict []byte, level int) *Compressor {
 // Compress writes into dst[:cap(dst)] and returns the frame.
 func (c *Compressor) Compress(dst, src []byte) []byte {
 	dst = dst[:cap(dst)]
-	r := C.ZSTD_compress_usingCDict(c.cctx, unsafe.Pointer(&dst[0]), C.size_t(len(dst)), unsafe.Pointer(&src[0]), C.size_t(len(src)), c.cd)
+	if c.cd == nil {
+		r := C.ZSTD_compressCCtx(c.cctx, unsafe.Pointer(&dst[0]), C.size_t(len(dst)), srcPtr(src), C.size_t(len(src)), C.int(c.level))
+		return dst[:r]
+	}
+	r := C.ZSTD_compress_usingCDict(c.cctx, unsafe.Pointer(&dst[0]), C.size_t(len(dst)), srcPtr(src), C.size_t(len(src)), c.cd)
 	return dst[:r]
+}
+
+// CParams are libzstd's compression parameters for a level and size hints (ZSTD_getCParams).
+type CParams struct{ WindowLog, ChainLog, HashLog, SearchLog, MinMatch, TargetLength, Strategy uint32 }
+
+// GetCParams calls ZSTD_getCParams.
+func GetCParams(level int, srcSize uint64, dictSize int) CParams {
+	p := C.ZSTD_getCParams(C.int(level), C.ulonglong(srcSize), C.size_t(dictSize))
+	return CParams{uint32(p.windowLog), uint32(p.chainLog), uint32(p.hashLog), uint32(p.searchLog), uint32(p.minMatch), uint32(p.targetLength), uint32(p.strategy)}
+}
+
+func srcPtr(b []byte) unsafe.Pointer {
+	if len(b) == 0 {
+		return nil
+	}
+	return unsafe.Pointer(&b[0])
 }

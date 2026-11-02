@@ -3,7 +3,6 @@ package zstd
 import (
 	"encoding/binary"
 	"errors"
-	"math/bits"
 	"sync"
 
 	"github.com/klauspost/compress/huff0"
@@ -20,9 +19,8 @@ type Dict struct {
 	ll, ml, of    *cTable        // repeat tables, nil if none
 	dll, dml, dof *dTable        // the same for decoding
 	huffDec       *huff0.Decoder
-	long          []uint32 // hash8 -> content index+1
-	short         []uint32 // hash5 -> content index+1
-	hlog          uint8
+	cdMu          sync.Mutex
+	cdicts        map[int]*cdict // prepared per level
 	raw           []byte
 	pool          sync.Pool // *Encoder
 }
@@ -72,22 +70,26 @@ func LoadDict(b []byte) (*Dict, error) {
 		b = rem[12:]
 	}
 	d.content = append(make([]byte, 0, len(b)+wildPad), b...) // spare capacity: the decoder copies 32 bytes at a time
-	d.hlog = uint8(min(max(bits.Len(uint(len(b))), 8), 17))
-	d.long = make([]uint32, 1<<d.hlog)
-	d.short = make([]uint32, 1<<d.hlog)
-	for i := 0; i+8 <= len(b); i++ {
-		v := binary.LittleEndian.Uint64(b[i:])
-		d.long[hash8(v, d.hlog)] = uint32(i + 1)
-		d.short[hash5(v, d.hlog)] = uint32(i + 1)
-	}
 	return d, nil
+}
+
+// cdict returns the dictionary prepared for a level (ZSTD_createCDict), building it on first use.
+func (d *Dict) cdict(level int) *cdict {
+	d.cdMu.Lock()
+	defer d.cdMu.Unlock()
+	if cd := d.cdicts[level]; cd != nil {
+		return cd
+	}
+	if d.cdicts == nil {
+		d.cdicts = map[int]*cdict{}
+	}
+	cd := newCDict(d.content, level)
+	d.cdicts[level] = cd
+	return cd
 }
 
 // ID returns the dictionary id (0 for raw content).
 func (d *Dict) ID() uint32 { return d.id }
-
-func hash8(v uint64, h uint8) uint32 { return uint32((v * 0xCF1BBCDCB7A56463) >> (64 - h)) }
-func hash5(v uint64, h uint8) uint32 { return uint32(((v << 24) * 889523592379) >> (64 - h)) }
 
 // Compress appends a frame of src to dst, using a pooled Encoder; safe for concurrent use.
 func (d *Dict) Compress(dst, src []byte) []byte {

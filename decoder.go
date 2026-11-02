@@ -497,6 +497,9 @@ func growB(b []byte, n int) []byte {
 	return b[:n]
 }
 
+// seqTrace, when set (tests only), receives every decoded sequence as (literal length, match length, offBase).
+var seqTrace func(ll, ml, offBase int)
+
 // rbits reads a bitstream backwards through a 64-bit window that is refilled 32 bits at a time.
 // buf has rbitsPad zero bytes in front of the stream, so a refill past the start reads zeros (caught by the final check).
 type rbits struct {
@@ -588,6 +591,9 @@ func (st *decState) sequences(in []byte, nb int, lits, out []byte, base int, dc 
 			return out, errCorrupt
 		}
 		updateRep(&st.reps, offBase, ll0)
+		if seqTrace != nil {
+			seqTrace(llen, mlen, int(offBase))
+		}
 		n := len(out)
 		if llen <= 16 && n+16 <= cap(out) && li+16 <= len(litFull) {
 			o := out[:n+16]
