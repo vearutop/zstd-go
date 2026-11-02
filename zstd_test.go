@@ -216,3 +216,69 @@ func TestPooledAndDecoder(t *testing.T) {
 		}
 	}
 }
+
+// Real data (not in the repo): ZSTD_DATA=lines.log ZSTD_DICT=dict.bin; the first 3000 lines are the training set, the rest is evaluated.
+func realData(tb testing.TB) ([][]byte, []byte) {
+	path, dpath := os.Getenv("ZSTD_DATA"), os.Getenv("ZSTD_DICT")
+	if path == "" || dpath == "" {
+		tb.Skip("ZSTD_DATA / ZSTD_DICT not set")
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	raw, err := os.ReadFile(dpath)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	lines := bytes.Split(bytes.TrimSpace(b), []byte("\n"))
+	return lines[3000:], raw
+}
+
+func TestReal(t *testing.T) {
+	lines, raw := realData(t)
+	d, err := zstd.LoadDict(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dec, _ := zstd.NewDecoder(d)
+	e := zstd.NewEncoder(d)
+	kenc, _ := kz.NewWriter(nil, kz.WithEncoderDict(raw), kz.WithEncoderConcurrency(1))
+	var in, out, kout int
+	for _, l := range lines {
+		f := e.EncodeAll(l, nil)
+		got, err := dec.DecodeAll(f, nil)
+		if err != nil || !bytes.Equal(got, l) {
+			t.Fatal("roundtrip", err)
+		}
+		in += len(l)
+		out += len(f)
+		kout += len(kenc.EncodeAll(l, nil))
+	}
+	t.Logf("%d records, %d B: port %.1f%% klauspost %.1f%%", len(lines), in, 100*float64(out)/float64(in), 100*float64(kout)/float64(in))
+}
+
+func BenchmarkReal(b *testing.B) {
+	lines, raw := realData(b)
+	d, _ := zstd.LoadDict(raw)
+	b.Run("port", func(b *testing.B) {
+		e := zstd.NewEncoder(d)
+		var dst []byte
+		var n int
+		for i := 0; i < b.N; i++ {
+			dst = e.EncodeAll(lines[i%len(lines)], dst[:0])
+			n += len(dst)
+		}
+		b.ReportMetric(float64(n)/float64(b.N), "B/op-out")
+	})
+	b.Run("klauspost", func(b *testing.B) {
+		enc, _ := kz.NewWriter(nil, kz.WithEncoderDict(raw), kz.WithEncoderConcurrency(1))
+		var dst []byte
+		var n int
+		for i := 0; i < b.N; i++ {
+			dst = enc.EncodeAll(lines[i%len(lines)], dst[:0])
+			n += len(dst)
+		}
+		b.ReportMetric(float64(n)/float64(b.N), "B/op-out")
+	})
+}

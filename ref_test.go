@@ -20,3 +20,14 @@ func BenchmarkLibzstd(b *testing.B) {
 	}
 	b.ReportMetric(float64(n)/float64(b.N), "B/op-out")
 }
+
+func BenchmarkLibzstdReal(b *testing.B) {
+	lines, raw := realData(b)
+	c := ref.New(raw, 3)
+	dst := make([]byte, 0, 1<<20)
+	var n int
+	for i := 0; i < b.N; i++ {
+		n += len(c.Compress(dst, lines[i%len(lines)]))
+	}
+	b.ReportMetric(float64(n)/float64(b.N), "B/op-out")
+}

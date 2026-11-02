@@ -219,13 +219,13 @@ func (e *Encoder) findSequences(s []byte, base int) {
 		var mStart, ml int // mStart: ip of match; for dict: dict index in dIdx
 		dIdx := -1
 		var m int // in-block match index
-		found := false
+		found, isRep := false, false
+		var repOff uint32
 
 		// repcode at ip+1
-		if r := int(e.reps[0]); r <= ip+1 && ip+1+4 <= n && le32(s, ip+1) == le32(s, ip+1-r) {
+		if rl := repLen(s, ip+1, int(e.reps[0]), base, dc); rl > 0 && ip+1+4 <= n {
 			ip++
-			ml = 4 + count(s[ip+4:], s[ip+4-r:])
-			m, mStart, found = ip-r, ip, true
+			ml, mStart, found, isRep, repOff = rl, ip, true, true, e.reps[0]
 		} else if cl != 0 && le64(s, int(cl)-1) == v {
 			m, mStart, found = int(cl)-1, ip, true
 			ml = 8 + count(s[ip+8:], s[m+8:])
@@ -253,7 +253,9 @@ func (e *Encoder) findSequences(s []byte, base int) {
 		}
 		ip = mStart
 		var off uint32
-		if dIdx >= 0 {
+		if isRep {
+			off = repOff
+		} else if dIdx >= 0 {
 			// dictionary match: extend within dict, then (first block only) into the block start
 			for ip > anchor && dIdx > 0 && dc[dIdx-1] == s[ip-1] {
 				ip--
@@ -292,12 +294,12 @@ func (e *Encoder) findSequences(s []byte, base int) {
 		}
 		// immediate repcode (rep2) matches with no literals
 		for ip <= ilimit {
-			r := int(e.reps[1])
-			if r == 0 || r > ip || le32(s, ip) != le32(s, ip-r) {
+			r := e.reps[1]
+			ml := repLen(s, ip, int(r), base, dc)
+			if r == 0 || ml == 0 {
 				break
 			}
-			ml := 4 + count(s[ip+4:], s[ip+4-r:])
-			ob := offBaseFor(uint32(r), true, &e.reps)
+			ob := offBaseFor(r, true, &e.reps)
 			e.seqs = append(e.seqs, seq{0, uint32(ml), ob})
 			updateRep(&e.reps, ob, true)
 			vp := le64(s, ip)
@@ -330,4 +332,27 @@ func grow(b []uint32, n int) []uint32 {
 	b = b[:n]
 	clear(b)
 	return b
+}
+
+// repLen returns the length of the match at s[ip:] with offset r (4 bytes minimum, 0 if none), looking in the block
+// or in the dictionary dc; base is the block's offset in the frame (blocks only see themselves and the dictionary).
+func repLen(s []byte, ip, r, base int, dc []byte) int {
+	if r <= 0 || ip+4 > len(s) {
+		return 0
+	}
+	if r <= ip {
+		if le32(s, ip) != le32(s, ip-r) {
+			return 0
+		}
+		return 4 + count(s[ip+4:], s[ip+4-r:])
+	}
+	virt := len(dc) + base + ip - r // index in dictionary+frame space
+	if virt < 0 || virt+4 > len(dc) || le32(dc, virt) != le32(s, ip) {
+		return 0
+	}
+	l := count(dc[virt:], s[ip:])
+	if base == 0 && virt+l == len(dc) {
+		l += count(s, s[ip+l:])
+	}
+	return l
 }
