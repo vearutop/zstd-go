@@ -2,6 +2,7 @@ package zstd_test
 
 import (
 	"bytes"
+	"fmt"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -176,4 +177,31 @@ func BenchmarkEncodeParallel(b *testing.B) {
 			}
 		})
 	})
+}
+
+func TestPooledAndDecoder(t *testing.T) {
+	d, _ := loadDict(t)
+	dec, err := zstd.NewDecoder(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := corpus(50, 21)
+	done := make(chan error)
+	for g := 0; g < 8; g++ {
+		go func() {
+			for _, c := range cs {
+				got, err := dec.DecodeAll(d.Compress(nil, c), nil)
+				if err != nil || !bytes.Equal(got, c) {
+					done <- fmt.Errorf("mismatch: %v", err)
+					return
+				}
+			}
+			done <- nil
+		}()
+	}
+	for g := 0; g < 8; g++ {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
 }

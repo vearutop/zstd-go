@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"math/bits"
+	"sync"
 
 	"github.com/klauspost/compress/huff0"
 )
@@ -20,11 +21,13 @@ type Dict struct {
 	long       []uint32       // hash8 -> content index+1
 	short      []uint32       // hash5 -> content index+1
 	hlog       uint8
+	raw        []byte
+	pool       sync.Pool // *Encoder
 }
 
 // LoadDict parses a dictionary. Without the zstd magic, b is used as raw content (id 0).
 func LoadDict(b []byte) (*Dict, error) {
-	d := &Dict{reps: [3]uint32{1, 4, 8}}
+	d := &Dict{reps: [3]uint32{1, 4, 8}, raw: b}
 	if len(b) >= 8 && binary.LittleEndian.Uint32(b) == dictMagic {
 		d.id = binary.LittleEndian.Uint32(b[4:])
 		var err error
@@ -68,3 +71,14 @@ func (d *Dict) ID() uint32 { return d.id }
 
 func hash8(v uint64, h uint8) uint32 { return uint32((v * 0xCF1BBCDCB7A56463) >> (64 - h)) }
 func hash5(v uint64, h uint8) uint32 { return uint32(((v << 24) * 889523592379) >> (64 - h)) }
+
+// Compress appends a frame of src to dst, using a pooled Encoder; safe for concurrent use.
+func (d *Dict) Compress(dst, src []byte) []byte {
+	e, _ := d.pool.Get().(*Encoder)
+	if e == nil {
+		e = NewEncoder(d)
+	}
+	dst = e.EncodeAll(src, dst)
+	d.pool.Put(e)
+	return dst
+}
