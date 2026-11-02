@@ -148,7 +148,7 @@ func readNCount(b []byte, maxSym int) (norm []int16, log uint8, n int, err error
 					break
 				}
 			}
-			if len(norm) > maxSym+1 {
+			if len(norm) > maxSym { // a symbol follows the zeros
 				return nil, 0, 0, errBad
 			}
 		}

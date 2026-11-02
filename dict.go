@@ -41,9 +41,10 @@ func LoadDict(b []byte) (*Dict, error) {
 		for _, t := range []struct {
 			p      **cTable
 			dp     **dTable
+			kind   int
 			max    int
 			maxLog uint8
-		}{{&d.of, &d.dof, 31, 8}, {&d.ml, &d.dml, 52, 9}, {&d.ll, &d.dll, 35, 9}} {
+		}{{&d.of, &d.dof, kindOF, 31, 8}, {&d.ml, &d.dml, kindML, 52, 9}, {&d.ll, &d.dll, kindLL, 35, 9}} {
 			norm, lg, n, err := readNCount(rem, t.max)
 			if err != nil {
 				return nil, err
@@ -52,7 +53,7 @@ func LoadDict(b []byte) (*Dict, error) {
 				return nil, errors.New("zstd: dictionary FSE table too large")
 			}
 			*t.p = buildCTable(norm, lg)
-			*t.dp = buildDTable(norm, lg)
+			*t.dp = buildDTable(norm, lg, t.kind)
 			rem = rem[n:]
 		}
 		if len(rem) < 12 {
@@ -63,7 +64,7 @@ func LoadDict(b []byte) (*Dict, error) {
 		}
 		b = rem[12:]
 	}
-	d.content = append(make([]byte, 0, len(b)+8), b...) // spare capacity: the decoder copies 8 bytes at a time
+	d.content = append(make([]byte, 0, len(b)+wildPad), b...) // spare capacity: the decoder copies 32 bytes at a time
 	d.hlog = uint8(min(max(bits.Len(uint(len(b))), 8), 17))
 	d.long = make([]uint32, 1<<d.hlog)
 	d.short = make([]uint32, 1<<d.hlog)

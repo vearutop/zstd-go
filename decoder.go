@@ -12,9 +12,29 @@ import (
 
 // FSE decoding table (libzstd FSE_DTable): sym, nbBits and the next-state base per state.
 type dEntry struct {
-	ns  uint16
-	sym uint8
-	nb  uint8
+	ns   uint16
+	sym  uint8
+	nb   uint8
+	xb   uint8  // extra bits to read for the symbol
+	base uint32 // value of the symbol before the extra bits (match length already includes the minimum 3)
+}
+
+const (
+	kindLL = iota
+	kindOF
+	kindML
+)
+
+// fuse fills the symbol's baseline and extra-bit count.
+func (e *dEntry) fuse(kind int) {
+	switch kind {
+	case kindLL:
+		e.base, e.xb = llBase[e.sym], llBits[e.sym]
+	case kindML:
+		e.base, e.xb = mlBase[e.sym]+3, mlBits[e.sym]
+	default:
+		e.base, e.xb = 1<<e.sym, e.sym
+	}
 }
 
 type dTable struct {
@@ -23,13 +43,13 @@ type dTable struct {
 }
 
 // buildDTable is a port of FSE_buildDTable.
-func buildDTable(norm []int16, log uint8) *dTable {
+func buildDTable(norm []int16, log uint8, kind int) *dTable {
 	dt := &dTable{}
-	dt.build(norm, log)
+	dt.build(norm, log, kind)
 	return dt
 }
 
-func (dt *dTable) build(norm []int16, log uint8) {
+func (dt *dTable) build(norm []int16, log uint8, kind int) {
 	size := 1 << log
 	mask := size - 1
 	step := (size >> 1) + (size >> 3) + 3
@@ -66,18 +86,20 @@ func (dt *dTable) build(norm []int16, log uint8) {
 		nb := uint8(log) - uint8(bits.Len32(n)-1)
 		dt.e[u].nb = nb
 		dt.e[u].ns = uint16(n<<nb) - uint16(size)
+		dt.e[u].fuse(kind)
 	}
 }
 
-func (dt *dTable) rle(sym uint8) {
+func (dt *dTable) rle(sym uint8, kind int) {
 	dt.log = 0
 	dt.e = append(dt.e[:0], dEntry{sym: sym})
+	dt.e[0].fuse(kind)
 }
 
 var (
-	llPredefD = buildDTable(llDefaultNorm, 6)
-	mlPredefD = buildDTable(mlDefaultNorm, 6)
-	ofPredefD = buildDTable(ofDefaultNorm, 5)
+	llPredefD = buildDTable(llDefaultNorm, 6, kindLL)
+	mlPredefD = buildDTable(mlDefaultNorm, 6, kindML)
+	ofPredefD = buildDTable(ofDefaultNorm, 5, kindOF)
 
 	errCorrupt = errors.New("zstd: corrupt input")
 )
@@ -205,8 +227,8 @@ func (d *Decoder) frame(st *decState, src, dst []byte) ([]byte, []byte, error) {
 		if h.size > 1<<31 {
 			return dst, src, errors.New("zstd: frame too large")
 		}
-		if h.size <= 64<<20 && cap(dst)-len(dst) < int(h.size)+32 { // larger claims grow on demand, a header must not force a big allocation
-			nd := make([]byte, len(dst), len(dst)+int(h.size)+32) // slack for 8-byte copies
+		if h.size <= 64<<20 && cap(dst)-len(dst) < int(h.size)+wildPad { // larger claims grow on demand, a header must not force a big allocation
+			nd := make([]byte, len(dst), len(dst)+int(h.size)+wildPad) // slack for 8-byte copies
 			copy(nd, dst)
 			dst = nd
 		}
@@ -313,20 +335,20 @@ func (st *decState) block(in, out []byte, base int, dc []byte) ([]byte, error) {
 	if modes&3 != 0 {
 		return out, errCorrupt
 	}
-	if in, err = st.table(&st.ll, &st.pll, llPredefD, int(modes>>6), 35, 9, in); err != nil {
+	if in, err = st.table(&st.ll, &st.pll, llPredefD, kindLL, int(modes>>6), 35, 9, in); err != nil {
 		return out, err
 	}
-	if in, err = st.table(&st.of, &st.pof, ofPredefD, int(modes>>4&3), 31, 8, in); err != nil {
+	if in, err = st.table(&st.of, &st.pof, ofPredefD, kindOF, int(modes>>4&3), 31, 8, in); err != nil {
 		return out, err
 	}
-	if in, err = st.table(&st.ml, &st.pml, mlPredefD, int(modes>>2&3), 52, 9, in); err != nil {
+	if in, err = st.table(&st.ml, &st.pml, mlPredefD, kindML, int(modes>>2&3), 52, 9, in); err != nil {
 		return out, err
 	}
 	return st.sequences(in, nb, lits, out, base, dc)
 }
 
 // table resolves one stream's decoding table by mode: 0 predefined, 1 RLE, 2 new FSE table, 3 repeat.
-func (st *decState) table(own *dTable, active **dTable, predef *dTable, mode, maxSym int, maxLog uint8, in []byte) ([]byte, error) {
+func (st *decState) table(own *dTable, active **dTable, predef *dTable, kind, mode, maxSym int, maxLog uint8, in []byte) ([]byte, error) {
 	switch mode {
 	case 0:
 		*active = predef
@@ -334,7 +356,7 @@ func (st *decState) table(own *dTable, active **dTable, predef *dTable, mode, ma
 		if len(in) < 1 || int(in[0]) > maxSym {
 			return in, errCorrupt
 		}
-		own.rle(in[0])
+		own.rle(in[0], kind)
 		*active = own
 		return in[1:], nil
 	case 2:
@@ -342,7 +364,7 @@ func (st *decState) table(own *dTable, active **dTable, predef *dTable, mode, ma
 		if err != nil || lg > maxLog {
 			return in, errCorrupt
 		}
-		own.build(norm, lg)
+		own.build(norm, lg, kind)
 		*active = own
 		return in[n:], nil
 	default:
@@ -445,18 +467,42 @@ func growB(b []byte, n int) []byte {
 	return b[:n]
 }
 
-// rbits reads a bitstream backwards (the zstd sequence stream); buf must have 8 bytes of padding.
+// rbits reads a bitstream backwards through a 64-bit window that is refilled 32 bits at a time.
+// buf has rbitsPad zero bytes in front of the stream, so a refill past the start reads zeros (caught by the final check).
 type rbits struct {
+	v   uint64 // window: the next bit to read is the highest unread one, after br consumed bits
+	br  uint   // bits consumed from the top of v
+	off int    // buf index of the lowest byte in v
 	buf []byte
-	pos int // bits left
+	bad bool
 }
 
-func (r *rbits) read(k uint8) uint32 {
-	r.pos -= int(k)
-	if r.pos < 0 {
-		return 0
+const rbitsPad = 16
+
+func newRbits(buf []byte, last byte) rbits {
+	off := len(buf) - 8
+	return rbits{v: binary.LittleEndian.Uint64(buf[off:]), br: uint(9 - bits.Len8(last)), off: off, buf: buf}
+}
+
+// fill makes at least 33 bits available.
+func (r *rbits) fill() {
+	if r.br >= 32 {
+		if r.off >= 4 {
+			r.off -= 4
+			r.v = r.v<<32 | uint64(binary.LittleEndian.Uint32(r.buf[r.off:]))
+		} else {
+			r.v <<= 32
+			r.bad = true
+		}
+		r.br -= 32
 	}
-	return uint32(binary.LittleEndian.Uint64(r.buf[r.pos>>3:])>>(r.pos&7)) & (1<<k - 1)
+}
+
+// get returns the next k bits (k <= 32); k == 0 gives 0.
+func (r *rbits) get(k uint8) uint32 {
+	v := r.v << (r.br & 63) >> 1 >> ((63 - k) & 63)
+	r.br += uint(k)
+	return uint32(v)
 }
 
 // sequences decodes the bitstream (read backwards) and executes the sequences against lits, out and the dictionary.
@@ -464,26 +510,30 @@ func (st *decState) sequences(in []byte, nb int, lits, out []byte, base int, dc 
 	if len(in) < 1 || in[len(in)-1] == 0 {
 		return out, errCorrupt
 	}
-	st.buf = append(append(st.buf[:0], in...), 0, 0, 0, 0, 0, 0, 0, 0)
-	r := rbits{st.buf, 8*(len(in)-1) + bits.Len8(in[len(in)-1]) - 1}
+	st.buf = append(append(st.buf[:0], make([]byte, rbitsPad)...), in...)
+	last := in[len(in)-1]
+	r := newRbits(st.buf, last)
+	total := 8*(len(in)-1) + bits.Len8(last) - 1 // data bits in the stream
+	br0, off0 := r.br, r.off
 	ll, of, ml := st.pll, st.pof, st.pml
-	sl, so, sm := r.read(ll.log), r.read(of.log), r.read(ml.log)
+	r.fill()
+	sl, so, sm := r.get(ll.log), r.get(of.log), r.get(ml.log)
 	li := 0
 	litFull := lits[:cap(lits)] // reading past len is safe and lets us copy 16 bytes at a time
 	for i := 0; i < nb; i++ {
-		le, oe, me := ll.e[sl], of.e[so], ml.e[sm]
-		if oe.sym > 31 {
-			return out, errCorrupt
-		}
-		offBase := 1<<oe.sym + r.read(oe.sym)
-		mlen := int(mlBase[me.sym]) + 3 + int(r.read(mlBits[me.sym]))
-		llen := int(llBase[le.sym]) + int(r.read(llBits[le.sym]))
+		le, oe, me := &ll.e[sl], &of.e[so], &ml.e[sm]
+		r.fill()
+		offBase := oe.base + r.get(oe.xb)
+		r.fill()
+		mlen := int(me.base) + int(r.get(me.xb))
+		llen := int(le.base) + int(r.get(le.xb))
 		if i < nb-1 {
-			sl = uint32(le.ns) + r.read(le.nb)
-			sm = uint32(me.ns) + r.read(me.nb)
-			so = uint32(oe.ns) + r.read(oe.nb)
+			r.fill()
+			sl = uint32(le.ns) + r.get(le.nb)
+			sm = uint32(me.ns) + r.get(me.nb)
+			so = uint32(oe.ns) + r.get(oe.nb)
 		}
-		if r.pos < 0 || li+llen > len(lits) || len(out)-base+llen+mlen > blockMax*64 {
+		if r.bad || li+llen > len(lits) || len(out)-base+llen+mlen > blockMax*64 {
 			return out, errCorrupt
 		}
 		var off uint32
@@ -519,22 +569,15 @@ func (st *decState) sequences(in []byte, nb int, lits, out []byte, base int, dc 
 		}
 		li += llen
 		n = len(out)
-		if o := int(off); o >= 8 && o <= n-base && n+mlen+8 <= cap(out) {
+		if o := int(off); o >= 32 && o <= n-base && n+mlen+wildPad <= cap(out) {
 			buf := out[:cap(out)]
-			s := n - o
-			for k := 0; k < mlen; k += 8 {
-				binary.LittleEndian.PutUint64(buf[n+k:], binary.LittleEndian.Uint64(buf[s+k:]))
-			}
+			wildCopy(buf, n, buf, n-o, mlen)
 			out = out[:n+mlen]
 			continue
 		}
-		if o := int(off) - (n - base); o > 0 && o <= len(dc) && mlen <= o && n+mlen+8 <= cap(out) {
+		if o := int(off) - (n - base); o > 0 && o <= len(dc) && mlen <= o && n+mlen+wildPad <= cap(out) {
 			// entirely inside the dictionary
-			buf, d := out[:cap(out)], dc[:cap(dc)]
-			s := len(dc) - o
-			for k := 0; k < mlen; k += 8 {
-				binary.LittleEndian.PutUint64(buf[n+k:], binary.LittleEndian.Uint64(d[s+k:]))
-			}
+			wildCopy(out[:cap(out)], n, dc[:cap(dc)], len(dc)-o, mlen)
 			out = out[:n+mlen]
 			continue
 		}
@@ -543,10 +586,25 @@ func (st *decState) sequences(in []byte, nb int, lits, out []byte, base int, dc 
 			return out, err
 		}
 	}
-	if r.pos != 0 {
+	if r.bad || 8*(off0-r.off)+int(r.br)-int(br0) != total {
 		return out, errCorrupt
 	}
 	return append(out, lits[li:]...), nil
+}
+
+// wildPad is the slack that wildCopy may write past the end (and read past the end of src).
+const wildPad = 32
+
+// wildCopy copies mlen bytes from src[s:] to dst[n:] in 32-byte steps, overshooting by up to 31 bytes.
+// The distance n-s must be at least 32 when src is dst, or src must be another slice.
+func wildCopy(dst []byte, n int, src []byte, s, mlen int) {
+	for k := 0; k < mlen; k += 32 {
+		d, c := dst[n+k:n+k+32], src[s+k:s+k+32]
+		binary.LittleEndian.PutUint64(d, binary.LittleEndian.Uint64(c))
+		binary.LittleEndian.PutUint64(d[8:], binary.LittleEndian.Uint64(c[8:]))
+		binary.LittleEndian.PutUint64(d[16:], binary.LittleEndian.Uint64(c[16:]))
+		binary.LittleEndian.PutUint64(d[24:], binary.LittleEndian.Uint64(c[24:]))
+	}
 }
 
 // copyMatch appends ml bytes from distance off in the virtual history dict ++ out[base:].
