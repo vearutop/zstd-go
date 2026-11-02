@@ -12,6 +12,24 @@ import "C"
 
 import "unsafe"
 
+// Decompressor wraps a prepared DDict and a reused context.
+type Decompressor struct {
+	dd   *C.ZSTD_DDict
+	dctx *C.ZSTD_DCtx
+}
+
+// NewDecompressor prepares dict.
+func NewDecompressor(dict []byte) *Decompressor {
+	return &Decompressor{dctx: C.ZSTD_createDCtx(), dd: C.ZSTD_createDDict(unsafe.Pointer(&dict[0]), C.size_t(len(dict)))}
+}
+
+// Decompress writes into dst[:cap(dst)] and returns the content.
+func (d *Decompressor) Decompress(dst, src []byte) []byte {
+	dst = dst[:cap(dst)]
+	r := C.ZSTD_decompress_usingDDict(d.dctx, unsafe.Pointer(&dst[0]), C.size_t(len(dst)), unsafe.Pointer(&src[0]), C.size_t(len(src)), d.dd)
+	return dst[:r]
+}
+
 // Compressor is a compressor with a prepared dictionary and a reused context.
 type Compressor struct {
 	cd   *C.ZSTD_CDict

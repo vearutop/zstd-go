@@ -31,3 +31,18 @@ func BenchmarkLibzstdReal(b *testing.B) {
 	}
 	b.ReportMetric(float64(n)/float64(b.N), "B/op-out")
 }
+
+func BenchmarkLibzstdDecode(b *testing.B) {
+	_, raw := loadDict(b)
+	cs := corpus(256, 7)
+	c := ref.New(raw, 3)
+	fs := make([][]byte, len(cs))
+	for i := range cs {
+		fs[i] = append([]byte(nil), c.Compress(make([]byte, 0, 1<<16), cs[i])...)
+	}
+	dd := ref.NewDecompressor(raw)
+	dst := make([]byte, 0, 1<<20)
+	for i := 0; i < b.N; i++ {
+		dd.Decompress(dst, fs[i&255])
+	}
+}

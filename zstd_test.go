@@ -287,3 +287,80 @@ func BenchmarkReal(b *testing.B) {
 		b.ReportMetric(float64(n)/float64(b.N), "B/op-out")
 	})
 }
+
+// TestDecoder decodes frames made by our encoder, klauspost's and libzstd's CLI.
+func TestDecoder(t *testing.T) {
+	d, raw := loadDict(t)
+	dec, _ := zstd.NewDecoder(d)
+	nodict, _ := zstd.NewDecoder()
+	kenc, _ := kz.NewWriter(nil, kz.WithEncoderDict(raw), kz.WithEncoderConcurrency(1))
+	e := zstd.NewEncoder(d)
+	for i, c := range cases(rand.New(rand.NewSource(1))) {
+		check := func(who string, dd *zstd.Decoder, f []byte) {
+			got, err := dd.DecodeAll(f, nil)
+			if err != nil || !bytes.Equal(got, c) {
+				t.Fatalf("%s case %d (len %d): %v", who, i, len(c), err)
+			}
+		}
+		check("port", dec, e.EncodeAll(c, nil))
+		check("klauspost", dec, kenc.EncodeAll(c, nil))
+		check("port-nodict", nodict, zstd.NewEncoder(nil).EncodeAll(c, nil))
+		if i < 40 || i >= 200 {
+			for _, lvl := range []string{"-1", "-3", "-9", "-19"} {
+				cmd := exec.Command("zstd", lvl, "-q", "-c", "-D", "testdata/dict.bin")
+				cmd.Stdin = bytes.NewReader(c)
+				f, err := cmd.Output()
+				if err != nil {
+					t.Fatal(err)
+				}
+				check("libzstd"+lvl, dec, f)
+			}
+		}
+	}
+}
+
+// FuzzDecode feeds arbitrary and mutated frames; the decoder must not panic, and must agree with klauspost when both succeed.
+func FuzzDecode(f *testing.F) {
+	d, raw := loadDict(f)
+	dec, _ := zstd.NewDecoder(d)
+	kdec, _ := kz.NewReader(nil, kz.WithDecoderDicts(raw), kz.WithDecoderConcurrency(1))
+	e := zstd.NewEncoder(d)
+	for _, c := range corpus(4, 13) {
+		f.Add(e.EncodeAll(c, nil))
+	}
+	f.Add(zstd.NewEncoder(nil).EncodeAll([]byte("hello hello hello hello"), nil))
+	f.Fuzz(func(t *testing.T, frame []byte) {
+		got, err := dec.DecodeAll(frame, nil)
+		if err != nil {
+			return
+		}
+		want, kerr := kdec.DecodeAll(frame, nil)
+		if kerr == nil && !bytes.Equal(got, want) {
+			t.Fatalf("mismatch with klauspost")
+		}
+	})
+}
+
+func BenchmarkDecode(b *testing.B) {
+	d, raw := loadDict(b)
+	cs := corpus(256, 7)
+	e := zstd.NewEncoder(d)
+	fs := make([][]byte, len(cs))
+	for i := range cs {
+		fs[i] = e.EncodeAll(cs[i], nil)
+	}
+	b.Run("port", func(b *testing.B) {
+		dec, _ := zstd.NewDecoder(d)
+		var dst []byte
+		for i := 0; i < b.N; i++ {
+			dst, _ = dec.DecodeAll(fs[i&255], dst[:0])
+		}
+	})
+	b.Run("klauspost", func(b *testing.B) {
+		dec, _ := kz.NewReader(nil, kz.WithDecoderDicts(raw), kz.WithDecoderConcurrency(1))
+		var dst []byte
+		for i := 0; i < b.N; i++ {
+			dst, _ = dec.DecodeAll(fs[i&255], dst[:0])
+		}
+	})
+}

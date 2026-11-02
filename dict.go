@@ -13,16 +13,18 @@ const dictMagic = 0xEC30A437
 
 // Dict is an immutable, goroutine-safe dictionary: raw content or a zstd-format (trained) dictionary.
 type Dict struct {
-	id         uint32
-	content    []byte
-	reps       [3]uint32
-	huff       *huff0.Scratch // entropy table for literals, nil if none
-	ll, ml, of *cTable        // repeat tables, nil if none
-	long       []uint32       // hash8 -> content index+1
-	short      []uint32       // hash5 -> content index+1
-	hlog       uint8
-	raw        []byte
-	pool       sync.Pool // *Encoder
+	id            uint32
+	content       []byte
+	reps          [3]uint32
+	huff          *huff0.Scratch // entropy table for literals, nil if none
+	ll, ml, of    *cTable        // repeat tables, nil if none
+	dll, dml, dof *dTable        // the same for decoding
+	huffDec       *huff0.Decoder
+	long          []uint32 // hash8 -> content index+1
+	short         []uint32 // hash5 -> content index+1
+	hlog          uint8
+	raw           []byte
+	pool          sync.Pool // *Encoder
 }
 
 // LoadDict parses a dictionary. Without the zstd magic, b is used as raw content (id 0).
@@ -35,15 +37,22 @@ func LoadDict(b []byte) (*Dict, error) {
 		if d.huff, rem, err = huff0.ReadTable(b[8:], nil); err != nil {
 			return nil, err
 		}
+		d.huffDec = d.huff.Decoder()
 		for _, t := range []struct {
-			p   **cTable
-			max int
-		}{{&d.of, 31}, {&d.ml, 52}, {&d.ll, 35}} {
+			p      **cTable
+			dp     **dTable
+			max    int
+			maxLog uint8
+		}{{&d.of, &d.dof, 31, 8}, {&d.ml, &d.dml, 52, 9}, {&d.ll, &d.dll, 35, 9}} {
 			norm, lg, n, err := readNCount(rem, t.max)
 			if err != nil {
 				return nil, err
 			}
+			if lg > t.maxLog {
+				return nil, errors.New("zstd: dictionary FSE table too large")
+			}
 			*t.p = buildCTable(norm, lg)
+			*t.dp = buildDTable(norm, lg)
 			rem = rem[n:]
 		}
 		if len(rem) < 12 {
@@ -54,7 +63,7 @@ func LoadDict(b []byte) (*Dict, error) {
 		}
 		b = rem[12:]
 	}
-	d.content = b
+	d.content = append(make([]byte, 0, len(b)+8), b...) // spare capacity: the decoder copies 8 bytes at a time
 	d.hlog = uint8(min(max(bits.Len(uint(len(b))), 8), 17))
 	d.long = make([]uint32, 1<<d.hlog)
 	d.short = make([]uint32, 1<<d.hlog)
