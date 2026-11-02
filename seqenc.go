@@ -154,7 +154,8 @@ func (e *Encoder) pick(i int, codes []uint8, predef, repeat *cTable, maxLog uint
 		best, mode, ct = predef.histCost(h), 0, predef
 	}
 	// A header costs roughly 16 bits plus 4 per distinct symbol; skip the attempt when the entropy bound leaves no room.
-	if n > 2 && best-entropyBits(h, n) > 16+4*float64(distinct) {
+	hdrGuess := 16 + 4*float64(distinct)
+	if n > 2 && best > hdrGuess && best-entropyBits(h, n) > hdrGuess {
 		var norm [64]int16
 		log := optimalTableLog(maxLog, n, maxSym)
 		if normalize(norm[:maxSym+1], log, h, n, maxSym, n >= 2048) {
