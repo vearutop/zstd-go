@@ -331,18 +331,128 @@ func TestExactReal(t *testing.T) {
 	t.Logf("%d / %d identical", len(lines)-bad, len(lines))
 }
 
-// TestExactLevels runs the comparisons for every level; inputs whose strategy (btlazy2 and up) is not ported are skipped.
+// TestExactLevels runs the comparisons for every level (-short: a subset of levels, and no large inputs for the slow
+// optimal parsers).
 func TestExactLevels(t *testing.T) {
-	for _, level := range []int{-50, -7, -3, -1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12} {
+	levels := []int{-50, -7, -3, -1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22}
+	if testing.Short() {
+		levels = []int{-5, 1, 3, 6, 9, 12, 13, 16, 19, 22}
+	}
+	for _, level := range levels {
 		t.Run(fmt.Sprint(level), func(t *testing.T) {
 			t.Setenv("EXACT_LEVEL", fmt.Sprint(level))
 			TestExact(t)
 			TestExactRandom(t)
+			TestExactOptimal(t)
+			if testing.Short() && level >= 16 {
+				return
+			}
 			TestExactLarge(t)
 			TestExactLongMatches(t)
 		})
 	}
 }
+
+// TestExactOptimal feeds deliberately nasty inputs to the parsers (the optimal parsers in particular): very long
+// repeats, many 3 and 4 byte matches, incompressible and compressible stretches mixed, sizes around the block (128 KiB)
+// and split boundaries, tiny tails.
+func TestExactOptimal(t *testing.T) {
+	level := exactLevel()
+	_, raw0 := loadDict(t)
+	d, err := zstd.LoadDict(raw0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withDict, noDict := ref.New(raw0, level), ref.NewNoDict(level)
+	rng := rand.New(rand.NewSource(33))
+	random := func(n int) []byte {
+		b := make([]byte, n)
+		rng.Read(b)
+		return b
+	}
+	words := strings.Fields("the quick brown fox jumps over lazy dog alpha beta gamma delta {\"id\": \"user\": 12345 true false null")
+	text := func(n int) []byte {
+		var b []byte
+		for len(b) < n {
+			b = append(b, words[rng.Intn(len(words))]...)
+			b = append(b, byte(' '+rng.Intn(3)))
+		}
+		return b[:n]
+	}
+	small := func(n int) []byte { // 3-4 byte matches: a small alphabet of short chunks
+		var b []byte
+		for len(b) < n {
+			b = append(b, byte('a'+rng.Intn(4)), byte('a'+rng.Intn(4)), byte('a'+rng.Intn(4)))
+		}
+		return b[:n]
+	}
+	type c struct {
+		name string
+		in   []byte
+	}
+	var cases []c
+	for _, n := range []int{1, 5, 6, 7, 8, 9, 15, 16, 100, 1000, blockSize - 1, blockSize, blockSize + 1, blockSize + 6, blockSize + 7, 2*blockSize - 1, 2 * blockSize, 2*blockSize + 5, 3*blockSize + 1, 262145, 300000} {
+		cases = append(cases,
+			c{fmt.Sprintf("zeros-%d", n), make([]byte, n)},
+			c{fmt.Sprintf("text-%d", n), text(n)},
+			c{fmt.Sprintf("small-%d", n), small(n)},
+			c{fmt.Sprintf("rand-%d", n), random(n)},
+			c{fmt.Sprintf("period-%d", n), bytes.Repeat([]byte("0123456789abcdef"), n/16+1)[:n]},
+		)
+	}
+	for _, n := range []int{300000, 700000} { // mixes with large literal runs, long copies and runs of one byte
+		var mix []byte
+		for len(mix) < n {
+			switch rng.Intn(6) {
+			case 0:
+				mix = append(mix, random(1+rng.Intn(20000))...)
+			case 1:
+				mix = append(mix, text(1+rng.Intn(20000))...)
+			case 2:
+				mix = append(mix, bytes.Repeat([]byte{byte(rng.Intn(256))}, 1+rng.Intn(70000))...)
+			case 3:
+				if len(mix) > 1000 {
+					s := rng.Intn(len(mix) - 500)
+					mix = append(mix, mix[s:min(len(mix), s+500+rng.Intn(60000))]...)
+				}
+			case 4:
+				mix = append(mix, small(1+rng.Intn(5000))...)
+			default:
+				mix = append(mix, bytes.Repeat(text(1+rng.Intn(40)), 1+rng.Intn(500))...)
+			}
+		}
+		cases = append(cases, c{fmt.Sprintf("mix-%d", n), mix[:n]})
+	}
+	buf := make([]byte, 0, 1<<23)
+	bad, total := 0, 0
+	for _, cs := range cases {
+		for _, useDict := range []bool{false, true} {
+			var e *zstd.Encoder
+			var libz []byte
+			if useDict {
+				e, libz = zstd.NewEncoder(d), withDict.Compress(buf, cs.in)
+			} else {
+				e, libz = zstd.NewEncoder(nil), noDict.Compress(buf, cs.in)
+			}
+			e.NoChecksum, e.Level = true, level
+			ours, ported := encodeIfPorted(e, cs.in)
+			if !ported {
+				continue
+			}
+			total++
+			if !bytes.Equal(ours, libz) {
+				bad++
+				if bad <= 8 {
+					dd, _ := zstd.NewDecoder(d)
+					t.Errorf("%s dict %v: ours %d B, libzstd %d B: %s", cs.name, useDict, len(ours), len(libz), classify(dd, ours, libz)+"; "+firstSeqDiff(dd, ours, libz))
+				}
+			}
+		}
+	}
+	t.Logf("%d / %d identical", total-bad, total)
+}
+
+const blockSize = 128 << 10
 
 // TestExactLarge compares large inputs with many distinct repeated substrings (text from a big vocabulary), which fill
 // the hash rows of the row match finder (hash salt, eviction order) and exercise the hash chains over long windows.

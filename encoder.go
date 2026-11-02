@@ -15,8 +15,7 @@ type Encoder struct {
 	dict *Dict
 	// NoChecksum drops the content checksum from frames.
 	NoChecksum bool
-	// Level is the compression level; 0 means 3 (libzstd's default). Byte-exact up to level 8 (and for the lazy2 strategy
-	// of levels 9-12); the binary-tree strategies panic.
+	// Level is the compression level; 0 means 3 (libzstd's default). Byte-exact with libzstd for every level.
 	Level int
 
 	buf     []byte // dictionary content ++ source
@@ -46,6 +45,13 @@ type Encoder struct {
 	prevFse, nextFse fseTables
 	slots            [2][3]cTable // storage for tables built per block; e.slot is the one in use
 	slot             int
+	estSlots         [3]cTable // scratch tables of the block split estimation
+	// optimal parsers (btopt, btultra, btultra2)
+	opt       *optState
+	h3        []uint32 // ms->hashTable3
+	hashLog3  uint32
+	idxShift  uint32 // indices are positions + windowStartIndex + idxShift (ZSTD_initStats_ultra moves window.base)
+	postSplit bool   // ZSTD_ps_enable for the post block splitter (strategy >= btopt and windowLog >= 17 of the requested parameters)
 }
 
 type seq struct{ ll, ml, off uint32 } // off is offBase: 1..3 repcode, else offset+3
@@ -113,6 +119,7 @@ func (e *Encoder) prepare(src []byte) (L int) {
 			limitedLog = highbit32(uint32(limited-1)) + 1
 		}
 		windowLog := max(params.windowLog, limitedLog)
+		e.postSplit = params.strategy >= stratBtOpt && params.windowLog >= 17 // ZSTD_resolveBlockSplitterMode, before the window log is raised
 		e.loadedDictEnd = uint32(L + windowStartIndex)
 		e.dictLimit = e.loadedDictEnd
 		e.dms = nil
@@ -143,7 +150,20 @@ func (e *Encoder) prepare(src []byte) (L int) {
 		e.bufDict, e.cd = nil, nil
 		e.cp = getCParams(e.level(), n, 0, cpmUnknown)
 		e.useRow = resolveRowMatchFinder(e.cp)
+		e.postSplit = e.cp.strategy >= stratBtOpt && e.cp.windowLog >= 17
 		e.growTables()
+	}
+	e.idxShift = 0
+	if e.cp.strategy >= stratBtOpt { // ZSTD_reset_matchState: optimal parser space, hashTable3
+		if e.opt == nil {
+			e.opt = new(optState)
+		}
+		e.opt.litLengthSum = 0 // ZSTD_invalidateMatchState: force reset of btopt stats
+		e.hashLog3 = 0
+		if e.cp.minMatch == 3 {
+			e.hashLog3 = min(hashLog3Max, e.cp.windowLog)
+			e.h3 = grow(e.h3, 1<<e.hashLog3)
+		}
 	}
 	e.reps = [3]uint32{1, 4, 8}
 	e.prevHuf, e.prevFse = hufState{}, fseTables{}
@@ -264,41 +284,58 @@ func blockHeader(dst []byte, last bool, typ, size int) []byte {
 	return append(dst, byte(h), byte(h>>8), byte(h>>16))
 }
 
-// block is ZSTD_compress_frameChunk's per-block flow: ZSTD_compressBlock_internal plus the raw / RLE fallbacks.
+// block is ZSTD_compress_frameChunk's per-block flow: ZSTD_compressBlock_internal (or, for the strategies with the post
+// block splitter, ZSTD_compressBlock_splitBlock) plus the raw / RLE fallbacks.
 func (e *Encoder) block(dst, s []byte, L, base int, last bool) []byte {
 	n := len(s)
 	if n == 0 {
 		return blockHeader(dst, last, 0, 0)
 	}
 	e.first = base == 0
-	cSize := 0
-	if n >= 7 { // ZSTD_buildSeqStore: srcSize < MIN_CBLOCK_SIZE + ZSTD_blockHeaderSize + 1 + 1 is not even attempted
-		e.seqs, e.lits = e.seqs[:0], e.lits[:0]
-		e.matchFind(L, base, n)
+	if n < 7 { // ZSTD_buildSeqStore: srcSize < MIN_CBLOCK_SIZE + ZSTD_blockHeaderSize + 1 + 1 is not even attempted (no RLE check either)
+		e.prevFse.ofRep = offRepeatAfterBlock(e.prevFse.ofRep)
+		return append(blockHeader(dst, last, 0, n), s...)
+	}
+	savedReps := e.reps // prevCBlock->rep: the block compressor works on nextCBlock->rep, which only counts once confirmed
+	e.seqs, e.lits = e.seqs[:0], e.lits[:0]
+	e.matchFind(L, base, n)
+	if e.postSplit {
+		return e.splitBlock(dst, s, last, savedReps)
+	}
+	dst, confirmed := e.singleBlock(dst, s, last)
+	if !confirmed {
+		e.reps = savedReps
+	}
+	return dst
+}
+
+// singleBlock is ZSTD_compressSeqStore_singleBlock (and the tail of ZSTD_compressBlock_internal) for the sequences and
+// literals in e.seqs / e.lits covering s. confirmed reports ZSTD_blockState_confirmRepcodesAndEntropyTables.
+func (e *Encoder) singleBlock(dst, s []byte, last bool) (out []byte, confirmed bool) {
+	n := len(s)
+	e.body = e.body[:0]
+	e.writeLiterals()
+	if !e.writeSequences() {
 		e.body = e.body[:0]
-		e.writeLiterals(s, base)
-		if !e.writeSequences() {
-			e.body = e.body[:0]
-		}
-		cSize = len(e.body)
-		if cSize >= n-((n>>6)+2) { // ZSTD_entropyCompressSeqStore: not compressible enough
-			cSize = 0
-		}
+	}
+	cSize := len(e.body)
+	if cSize >= n-minGain(n, e.cp.strategy) { // ZSTD_entropyCompressSeqStore: not compressible enough
+		cSize = 0
 	}
 	const rleMaxLength = 25
 	if !e.first && cSize < rleMaxLength && isRLE(s) {
 		e.prevFse.ofRep = offRepeatAfterBlock(e.prevFse.ofRep)
-		return append(blockHeader(dst, last, 1, n), s[0])
+		return append(blockHeader(dst, last, 1, n), s[0]), false
 	}
 	if cSize == 0 {
 		e.prevFse.ofRep = offRepeatAfterBlock(e.prevFse.ofRep)
-		return append(blockHeader(dst, last, 0, n), s...)
+		return append(blockHeader(dst, last, 0, n), s...), false
 	}
 	e.prevHuf, e.prevFse = e.nextHuf, e.nextFse // ZSTD_blockState_confirmRepcodesAndEntropyTables
 	e.slot ^= 1
 	e.prevFse.ofRep = offRepeatAfterBlock(e.prevFse.ofRep)
 	dst = blockHeader(dst, last, 2, cSize)
-	return append(dst, e.body...)
+	return append(dst, e.body...), true
 }
 
 func isRLE(b []byte) bool {
@@ -363,16 +400,19 @@ func offRepeatAfterBlock(r fseRepeat) fseRepeat {
 func (e *Encoder) matchFind(L, base, n int) {
 	start, end := L+base, L+base+n
 	maxDist := uint32(1) << e.cp.windowLog
-	if blockEnd := uint32(end + windowStartIndex); blockEnd > maxDist+e.loadedDictEnd { // ZSTD_checkDictValidity
+	if blockEnd := e.ix(end); blockEnd > maxDist+e.loadedDictEnd { // ZSTD_checkDictValidity
 		e.loadedDictEnd = 0
 	}
-	if blockStart := uint32(start + windowStartIndex); blockStart > maxDist+e.loadedDictEnd { // ZSTD_window_enforceMaxDist
+	if blockStart := e.ix(start); blockStart > maxDist+e.loadedDictEnd { // ZSTD_window_enforceMaxDist
 		e.lowLimit = max(e.lowLimit, blockStart-maxDist)
 		e.dictLimit = max(e.dictLimit, e.lowLimit)
 		e.loadedDictEnd = 0
 	}
 	attached := e.cd != nil && e.loadedDictEnd != 0 && !e.copyMode
-	e.nextToUpdate = max(e.nextToUpdate, e.lowLimit) // ZSTD_compress_frameChunk: insertion resumes no sooner than lowLimit
+	e.nextToUpdate = max(e.nextToUpdate, e.lowLimit)    // ZSTD_compress_frameChunk: insertion resumes no sooner than lowLimit
+	if curr := e.ix(start); curr > e.nextToUpdate+384 { // ZSTD_buildSeqStore: limited update after a very long match
+		e.nextToUpdate = curr - min(192, curr-e.nextToUpdate-384)
+	}
 	switch e.cp.strategy {
 	case stratFast:
 		switch {
@@ -393,9 +433,6 @@ func (e *Encoder) matchFind(L, base, n int) {
 			e.dfastNoDict(e.cp, start, end, e.dictLimit, false)
 		}
 	case stratGreedy, stratLazy, stratLazy2, stratBtLazy2:
-		if curr := uint32(start + windowStartIndex); curr > e.nextToUpdate+384 { // ZSTD_buildSeqStore: limited update after a very long match
-			e.nextToUpdate = curr - min(192, curr-e.nextToUpdate-384)
-		}
 		depth := min(int(e.cp.strategy-stratGreedy), 2)
 		switch {
 		case e.lowLimit < e.dictLimit: // ZSTD_window_hasExtDict
@@ -405,14 +442,21 @@ func (e *Encoder) matchFind(L, base, n int) {
 		default:
 			e.lazyGeneric(L, start, end, depth, lazyNoDict)
 		}
-	default:
-		panic("zstd: strategy not ported yet")
+	default: // btopt, btultra, btultra2
+		switch {
+		case e.lowLimit < e.dictLimit: // ZSTD_window_hasExtDict
+			e.optBlock(start, end, lazyExtDict)
+		case attached:
+			e.optBlock(start, end, lazyDMS)
+		default:
+			e.optBlock(start, end, lazyNoDict)
+		}
 	}
 }
 
 // lowMatchIndex is ZSTD_getLowestMatchIndex.
 func (e *Encoder) lowMatchIndex(end int, maxDist uint32) uint32 {
-	endIndex := uint32(end + windowStartIndex)
+	endIndex := e.ix(end)
 	low := e.lowLimit
 	if e.loadedDictEnd == 0 && endIndex-low > maxDist {
 		low = endIndex - maxDist
@@ -450,7 +494,7 @@ func (e *Encoder) fillDictTables(content []byte) {
 		e.loadLazyDict(len(content))
 		e.buf = saved
 		return
-	case stratBtLazy2:
+	case stratBtLazy2, stratBtOpt, stratBtUltra, stratBtUltra2:
 		saved := e.buf
 		e.buf = content
 		e.loadBtDict(len(content))

@@ -10,6 +10,12 @@ package zstd
 
 const dubtUnsortedMark = 1 // ZSTD_DUBT_UNSORTED_MARK
 
+// ix converts a position in buf to a libzstd index (ms->window.base shifts by idxShift after ZSTD_initStats_ultra).
+func (e *Encoder) ix(p int) uint32 { return uint32(p) + windowStartIndex + e.idxShift }
+
+// px is the inverse of ix.
+func (e *Encoder) px(i uint32) int { return int(i) - windowStartIndex - int(e.idxShift) }
+
 // btUpdateDUBT is ZSTD_updateDUBT: link every position up to ip into the hash table, as unsorted candidates.
 func (e *Encoder) btUpdateDUBT(ip int, mls uint32) {
 	buf, hashTable, bt := e.buf, e.long, e.short
@@ -237,7 +243,7 @@ func (e *Encoder) btInsertBt1(ip, iend int, target, mls uint32) uint32 {
 	btMask := uint32(1)<<(e.cp.chainLog-1) - 1
 	matchIndex := hashTable[h]
 	var commonSmaller, commonLarger int
-	curr := idxOf(ip)
+	curr := e.ix(ip)
 	btLow := curr - btMask
 	if btMask >= curr {
 		btLow = 0
@@ -252,7 +258,7 @@ func (e *Encoder) btInsertBt1(ip, iend int, target, mls uint32) uint32 {
 	for ; nbCompares != 0 && matchIndex >= windowLow; nbCompares-- {
 		nextPtr := bt[2*(matchIndex&btMask):]
 		matchLength := min(commonSmaller, commonLarger)
-		match := int(matchIndex) - windowStartIndex
+		match := e.px(matchIndex)
 		matchLength += cnt(buf, ip+matchLength, match+matchLength, iend)
 		if matchLength > bestLength {
 			bestLength = matchLength
@@ -293,9 +299,9 @@ func (e *Encoder) btInsertBt1(ip, iend int, target, mls uint32) uint32 {
 
 // btUpdateTree is ZSTD_updateTree: sorted insertion of every position below ip (a position).
 func (e *Encoder) btUpdateTree(ip, iend int, mls uint32) {
-	target := idxOf(ip)
+	target := e.ix(ip)
 	for idx := e.nextToUpdate; idx < target; {
-		idx += e.btInsertBt1(int(idx)-windowStartIndex, iend, target, mls)
+		idx += e.btInsertBt1(e.px(idx), iend, target, mls)
 	}
 	e.nextToUpdate = target
 }

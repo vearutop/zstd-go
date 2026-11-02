@@ -403,8 +403,9 @@ func fseCompressUsingCTable(w *bitWriter, src []byte, ct *cTable) {
 	}
 }
 
-// writeCTable is HUF_writeCTable_wksp: the table description header.
-func (t *hufTable) write(dst []byte) []byte {
+// write is HUF_writeCTable_wksp: the table description header; ok is false when libzstd returns an error (more than
+// 128 symbols whose weights do not compress).
+func (t *hufTable) write(dst []byte) (out []byte, ok bool) {
 	maxSym := int(t.maxSym)
 	var bitsToWeight [hufTableLogMax + 1]byte
 	for n := 1; n < int(t.tableLog)+1; n++ {
@@ -418,15 +419,18 @@ func (t *hufTable) write(dst []byte) []byte {
 	dst = append(dst, 0)
 	if out, hSize := hufCompressWeights(dst, weights[:maxSym]); hSize > 1 && hSize < maxSym/2 {
 		out[base] = byte(hSize)
-		return out
+		return out, true
 	}
 	dst = dst[:base+1]
+	if maxSym > 256-128 {
+		return nil, false // should not happen: likely means source cannot be compressed
+	}
 	dst[base] = byte(128 + (maxSym - 1))
 	weights[maxSym] = 0
 	for n := 0; n < maxSym; n += 2 {
 		dst = append(dst, weights[n]<<4+weights[n+1])
 	}
-	return dst
+	return dst, true
 }
 
 // hufEncode appends the Huffman bitstream of src (symbols coded last to first), with end mark.
@@ -496,10 +500,52 @@ func optimalTableLogMinus(maxLog uint8, n int, maxSym int, minus int) uint8 {
 	return uint8(min(max(tl, 5), 12))
 }
 
+// hufOptimalTableLog is HUF_optimalTableLog: the cheap FSE-based estimate, or (optimalDepth) the search of the table
+// log that gives the smallest table + stream size.
+func hufOptimalTableLog(maxTableLog uint32, srcSize int, maxSym int, count []uint32, optimalDepth bool) uint32 {
+	if !optimalDepth { // cheap evaluation, based on FSE
+		return uint32(optimalTableLogMinus(uint8(maxTableLog), srcSize, maxSym, 1))
+	}
+	var cardinality uint32 // HUF_cardinality
+	for _, c := range count[:maxSym+1] {
+		if c != 0 {
+			cardinality++
+		}
+	}
+	minTableLog := highbit32(cardinality) + 1 // HUF_minTableLog
+	optSize := ^uint64(0) - 1
+	optLog := maxTableLog
+	// Search until size increases
+	for optLogGuess := minTableLog; optLogGuess <= maxTableLog; optLogGuess++ {
+		var t hufTable
+		maxBits, ok := hufBuildCTable(&t, count, maxSym, optLogGuess)
+		if !ok {
+			continue
+		}
+		if maxBits < optLogGuess && optLogGuess > minTableLog {
+			break
+		}
+		hdr, ok := t.write(nil)
+		if !ok {
+			continue
+		}
+		newSize := uint64(t.estimate(count, maxSym) + len(hdr))
+		if newSize > optSize+1 {
+			break
+		}
+		if newSize < optSize {
+			optSize = newSize
+			optLog = optLogGuess
+		}
+	}
+	return optLog
+}
+
 // hufCompress is HUF_compress_internal (level-3 flags). old is the previous table, repeat its state; both are
 // updated like libzstd does. It returns the table description plus streams, or nil when not compressible.
-// single selects 1 stream; rle reports the single-symbol case (return value 1 in libzstd).
-func hufCompress(dst, src []byte, single bool, preferRepeat bool, old *hufTable, repeat *hufRepeat) (out []byte, rle bool) {
+// single selects 1 stream; rle reports the single-symbol case (return value 1 in libzstd). optimalDepth and suspect
+// are HUF_flags_optimalDepth and HUF_flags_suspectUncompressible.
+func hufCompress(dst, src []byte, single bool, preferRepeat, optimalDepth, suspect bool, old *hufTable, repeat *hufRepeat) (out []byte, rle bool) {
 	srcSize := len(src)
 	if srcSize == 0 {
 		return nil, false
@@ -522,6 +568,14 @@ func hufCompress(dst, src []byte, single bool, preferRepeat bool, old *hufTable,
 		return o, false
 	}
 	var count [256]uint32
+	const sampleSize, sampleRatio = 4096, 10          // SUSPECT_INCOMPRESSIBLE_SAMPLE_SIZE, _RATIO
+	if suspect && srcSize >= sampleSize*sampleRatio { // if uncompressible data is suspected, do a smaller sampling first
+		largestBegin, _ := histCount(&count, src[:sampleSize])
+		largestEnd, _ := histCount(&count, src[srcSize-sampleSize:])
+		if largestBegin+largestEnd <= (2*sampleSize)>>7+4 {
+			return nil, false // heuristic: probably not compressible enough
+		}
+	}
 	largest, maxSym := histCount(&count, src)
 	if int(largest) == srcSize {
 		return append(dst, src[0]), true
@@ -536,14 +590,17 @@ func hufCompress(dst, src []byte, single bool, preferRepeat bool, old *hufTable,
 		o, _ := compressWith(dst, old)
 		return o, false
 	}
-	huffLog := uint32(optimalTableLogMinus(hufTableLogDefault, srcSize, maxSym, 1)) // HUF_optimalTableLog without optimalDepth
+	huffLog := hufOptimalTableLog(hufTableLogDefault, srcSize, maxSym, count[:], optimalDepth)
 	var nt hufTable
 	maxBits, ok := hufBuildCTable(&nt, count[:], maxSym, huffLog)
 	if !ok {
 		return nil, false
 	}
 	_ = maxBits
-	hdr := nt.write(nil)
+	hdr, ok := nt.write(nil)
+	if !ok {
+		return nil, false
+	}
 	hSize := len(hdr)
 	if *repeat != hufRepeatNone {
 		oldSize := old.estimate(count[:], maxSym)

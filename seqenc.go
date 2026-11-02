@@ -12,7 +12,7 @@ type hufState struct {
 
 // writeLiterals is ZSTD_compressLiterals for dfast: prevHuf is the table state before this block, the result
 // state goes to nextHuf (committed by block() only when the block ends up compressed).
-func (e *Encoder) writeLiterals(s []byte, base int) {
+func (e *Encoder) writeLiterals() {
 	lits := e.lits
 	n := len(lits)
 	e.nextHuf = e.prevHuf
@@ -48,7 +48,10 @@ func (e *Encoder) writeLiterals(s []byte, base int) {
 		single = true
 	}
 	preferRepeat := strategy < int(stratLazy) && n <= 1024
-	out, rle := hufCompress(nil, lits, single, preferRepeat, &e.nextHuf.t, &repeat)
+	optimalDepth := e.cp.strategy >= stratBtUltra // HUF_OPTIMAL_DEPTH_THRESHOLD
+	nbSeq := len(e.seqs)
+	suspect := nbSeq == 0 || n/nbSeq >= 20 // SUSPECT_UNCOMPRESSIBLE_LITERAL_RATIO
+	out, rle := hufCompress(nil, lits, single, preferRepeat, optimalDepth, suspect, &e.nextHuf.t, &repeat)
 	cLit := len(out)
 	if out == nil {
 		cLit = 0
@@ -57,8 +60,7 @@ func (e *Encoder) writeLiterals(s []byte, base int) {
 	if repeat != hufRepeatNone {
 		typ = 3 // set_repeat
 	}
-	minGain := (n >> 6) + 2
-	if cLit == 0 || cLit >= n-minGain {
+	if cLit == 0 || cLit >= n-minGain(n, e.cp.strategy) {
 		raw()
 		return
 	}
@@ -74,6 +76,15 @@ func (e *Encoder) writeLiterals(s []byte, base int) {
 	}
 	e.body = appendLitCompressedHeader(e.body, typ, n, cLit, lhSize, single)
 	e.body = append(e.body, out...)
+}
+
+// minGain is ZSTD_minGain: minimum compression required to generate a compressed block or a compressed literals section.
+func minGain(srcSize int, strat strategy) int {
+	minlog := 6
+	if strat >= stratBtUltra {
+		minlog = int(strat) - 1
+	}
+	return srcSize>>minlog + 2
 }
 
 func allIdentical(b []byte) bool {
@@ -355,6 +366,61 @@ func max2(a, b int) int {
 	return b
 }
 
+// seqStats is ZSTD_symbolEncodingTypeStats_t plus the tables to code with (nil: RLE).
+type seqStats struct {
+	llMode, ofMode, mlMode int
+	lt, ot, mt             *cTable
+	lastCount              int // size of the last table header written in compressed mode
+	size                   int // total size of the table headers
+}
+
+// buildSeqStats is ZSTD_buildSequencesStatistics: it fills e.llc/ofc/mlc with the codes of seqs, selects the encoding
+// types against prev (updating the repeat modes of next), builds the tables in slots and appends their headers to hdr.
+func (e *Encoder) buildSeqStats(seqs []seq, slots *[3]cTable, hdr []byte, prev, next *fseTables) ([]byte, seqStats) {
+	n := len(seqs)
+	e.llc, e.ofc, e.mlc = e.llc[:0], e.ofc[:0], e.mlc[:0]
+	for _, q := range seqs {
+		e.llc = append(e.llc, llCode(q.ll))
+		e.ofc = append(e.ofc, uint8(bits.Len32(q.off)-1))
+		e.mlc = append(e.mlc, mlCode(q.ml-3))
+	}
+	var st seqStats
+	var count [maxSeqSymbols + 1]uint32
+	hdrStart := len(hdr)
+
+	max, mf := histCodes(e.llc, &count, 35)
+	next.llRep = prev.llRep
+	st.llMode = selectEncodingType(&next.llRep, count[:], max, mf, n, 9, prev.ll, llPredef, 6, true, e.cp.strategy)
+	mark := len(hdr)
+	st.lt, hdr = buildSeqTable(&slots[0], hdr, st.llMode, count[:], max, e.llc, 9, llPredef, prev.ll)
+	if st.llMode == modeCompressed {
+		st.lastCount = len(hdr) - mark
+	}
+	next.ll = st.lt
+
+	max, mf = histCodes(e.ofc, &count, 31)
+	next.ofRep = prev.ofRep
+	st.ofMode = selectEncodingType(&next.ofRep, count[:], max, mf, n, 8, prev.of, ofPredef, 5, max <= 28, e.cp.strategy)
+	mark = len(hdr)
+	st.ot, hdr = buildSeqTable(&slots[1], hdr, st.ofMode, count[:], max, e.ofc, 8, ofPredef, prev.of)
+	if st.ofMode == modeCompressed {
+		st.lastCount = len(hdr) - mark
+	}
+	next.of = st.ot
+
+	max, mf = histCodes(e.mlc, &count, 52)
+	next.mlRep = prev.mlRep
+	st.mlMode = selectEncodingType(&next.mlRep, count[:], max, mf, n, 9, prev.ml, mlPredef, 6, true, e.cp.strategy)
+	mark = len(hdr)
+	st.mt, hdr = buildSeqTable(&slots[2], hdr, st.mlMode, count[:], max, e.mlc, 9, mlPredef, prev.ml)
+	if st.mlMode == modeCompressed {
+		st.lastCount = len(hdr) - mark
+	}
+	next.ml = st.mt
+	st.size = len(hdr) - hdrStart
+	return hdr, st
+}
+
 // writeSequences is the sequences part of ZSTD_entropyCompressSeqStore_internal. It returns false when libzstd
 // would emit the block uncompressed (the "bug in 1.3.4" rule).
 func (e *Encoder) writeSequences() bool {
@@ -371,49 +437,12 @@ func (e *Encoder) writeSequences() bool {
 	if n == 0 {
 		return true
 	}
-	e.llc, e.ofc, e.mlc = e.llc[:0], e.ofc[:0], e.mlc[:0]
-	for _, q := range e.seqs {
-		e.llc = append(e.llc, llCode(q.ll))
-		e.ofc = append(e.ofc, uint8(bits.Len32(q.off)-1))
-		e.mlc = append(e.mlc, mlCode(q.ml-3))
-	}
-	slots := &e.slots[e.slot]
-	var count [maxSeqSymbols + 1]uint32
 	modeAt := len(e.body)
 	e.body = append(e.body, 0)
-	lastCount := 0
-	var lastHdr int
-	hdrStart := len(e.body)
-
-	max, mf := histCodes(e.llc, &count, 35)
-	llMode := selectEncodingType(&e.nextFse.llRep, count[:], max, mf, n, 9, e.prevFse.ll, llPredef, 6, true, e.cp.strategy)
-	lt, hdr := buildSeqTable(&slots[0], e.body, llMode, count[:], max, e.llc, 9, llPredef, e.prevFse.ll)
-	e.body, lastHdr = hdr, len(hdr)-hdrStart
-	if llMode == modeCompressed {
-		lastCount = lastHdr
-	}
-	e.nextFse.ll = lt
-
-	hdrStart = len(e.body)
-	max, mf = histCodes(e.ofc, &count, 31)
-	ofMode := selectEncodingType(&e.nextFse.ofRep, count[:], max, mf, n, 8, e.prevFse.of, ofPredef, 5, max <= 28, e.cp.strategy)
-	ot, hdr := buildSeqTable(&slots[1], e.body, ofMode, count[:], max, e.ofc, 8, ofPredef, e.prevFse.of)
-	e.body = hdr
-	if ofMode == modeCompressed {
-		lastCount = len(hdr) - hdrStart
-	}
-	e.nextFse.of = ot
-
-	hdrStart = len(e.body)
-	max, mf = histCodes(e.mlc, &count, 52)
-	mlMode := selectEncodingType(&e.nextFse.mlRep, count[:], max, mf, n, 9, e.prevFse.ml, mlPredef, 6, true, e.cp.strategy)
-	mt, hdr := buildSeqTable(&slots[2], e.body, mlMode, count[:], max, e.mlc, 9, mlPredef, e.prevFse.ml)
-	e.body = hdr
-	if mlMode == modeCompressed {
-		lastCount = len(hdr) - hdrStart
-	}
-	e.nextFse.ml = mt
-	e.body[modeAt] = byte(llMode<<6 | ofMode<<4 | mlMode<<2)
+	var st seqStats
+	e.body, st = e.buildSeqStats(e.seqs, &e.slots[e.slot], e.body, &e.prevFse, &e.nextFse)
+	lastCount, lt, ot, mt := st.lastCount, st.lt, st.ot, st.mt
+	e.body[modeAt] = byte(st.llMode<<6 | st.ofMode<<4 | st.mlMode<<2)
 
 	bitStart := len(e.body)
 	var w bitWriter

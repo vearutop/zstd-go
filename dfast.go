@@ -65,7 +65,7 @@ func newCDict(content []byte, dictSize uint64, level int) *cdict {
 		ms.loadLazyDict(len(content))
 		cd.nextToUpdate = ms.nextToUpdate
 		return cd
-	case stratBtLazy2:
+	case stratBtLazy2, stratBtOpt, stratBtUltra, stratBtUltra2:
 		cd.dictLen = len(content)
 		cd.long = make([]uint32, 1<<cd.cp.hashLog)
 		cd.short = make([]uint32, 1<<cd.cp.chainLog)
@@ -73,8 +73,6 @@ func newCDict(content []byte, dictSize uint64, level int) *cdict {
 		ms.loadBtDict(len(content))
 		cd.nextToUpdate = ms.nextToUpdate
 		return cd
-	default:
-		return cd // ponytail: the optimal parsers are not ported
 	}
 	cd.long = make([]uint32, 1<<cd.cp.hashLog)
 	cd.short = make([]uint32, 1<<cd.cp.chainLog)
