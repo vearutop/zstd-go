@@ -34,7 +34,12 @@ func hashPtr(v uint64, hBits uint32, mls uint32) uint32 {
 type cdict struct {
 	cp          cParams
 	dictSize    uint64
-	long, short []uint32 // (index << 8) | tag
+	long, short []uint32 // fast, dfast: (index << 8) | tag; greedy..lazy2: hash table, chain table
+	// greedy..lazy2
+	tag          []uint8 // row match finder tag table
+	row          bool    // the CDict was built for the row match finder (useRowMatchFinder)
+	dictLen      int     // dictionary content length
+	nextToUpdate uint32
 }
 
 // newCDict prepares a dictionary; dictSize is libzstd's dictContentSize, the whole dictionary buffer (header included).
@@ -46,8 +51,22 @@ func newCDict(content []byte, dictSize uint64, level int) *cdict {
 		fillCDictFast(cd, content)
 		return cd
 	case stratDFast:
+	case stratGreedy, stratLazy, stratLazy2:
+		cd.row = resolveRowMatchFinder(cd.cp)
+		cd.dictLen = len(content)
+		cd.long = make([]uint32, 1<<cd.cp.hashLog)
+		if cd.row {
+			cd.tag = make([]uint8, 1<<cd.cp.hashLog)
+		} else {
+			cd.short = make([]uint32, 1<<cd.cp.chainLog)
+		}
+		// ZSTD_loadDictionaryContent on the CDict's own match state (salt 0)
+		ms := &Encoder{buf: content, cp: cd.cp, long: cd.long, short: cd.short, tag: cd.tag, useRow: cd.row}
+		ms.loadLazyDict(len(content))
+		cd.nextToUpdate = ms.nextToUpdate
+		return cd
 	default:
-		return cd // ponytail: only fast and dfast tables are built so far
+		return cd // ponytail: the binary-tree strategies are not ported
 	}
 	cd.long = make([]uint32, 1<<cd.cp.hashLog)
 	cd.short = make([]uint32, 1<<cd.cp.chainLog)

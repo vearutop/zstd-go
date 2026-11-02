@@ -83,14 +83,24 @@ func mustDicts(t *testing.T, raws [][]byte) []*zstd.Dict {
 	return ds
 }
 
+// exactLevel is the compression level under test: EXACT_LEVEL, default 3.
+func exactLevel() int {
+	level := 3
+	if s := os.Getenv("EXACT_LEVEL"); s != "" {
+		fmt.Sscan(s, &level)
+	}
+	return level
+}
+
 func TestExact(t *testing.T) {
+	level := exactLevel()
 	cases, raws := exactCases(t)
 	dicts := mustDicts(t, raws)
 	refs := make([]*ref.Compressor, len(raws))
 	for i, r := range raws {
-		refs[i] = ref.New(r, 3)
+		refs[i] = ref.New(r, level)
 	}
-	nodict := ref.NewNoDict(3)
+	nodict := ref.NewNoDict(level)
 	dec0, _ := zstd.NewDecoder()
 	buf := make([]byte, 0, 1<<22)
 	type bucket struct {
@@ -111,6 +121,7 @@ func TestExact(t *testing.T) {
 			libz = nodict.Compress(buf, c.data)
 		}
 		e.NoChecksum = true
+		e.Level = level
 		size := "<16K"
 		switch {
 		case len(c.data) >= 128<<10:
@@ -124,8 +135,12 @@ func TestExact(t *testing.T) {
 			b = &bucket{}
 			buckets[key] = b
 		}
+		ours, ported := encodeIfPorted(e, c.data)
+		if !ported {
+			continue
+		}
 		b.n++
-		if ours := e.EncodeAll(c.data, nil); bytes.Equal(ours, libz) {
+		if bytes.Equal(ours, libz) {
 			b.same++
 		} else if len(b.first) < 8 {
 			why := "?"
@@ -182,10 +197,7 @@ func FuzzExact(f *testing.F) {
 
 // TestExactRandom: log-uniform sizes up to ~700 KB, mixed content, several dictionaries.
 func TestExactRandom(t *testing.T) {
-	level := 3
-	if s := os.Getenv("EXACT_LEVEL"); s != "" {
-		fmt.Sscan(s, &level)
-	}
+	level := exactLevel()
 	_, raw0 := loadDict(t)
 	files := readZip(t, "testdata/klauspost/dict-tests-small.zip")
 	rawDicts := [][]byte{raw0, files["d1.dict"], files["d3.dict"], bytes.Repeat([]byte("raw content dictionary, no entropy tables. "), 200), []byte("tiny dict")}
@@ -242,7 +254,7 @@ func TestExactRandom(t *testing.T) {
 		return b[:n]
 	}
 	buf := make([]byte, 0, 1<<23)
-	bad, total := 0, 0
+	bad, total, skipped := 0, 0, 0
 	for i := 0; i < cases; i++ {
 		n := int(math.Exp(rng.Float64() * math.Log(maxN)))
 		in := gen(n)
@@ -256,8 +268,13 @@ func TestExactRandom(t *testing.T) {
 		}
 		e.NoChecksum = true
 		e.Level = level
+		ours, ported := encodeIfPorted(e, in)
+		if !ported {
+			skipped++
+			continue
+		}
 		total++
-		if ours := e.EncodeAll(in, nil); !bytes.Equal(ours, libz) {
+		if !bytes.Equal(ours, libz) {
 			bad++
 			if dir := os.Getenv("EXACT_DUMP"); dir != "" && bad <= 3 {
 				os.WriteFile(fmt.Sprintf("%s/fail-%d.bin", dir, i), in, 0o644)
@@ -273,20 +290,38 @@ func TestExactRandom(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("%d / %d identical", total-bad, total)
+	t.Logf("%d / %d identical (%d skipped: strategy not ported)", total-bad, total, skipped)
+}
+
+// encodeIfPorted encodes in; ok is false when the level's strategy for this input (binary tree parsers) is not ported.
+func encodeIfPorted(e *zstd.Encoder, in []byte) (out []byte, ok bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			if s, isStr := r.(string); !isStr || s != "zstd: strategy not ported yet" {
+				panic(r)
+			}
+		}
+	}()
+	return e.EncodeAll(in, nil), true
 }
 
 // TestExactReal checks every evaluation record of real data (ZSTD_DATA / ZSTD_DICT, see realData).
 func TestExactReal(t *testing.T) {
 	lines, raw := realData(t)
 	d, _ := zstd.LoadDict(raw)
+	level := exactLevel()
 	e := zstd.NewEncoder(d)
 	e.NoChecksum = true
-	c := ref.New(raw, 3)
+	e.Level = level
+	c := ref.New(raw, level)
 	buf := make([]byte, 0, 1<<20)
 	bad := 0
 	for i, l := range lines {
-		if !bytes.Equal(e.EncodeAll(l, nil), c.Compress(buf, l)) {
+		ours, ported := encodeIfPorted(e, l)
+		if !ported {
+			t.Skip("strategy not ported for this level")
+		}
+		if !bytes.Equal(ours, c.Compress(buf, l)) {
 			bad++
 			if bad <= 5 {
 				t.Errorf("record %d differs", i)
@@ -296,12 +331,138 @@ func TestExactReal(t *testing.T) {
 	t.Logf("%d / %d identical", len(lines)-bad, len(lines))
 }
 
-// TestExactLevels runs the randomized comparison for every level with a ported strategy.
+// TestExactLevels runs the comparisons for every level; inputs whose strategy (btlazy2 and up) is not ported are skipped.
 func TestExactLevels(t *testing.T) {
-	for _, level := range []int{-50, -7, -3, -1, 1, 2, 3} {
+	for _, level := range []int{-50, -7, -3, -1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12} {
 		t.Run(fmt.Sprint(level), func(t *testing.T) {
 			t.Setenv("EXACT_LEVEL", fmt.Sprint(level))
+			TestExact(t)
 			TestExactRandom(t)
+			TestExactLarge(t)
+			TestExactLongMatches(t)
 		})
 	}
+}
+
+// TestExactLarge compares large inputs with many distinct repeated substrings (text from a big vocabulary), which fill
+// the hash rows of the row match finder (hash salt, eviction order) and exercise the hash chains over long windows.
+func TestExactLarge(t *testing.T) {
+	level := exactLevel()
+	_, raw0 := loadDict(t)
+	d, err := zstd.LoadDict(raw0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withDict, noDict := ref.New(raw0, level), ref.NewNoDict(level)
+	rng := rand.New(rand.NewSource(11))
+	vocab := make([][]byte, 30000)
+	for i := range vocab {
+		w := make([]byte, 3+rng.Intn(9))
+		for j := range w {
+			w[j] = byte('a' + rng.Intn(26))
+		}
+		vocab[i] = w
+	}
+	buf := make([]byte, 0, 1<<23)
+	bad, total := 0, 0
+	for _, n := range []int{20 << 10, 200 << 10, 700 << 10, 1 << 20, 2 << 20, 3 << 20} {
+		for _, zipf := range []bool{false, true} {
+			var z *rand.Zipf
+			if zipf {
+				z = rand.NewZipf(rng, 1.2, 1, uint64(len(vocab)-1))
+			}
+			in := make([]byte, 0, n+16)
+			for len(in) < n {
+				if zipf {
+					in = append(in, vocab[z.Uint64()]...)
+				} else {
+					in = append(in, vocab[rng.Intn(len(vocab))]...)
+				}
+				in = append(in, ' ')
+			}
+			in = in[:n]
+			for _, useDict := range []bool{false, true} {
+				var e *zstd.Encoder
+				var libz []byte
+				if useDict {
+					e, libz = zstd.NewEncoder(d), withDict.Compress(buf, in)
+				} else {
+					e, libz = zstd.NewEncoder(nil), noDict.Compress(buf, in)
+				}
+				e.NoChecksum, e.Level = true, level
+				ours, ported := encodeIfPorted(e, in)
+				if !ported {
+					continue
+				}
+				total++
+				if !bytes.Equal(ours, libz) {
+					bad++
+					dd, _ := zstd.NewDecoder(d)
+					t.Errorf("len %d zipf %v dict %v: ours %d B, libzstd %d B: %s", n, zipf, useDict, len(ours), len(libz), classify(dd, ours, libz)+"; "+firstSeqDiff(dd, ours, libz))
+				}
+			}
+		}
+	}
+	t.Logf("%d / %d identical", total-bad, total)
+}
+
+// TestExactLongMatches: inputs made of long copies of earlier parts (matches of thousands of bytes, interleaved with
+// fresh text and random bytes), which exercise the skipping of table updates after long matches and lazy skipping.
+func TestExactLongMatches(t *testing.T) {
+	level := exactLevel()
+	_, raw0 := loadDict(t)
+	d, err := zstd.LoadDict(raw0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withDict, noDict := ref.New(raw0, level), ref.NewNoDict(level)
+	rng := rand.New(rand.NewSource(21))
+	words := strings.Fields("the quick brown fox jumps over lazy dog alpha beta gamma delta {\"id\": \"user\": 12345 true false null")
+	buf := make([]byte, 0, 1<<23)
+	bad, total := 0, 0
+	for i := 0; i < 120; i++ {
+		n := 1000 + rng.Intn(1500000)
+		in := make([]byte, 0, n+(300<<10))
+		for len(in) < n {
+			switch k := rng.Intn(6); {
+			case k < 3 && len(in) > 4000: // long copy of earlier data
+				l := 500 + rng.Intn(1<<uint(8+rng.Intn(9)))
+				s := rng.Intn(len(in) - 1000)
+				in = append(in, in[s:min(s+l, len(in))]...)
+			case k == 3: // incompressible stretch
+				r := make([]byte, 100+rng.Intn(6000))
+				rng.Read(r)
+				in = append(in, r...)
+			default:
+				for j, m := 0, 20+rng.Intn(400); j < m; j++ {
+					in = append(in, words[rng.Intn(len(words))]...)
+					in = append(in, byte(' '+rng.Intn(3)))
+				}
+			}
+		}
+		in = in[:n]
+		for _, useDict := range []bool{false, true} {
+			var e *zstd.Encoder
+			var libz []byte
+			if useDict {
+				e, libz = zstd.NewEncoder(d), withDict.Compress(buf, in)
+			} else {
+				e, libz = zstd.NewEncoder(nil), noDict.Compress(buf, in)
+			}
+			e.NoChecksum, e.Level = true, level
+			ours, ported := encodeIfPorted(e, in)
+			if !ported {
+				continue
+			}
+			total++
+			if !bytes.Equal(ours, libz) {
+				bad++
+				if bad <= 5 {
+					dd, _ := zstd.NewDecoder(d)
+					t.Errorf("case %d len %d dict %v: ours %d B, libzstd %d B: %s", i, n, useDict, len(ours), len(libz), classify(dd, ours, libz)+"; "+firstSeqDiff(dd, ours, libz))
+				}
+			}
+		}
+	}
+	t.Logf("%d / %d identical", total-bad, total)
 }

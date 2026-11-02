@@ -22,10 +22,6 @@ func TestCParamsMatchLibzstd(t *testing.T) {
 				}
 				got := getCParams(level, hint, uint64(d), cpmUnknown)
 				g := ref.CParams{got.windowLog, got.chainLog, got.hashLog, got.searchLog, got.minMatch, got.targetLength, uint32(got.strategy)}
-				// the row match finder shrinks hashLog for greedy..lazy2 in libzstd; not ported yet
-				if want.Strategy >= uint32(stratGreedy) && want.Strategy <= uint32(stratLazy2) {
-					continue
-				}
 				n++
 				if g != want {
 					t.Fatalf("level %d src %d dict %d: got %+v want %+v", level, s, d, g, want)

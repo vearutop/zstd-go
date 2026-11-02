@@ -15,7 +15,8 @@ type Encoder struct {
 	dict *Dict
 	// NoChecksum drops the content checksum from frames.
 	NoChecksum bool
-	// Level is the compression level; 0 means 3 (libzstd's default). Only level 3 is byte-exact so far.
+	// Level is the compression level; 0 means 3 (libzstd's default). Byte-exact up to level 8 (and for the lazy2 strategy
+	// of levels 9-12); the binary-tree strategies panic.
 	Level int
 
 	buf     []byte // dictionary content ++ source
@@ -33,7 +34,13 @@ type Encoder struct {
 	seqs             []seq
 	lits             []byte
 	body             []byte
-	long, short      []uint32
+	long, short      []uint32 // hash table (or row table) and chain table (second hash table for dfast)
+	tag              []uint8  // row match finder tag table
+	hashCache        [rowHashCacheSize]uint32
+	nextToUpdate     uint32 // ms->nextToUpdate
+	lazySkipping     bool
+	useRow           bool   // row based match finder (greedy..lazy2 with windowLog > 14)
+	dms              *cdict // attached dictionary (lazy dictMatchState mode)
 	lit              huff0.Scratch
 	llc, ofc, mlc    []uint8
 	prevFse, nextFse fseTables
@@ -83,6 +90,7 @@ var attachDictSizeCutoffs = [...]int{8 << 10, 8 << 10, 16 << 10, 32 << 10, 32 <<
 func (e *Encoder) prepare(src []byte) (L int) {
 	n := uint64(len(src))
 	e.copyMode, e.loadedDictEnd, e.dictLimit, e.lowLimit = false, 0, windowStartIndex, windowStartIndex
+	e.nextToUpdate, e.hashCache, e.lazySkipping = windowStartIndex, [rowHashCacheSize]uint32{}, false
 	if d := e.dict; d != nil && len(d.content) > 0 {
 		L = len(d.content)
 		if e.bufDict != d {
@@ -107,28 +115,34 @@ func (e *Encoder) prepare(src []byte) (L int) {
 		windowLog := max(params.windowLog, limitedLog)
 		e.loadedDictEnd = uint32(L + windowStartIndex)
 		e.dictLimit = e.loadedDictEnd
+		e.dms = nil
 		switch {
 		case !reuse:
 			e.copyMode = true
+			e.useRow = resolveRowMatchFinder(params) // resolved before the window log is raised
 			e.cp = params
 			e.cp.windowLog = windowLog
 			e.growTables()
 			e.fillDictTables(d.content)
 		case n <= uint64(attachDictSizeCutoffs[cdp.strategy]):
+			e.useRow = e.cd.row // the CDict overrides
 			e.cp = adjustCParams(cdp, n, e.cd.dictSize, cpmAttachDict)
 			e.cp.windowLog = windowLog
+			e.lowLimit = e.dictLimit // the attached dictionary lives in the CDict: the window starts at the source
+			e.dms = e.cd
 			e.growTables()
 		default:
 			e.copyMode = true
+			e.useRow = e.cd.row
 			e.cp = cdp
 			e.cp.windowLog = windowLog
-			e.long = growCopy(e.long, e.cd.long)
-			e.short = growCopy(e.short, e.cd.short)
+			e.copyCDictTables()
 		}
 	} else {
 		e.buf = append(e.buf[:0], src...)
 		e.bufDict, e.cd = nil, nil
 		e.cp = getCParams(e.level(), n, 0, cpmUnknown)
+		e.useRow = resolveRowMatchFinder(e.cp)
 		e.growTables()
 	}
 	e.reps = [3]uint32{1, 4, 8}
@@ -139,6 +153,23 @@ func (e *Encoder) prepare(src []byte) (L int) {
 		e.prevFse = e.dict.fse
 	}
 	return L
+}
+
+// copyCDictTables is ZSTD_resetCCtx_byCopyingCDict's table copy: the tagged (fast, dfast) tables lose their tags
+// (ZSTD_copyCDictTableIntoCCtx), the others are copied as they are, with the tag table.
+func (e *Encoder) copyCDictTables() {
+	cd := e.cd
+	if e.cp.strategy <= stratDFast {
+		e.long = growCopy(e.long, cd.long)
+		e.short = growCopy(e.short, cd.short)
+		return
+	}
+	e.long = append(e.long[:0], cd.long...)
+	e.short = append(e.short[:0], cd.short...)
+	if e.useRow {
+		e.tag = append(e.tag[:0], cd.tag...)
+	}
+	e.nextToUpdate = cd.nextToUpdate
 }
 
 // growCopy fills b with the untagged indices of a tagged dictionary table (ZSTD_copyCDictTableIntoCCtx).
@@ -241,7 +272,7 @@ func (e *Encoder) block(dst, s []byte, L, base int, last bool) []byte {
 	}
 	e.first = base == 0
 	cSize := 0
-	if n >= 6 { // MIN_CBLOCK_SIZE + ZSTD_blockHeaderSize + 1: smaller blocks are not even attempted
+	if n >= 7 { // ZSTD_buildSeqStore: srcSize < MIN_CBLOCK_SIZE + ZSTD_blockHeaderSize + 1 + 1 is not even attempted
 		e.seqs, e.lits = e.seqs[:0], e.lits[:0]
 		e.matchFind(L, base, n)
 		e.body = e.body[:0]
@@ -341,6 +372,7 @@ func (e *Encoder) matchFind(L, base, n int) {
 		e.loadedDictEnd = 0
 	}
 	attached := e.cd != nil && e.loadedDictEnd != 0 && !e.copyMode
+	e.nextToUpdate = max(e.nextToUpdate, e.lowLimit) // ZSTD_compress_frameChunk: insertion resumes no sooner than lowLimit
 	switch e.cp.strategy {
 	case stratFast:
 		switch {
@@ -360,6 +392,19 @@ func (e *Encoder) matchFind(L, base, n int) {
 		default:
 			e.dfastNoDict(e.cp, start, end, e.dictLimit, false)
 		}
+	case stratGreedy, stratLazy, stratLazy2:
+		if curr := uint32(start + windowStartIndex); curr > e.nextToUpdate+384 { // ZSTD_buildSeqStore: limited update after a very long match
+			e.nextToUpdate = curr - min(192, curr-e.nextToUpdate-384)
+		}
+		depth := int(e.cp.strategy - stratGreedy)
+		switch {
+		case e.lowLimit < e.dictLimit: // ZSTD_window_hasExtDict
+			e.lazyExtDictGeneric(start, end, depth)
+		case attached:
+			e.lazyGeneric(L, start, end, depth, lazyDMS)
+		default:
+			e.lazyGeneric(L, start, end, depth, lazyNoDict)
+		}
 	default:
 		panic("zstd: strategy not ported yet")
 	}
@@ -375,20 +420,35 @@ func (e *Encoder) lowMatchIndex(end int, maxDist uint32) uint32 {
 	return low
 }
 
-// growTables clears the working tables sized by the parameters (the fast strategy has no second table).
+// growTables clears the working tables sized by the parameters (the fast strategy has no second table; the row
+// match finder has a tag table instead of the chain table).
 func (e *Encoder) growTables() {
 	e.long = grow(e.long, 1<<e.cp.hashLog)
-	if e.cp.strategy == stratFast {
-		e.short = e.short[:0]
-		return
+	e.short = e.short[:0]
+	switch {
+	case e.cp.strategy == stratFast:
+	case e.useRow:
+		if cap(e.tag) < 1<<e.cp.hashLog {
+			e.tag = make([]uint8, 1<<e.cp.hashLog)
+		}
+		e.tag = e.tag[:1<<e.cp.hashLog]
+		clear(e.tag)
+	default:
+		e.short = grow(e.short, 1<<e.cp.chainLog)
 	}
-	e.short = grow(e.short, 1<<e.cp.chainLog)
 }
 
-// fillDictTables loads the dictionary into the context tables (ZSTD_dtlm_fast, every third position).
+// fillDictTables loads the dictionary into the context tables (ZSTD_loadDictionaryContent, ZSTD_dtlm_fast).
 func (e *Encoder) fillDictTables(content []byte) {
-	if e.cp.strategy == stratFast {
+	switch e.cp.strategy {
+	case stratFast:
 		e.fillCCtxFast(content)
+		return
+	case stratGreedy, stratLazy, stratLazy2:
+		saved := e.buf
+		e.buf = content
+		e.loadLazyDict(len(content))
+		e.buf = saved
 		return
 	}
 	buf := append(append([]byte(nil), content...), make([]byte, 8)...)

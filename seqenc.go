@@ -194,8 +194,80 @@ const (
 	modeRepeat
 )
 
-// selectEncodingType is ZSTD_selectEncodingType for strategy < lazy.
-func selectEncodingType(rep *fseRepeat, max int, mostFrequent, nbSeq int, defaultNormLog uint8, defaultAllowed bool, strat strategy) int {
+const costError = ^uint64(0) // ERROR(GENERIC) as a size_t
+
+// crossEntropyCost is ZSTD_crossEntropyCost: the cost in bits of coding count with the table of norm.
+func crossEntropyCost(norm []int16, accuracyLog uint8, count []uint32, max int) uint64 {
+	shift := 8 - accuracyLog
+	var cost uint64
+	for s := 0; s <= max; s++ {
+		normAcc := uint32(1)
+		if norm[s] != -1 {
+			normAcc = uint32(norm[s])
+		}
+		cost += uint64(count[s] * kInverseProbabilityLog256[normAcc<<shift])
+	}
+	return cost >> 8
+}
+
+// fseBitCost is FSE_bitCost with accuracyLog 8.
+func fseBitCost(ct *cTable, s int) uint32 {
+	const accuracyLog = 8
+	t := ct.tt[s]
+	minNbBits := t.deltaNbBits >> 16
+	threshold := (minNbBits + 1) << 16
+	tableSize := uint32(1) << ct.log
+	deltaFromThreshold := threshold - (t.deltaNbBits + tableSize)
+	normalizedDeltaFromThreshold := (deltaFromThreshold << accuracyLog) >> ct.log // linear interpolation (very approximate)
+	return (minNbBits+1)*(1<<accuracyLog) - normalizedDeltaFromThreshold
+}
+
+// fseBitCostTable is ZSTD_fseBitCost: the cost in bits of coding count with ct, or costError if ct cannot code a symbol.
+func fseBitCostTable(ct *cTable, count []uint32, max int) uint64 {
+	const kAccuracyLog = 8
+	if ct == nil || len(ct.tt)-1 < max { // ZSTD_getFSEMaxSymbolValue(ctable) < max
+		return costError
+	}
+	var cost uint64
+	for s := 0; s <= max; s++ {
+		badCost := (uint32(ct.log) + 1) << kAccuracyLog
+		bitCost := fseBitCost(ct, s)
+		if count[s] == 0 {
+			continue
+		}
+		if bitCost >= badCost {
+			return costError
+		}
+		cost += uint64(count[s]) * uint64(bitCost)
+	}
+	return cost >> kAccuracyLog
+}
+
+// ncountCost is ZSTD_NCountCost: the size in bytes of the normalized count header.
+func ncountCost(count []uint32, max, nbSeq int, fseLog uint8) uint64 {
+	tableLog := optimalTableLog(fseLog, nbSeq, max)
+	var norm [maxSeqSymbols]int16
+	if !normalize(norm[:max+1], tableLog, count[:max+1], nbSeq, max, nbSeq >= 2048) { // ZSTD_useLowProbCount
+		return costError
+	}
+	return uint64(len(writeNCount(nil, norm[:max+1], tableLog)))
+}
+
+// entropyCost is ZSTD_entropyCost: the cost in bits of coding count with the entropy bound.
+func entropyCost(count []uint32, max, total int) uint64 {
+	var cost uint32
+	for s := 0; s <= max; s++ {
+		norm := 256 * count[s] / uint32(total)
+		if count[s] != 0 && norm == 0 {
+			norm = 1
+		}
+		cost += count[s] * kInverseProbabilityLog256[norm]
+	}
+	return uint64(cost >> 8)
+}
+
+// selectEncodingType is ZSTD_selectEncodingType.
+func selectEncodingType(rep *fseRepeat, count []uint32, max int, mostFrequent, nbSeq int, fseLog uint8, prev, predef *cTable, defaultNormLog uint8, defaultAllowed bool, strat strategy) int {
 	if mostFrequent == nbSeq {
 		*rep = fseRepeatNone
 		if defaultAllowed && nbSeq <= 2 {
@@ -203,16 +275,34 @@ func selectEncodingType(rep *fseRepeat, max int, mostFrequent, nbSeq int, defaul
 		}
 		return modeRLE
 	}
-	if defaultAllowed {
-		const staticFseNbSeqMax = 1000
-		mult := 10 - int(strat)
-		dynamicFseNbSeqMin := ((1 << defaultNormLog) * mult) >> 3
-		if *rep == fseRepeatValid && nbSeq < staticFseNbSeqMax {
-			return modeRepeat
+	if strat < stratLazy {
+		if defaultAllowed {
+			const staticFseNbSeqMax = 1000
+			mult := 10 - int(strat)
+			dynamicFseNbSeqMin := ((1 << defaultNormLog) * mult) >> 3
+			if *rep == fseRepeatValid && nbSeq < staticFseNbSeqMax {
+				return modeRepeat
+			}
+			if nbSeq < dynamicFseNbSeqMin || mostFrequent < nbSeq>>(defaultNormLog-1) {
+				*rep = fseRepeatNone
+				return modeBasic
+			}
 		}
-		if nbSeq < dynamicFseNbSeqMin || mostFrequent < nbSeq>>(defaultNormLog-1) {
+	} else {
+		basicCost, repeatCost := costError, costError
+		if defaultAllowed {
+			basicCost = crossEntropyCost(predef.norm, defaultNormLog, count, max)
+		}
+		if *rep != fseRepeatNone {
+			repeatCost = fseBitCostTable(prev, count, max)
+		}
+		compressedCost := ncountCost(count, max, nbSeq, fseLog)<<3 + entropyCost(count, max, nbSeq)
+		if basicCost <= repeatCost && basicCost <= compressedCost {
 			*rep = fseRepeatNone
 			return modeBasic
+		}
+		if repeatCost <= compressedCost {
+			return modeRepeat
 		}
 	}
 	*rep = fseRepeatCheck
@@ -296,7 +386,7 @@ func (e *Encoder) writeSequences() bool {
 	hdrStart := len(e.body)
 
 	max, mf := histCodes(e.llc, &count, 35)
-	llMode := selectEncodingType(&e.nextFse.llRep, max, mf, n, 6, true, e.cp.strategy)
+	llMode := selectEncodingType(&e.nextFse.llRep, count[:], max, mf, n, 9, e.prevFse.ll, llPredef, 6, true, e.cp.strategy)
 	lt, hdr := buildSeqTable(&slots[0], e.body, llMode, count[:], max, e.llc, 9, llPredef, e.prevFse.ll)
 	e.body, lastHdr = hdr, len(hdr)-hdrStart
 	if llMode == modeCompressed {
@@ -306,7 +396,7 @@ func (e *Encoder) writeSequences() bool {
 
 	hdrStart = len(e.body)
 	max, mf = histCodes(e.ofc, &count, 31)
-	ofMode := selectEncodingType(&e.nextFse.ofRep, max, mf, n, 5, max <= 28, e.cp.strategy)
+	ofMode := selectEncodingType(&e.nextFse.ofRep, count[:], max, mf, n, 8, e.prevFse.of, ofPredef, 5, max <= 28, e.cp.strategy)
 	ot, hdr := buildSeqTable(&slots[1], e.body, ofMode, count[:], max, e.ofc, 8, ofPredef, e.prevFse.of)
 	e.body = hdr
 	if ofMode == modeCompressed {
@@ -316,7 +406,7 @@ func (e *Encoder) writeSequences() bool {
 
 	hdrStart = len(e.body)
 	max, mf = histCodes(e.mlc, &count, 52)
-	mlMode := selectEncodingType(&e.nextFse.mlRep, max, mf, n, 6, true, e.cp.strategy)
+	mlMode := selectEncodingType(&e.nextFse.mlRep, count[:], max, mf, n, 9, e.prevFse.ml, mlPredef, 6, true, e.cp.strategy)
 	mt, hdr := buildSeqTable(&slots[2], e.body, mlMode, count[:], max, e.mlc, 9, mlPredef, e.prevFse.ml)
 	e.body = hdr
 	if mlMode == modeCompressed {

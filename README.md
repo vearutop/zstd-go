@@ -29,13 +29,19 @@ io.Copy(dst, zstd.NewReader(out, dec))    // holds one frame at a time
 Goal: functional parity with libzstd; output is meant to be **byte-identical** to libzstd, and the code is a
 function-by-function port of the C sources (match finders, Huffman, FSE selection, block splitting, frame header).
 
-- **Compression, levels -50 to 3 (fast and dfast strategies), with and without a prepared dictionary: byte-identical** to
-  `ZSTD_compressCCtx` / `ZSTD_compress_usingCDict` (no checksum; the port adds the checksum when asked, like libzstd's flag).
-  Checked against libzstd with `-tags libzstd`: fixed suites (klauspost and libzstd fixtures, real data) and
-  15,000 randomized inputs up to 3 MB with five dictionaries, plus fuzzing.
-- Not ported yet: levels 4+ on small inputs and 5+ (the greedy / lazy / btlazy2 / optimal parsers),
-  the "loaded dictionary" API path (`ZSTD_CCtx_loadDictionary`), streaming compression semantics, long-distance matching,
-  multithreading, negative levels, the dictionary trainer.
+- **Compression, levels -50 to 8 (fast, dfast, greedy, lazy and lazy2 strategies), with and without a prepared dictionary:
+  byte-identical** to `ZSTD_compressCCtx` / `ZSTD_compress_usingCDict` (no checksum; the port adds the checksum when asked, like
+  libzstd's flag). That includes the hash-chain and the row-based match finders (windowLog > 14), lazy skipping, the
+  dictMatchState / extDict / loaded-dictionary paths, the strategy-dependent entropy stage (`ZSTD_selectEncodingType` cost model)
+  and the block pre-splitter levels 0-4. Levels 9-12 are identical wherever libzstd picks lazy2 (all sizes for 9-10 except
+  sources <= 16 KB, sources > 256 KB for 11-12).
+  Checked against libzstd with `-tags libzstd`: fixed suites (klauspost and libzstd fixtures, real data), 3000 randomized inputs
+  up to 3 MB with five dictionaries for each of three seeds and every level from -50 to 12, long-match / large-text suites, plus fuzzing.
+- Not ported yet: the binary-tree strategies (btlazy2, btopt, btultra, btultra2: levels 9-12 on small sources and 13+; they panic),
+  dictionaries larger than the match-finder tables (`ZSTD_loadDictionaryContent` loads only the suffix), the dedicated dictionary
+  search, the "loaded dictionary" API path (`ZSTD_CCtx_loadDictionary`), streaming compression semantics, long-distance
+  matching, multithreading, the dictionary trainer. The row match finder's hash salt (`ms->hashSalt`, history of the CCtx) is not
+  modelled: it permutes rows and tags bijectively and does not change the output.
 - Decoder: own FSE/sequence/dictionary code with libzstd's validation (block size, window, empty sequences); klauspost `huff0` for
   Huffman literals (rejects 12-bit tables libzstd accepts). Window size is not enforced.
 - Streaming `Writer`/`Reader` use independent frames (not libzstd's streaming mode).

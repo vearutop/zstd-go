@@ -67,7 +67,7 @@ func dictAndWindowLog(windowLog uint32, srcSize, dictSize uint64) uint32 {
 	}
 }
 
-// adjustCParams is ZSTD_adjustCParams_internal for the strategies implemented so far (no row match finder).
+// adjustCParams is ZSTD_adjustCParams_internal (useRowMatchFinder auto).
 func adjustCParams(cp cParams, srcSize uint64, dictSize uint64, mode cpMode) cParams {
 	const minSrcSize = 513
 	const maxWindowResize = uint64(1) << (windowLogMax - 1)
@@ -107,7 +107,13 @@ func adjustCParams(cp cParams, srcSize uint64, dictSize uint64, mode cpMode) cPa
 		cp.hashLog = min(cp.hashLog, maxShortCacheHashLog)
 		cp.chainLog = min(cp.chainLog, maxShortCacheHashLog)
 	}
-	// ponytail: the row-match-finder adjustments (strategies greedy..lazy2) are not ported yet.
+	// useRowMatchFinder is auto here: conservatively assume it is enabled. We can't hash more than 32 bits in total, so
+	// (hashLog - rowLog + 8) <= 32.
+	if rowMatchFinderSupported(cp.strategy) {
+		if maxHashLog := 32 - rowHashTagBits + rowLogOf(cp); cp.hashLog > maxHashLog {
+			cp.hashLog = maxHashLog
+		}
+	}
 	return cp
 }
 

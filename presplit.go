@@ -1,32 +1,44 @@
 package zstd
 
-// Port of libzstd's block pre-splitter (zstd_preSplit.c), the "byChunks" variant at its lowest level, which is
-// what the dfast strategy selects (splitLevels[dfast] == 1).
+// Port of libzstd's block pre-splitter (zstd_preSplit.c): fromBorders (level 0) and byChunks (levels 1-4).
 
 const (
 	psChunkSize           = 8 << 10
 	psThresholdBase       = 14 // THRESHOLD_PENALTY_RATE - 2
 	psThresholdPenaltyRt  = 16
 	psThresholdPenalty    = 3
-	psSamplingRate        = 43
-	psHashLog             = 8
 	psBlockSize           = 128 << 10
-	psFingerprintCapacity = 1 << psHashLog
+	psFingerprintCapacity = 1 << 10 // HASHTABLESIZE
+	psKnuth               = 0x9e3779b9
 )
+
+// byChunks levels: ZSTD_recordFingerprint_{43,11,5,1} and their hash logs.
+var (
+	psRates    = [...]int{43, 11, 5, 1}
+	psHashLogs = [...]uint32{8, 9, 10, 10}
+)
+
+// hash2 is the pre-splitter's 2-byte hash: for hashLog 8 the byte itself.
+func hash2(p []byte, hashLog uint32) uint32 {
+	if hashLog == 8 {
+		return uint32(p[0])
+	}
+	return (uint32(p[0]) | uint32(p[1])<<8) * psKnuth >> (32 - hashLog)
+}
 
 type fingerprint struct {
 	events   [psFingerprintCapacity]uint32
 	nbEvents uint64
 }
 
-// record is ZSTD_recordFingerprint_43: byte histogram sampled every 43 bytes (hash2 with hashLog 8 is the byte itself).
-func (fp *fingerprint) record(src []byte) {
+// record is ZSTD_recordFingerprint_<rate>: events sampled every rate bytes, hashed to hashLog bits.
+func (fp *fingerprint) record(src []byte, rate int, hashLog uint32) {
 	*fp = fingerprint{}
 	limit := len(src) - 2 + 1 // HASHLENGTH == 2
-	for n := 0; n < limit; n += psSamplingRate {
-		fp.events[src[n]]++
+	for n := 0; n < limit; n += rate {
+		fp.events[hash2(src[n:], hashLog)]++
 	}
-	fp.nbEvents += uint64(limit / psSamplingRate)
+	fp.nbEvents += uint64(limit / rate)
 }
 
 func abs64(v int64) uint64 {
@@ -36,29 +48,31 @@ func abs64(v int64) uint64 {
 	return uint64(v)
 }
 
-func fpDistance(a, b *fingerprint) uint64 {
+func fpDistance(a, b *fingerprint, hashLog uint32) uint64 {
 	var d uint64
-	for n := 0; n < psFingerprintCapacity; n++ {
+	for n := 0; n < 1<<hashLog; n++ {
 		d += abs64(int64(a.events[n])*int64(b.nbEvents) - int64(b.events[n])*int64(a.nbEvents))
 	}
 	return d
 }
 
-func compareFingerprints(ref, nf *fingerprint, penalty int) bool {
+func compareFingerprints(ref, nf *fingerprint, penalty int, hashLog uint32) bool {
 	p50 := ref.nbEvents * nf.nbEvents
-	deviation := fpDistance(ref, nf)
+	deviation := fpDistance(ref, nf, hashLog)
 	threshold := p50 * uint64(psThresholdBase+penalty) / psThresholdPenaltyRt
 	return deviation >= threshold
 }
 
-// splitBlockByChunks returns where to end the block that starts at src (len >= 128 KiB), a multiple of 8 KiB.
-func splitBlockByChunks(src []byte) int {
+// splitBlockByChunks is ZSTD_splitBlock_byChunks: it returns where to end the block that starts at src
+// (len >= 128 KiB), a multiple of 8 KiB.
+func splitBlockByChunks(src []byte, level int) int {
 	var past, nw fingerprint
 	penalty := psThresholdPenalty
-	past.record(src[:psChunkSize])
+	rate, hashLog := psRates[level], psHashLogs[level]
+	past.record(src[:psChunkSize], rate, hashLog)
 	for pos := psChunkSize; pos <= psBlockSize-psChunkSize; pos += psChunkSize {
-		nw.record(src[pos : pos+psChunkSize])
-		if compareFingerprints(&past, &nw, penalty) {
+		nw.record(src[pos:pos+psChunkSize], rate, hashLog)
+		if compareFingerprints(&past, &nw, penalty, hashLog) {
 			return pos
 		}
 		for n := range past.events {
@@ -83,15 +97,15 @@ func splitBlockFromBorders(src []byte) int {
 		nw.events[b]++
 	}
 	past.nbEvents, nw.nbEvents = segment, segment
-	if !compareFingerprints(&past, &nw, 0) {
+	if !compareFingerprints(&past, &nw, 0, 8) {
 		return psBlockSize
 	}
 	for _, b := range src[psBlockSize/2-segment/2 : psBlockSize/2+segment/2] {
 		mid.events[b]++
 	}
 	mid.nbEvents = segment
-	distFromBegin := fpDistance(&past, &mid)
-	distFromEnd := fpDistance(&nw, &mid)
+	distFromBegin := fpDistance(&past, &mid, 8)
+	distFromEnd := fpDistance(&nw, &mid, 8)
 	const minDistance = segment * segment / 3
 	d := int64(distFromBegin) - int64(distFromEnd)
 	if d < 0 {
@@ -115,12 +129,9 @@ func optimalBlockSize(src []byte, blockSizeMax int, savings int64, strat strateg
 	if savings < 3 {
 		return psBlockSize
 	}
-	switch level := splitLevels[strat]; level {
-	case 0:
+	level := splitLevels[strat]
+	if level == 0 {
 		return splitBlockFromBorders(src)
-	case 1:
-		return splitBlockByChunks(src)
-	default:
-		panic("zstd: block split levels above 1 are not ported")
 	}
+	return splitBlockByChunks(src, level-1)
 }
