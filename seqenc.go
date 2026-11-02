@@ -132,8 +132,11 @@ func (e *Encoder) pick(i int, codes []uint8, predef, repeat *cTable, maxLog uint
 	n := len(codes)
 	e.hdr[i] = e.hdr[i][:0]
 	var hist [64]uint32
-	maxSym := 0
+	maxSym, distinct := 0, 0
 	for _, c := range codes {
+		if hist[c] == 0 {
+			distinct++
+		}
 		hist[c]++
 		maxSym = max(maxSym, int(c))
 	}
@@ -143,15 +146,15 @@ func (e *Encoder) pick(i int, codes []uint8, predef, repeat *cTable, maxLog uint
 		return 1, nil
 	}
 	best, mode, ct := -1.0, 0, predef
-	if c := predef.histCost(h); c >= 0 {
-		best = c
-	}
 	if repeat != nil {
-		if c := repeat.histCost(h); c >= 0 && (best < 0 || c <= best) {
-			best, mode, ct = c, 3, repeat
-		}
+		best = repeat.histCost(h)
+		mode, ct = 3, repeat
 	}
-	if n > 2 && best-entropyBits(h, n) > 24 { // a header costs at least ~3 bytes
+	if best < 0 { // no usable dictionary table: the predefined one (a trained table beats it when it fits)
+		best, mode, ct = predef.histCost(h), 0, predef
+	}
+	// A header costs roughly 16 bits plus 4 per distinct symbol; skip the attempt when the entropy bound leaves no room.
+	if n > 2 && best-entropyBits(h, n) > 16+4*float64(distinct) {
 		var norm [64]int16
 		log := optimalTableLog(maxLog, n, maxSym)
 		if normalize(norm[:maxSym+1], log, h, n, maxSym, n >= 2048) {
