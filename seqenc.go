@@ -2,50 +2,96 @@ package zstd
 
 import (
 	"encoding/binary"
-	"errors"
 	"math/bits"
-
-	"github.com/klauspost/compress/huff0"
 )
 
+type hufState struct {
+	t   hufTable
+	rep hufRepeat
+}
+
+// writeLiterals is ZSTD_compressLiterals for dfast: prevHuf is the table state before this block, the result
+// state goes to nextHuf (committed by block() only when the block ends up compressed).
 func (e *Encoder) writeLiterals(s []byte, base int) {
 	lits := e.lits
 	n := len(lits)
-	if n >= 8 {
-		e.lit.Reuse = huff0.ReusePolicyNone
-		if base == 0 && e.dict != nil && e.dict.huff != nil {
-			e.lit.TransferCTable(e.dict.huff)
-			// like libzstd's preferRepeat: small literal runs take the dictionary table without building another
-			e.lit.Reuse = huff0.ReusePolicyAllow
-			if n <= 1024 {
-				e.lit.Reuse = huff0.ReusePolicyPrefer
-			}
-		}
-		var out []byte
-		var reused bool
-		var err error
-		if n < 256 {
-			out, reused, err = huff0.Compress1X(lits, &e.lit)
-		} else {
-			out, reused, err = huff0.Compress4X(lits, &e.lit)
-		}
-		switch {
-		case err == nil && len(out)+5 < n:
-			typ := 2
-			if reused {
-				typ = 3
-			}
-			e.body = litHeader(e.body, typ, n, len(out), n < 256)
-			e.body = append(e.body, out...)
-			return
-		case errors.Is(err, huff0.ErrUseRLE):
-			e.body = litHeader(e.body, 1, n, 0, false)
-			e.body = append(e.body, lits[0])
-			return
+	e.nextHuf = e.prevHuf
+	raw := func() {
+		e.nextHuf = e.prevHuf
+		e.body = litHeader(e.body, 0, n, 0, false)
+		e.body = append(e.body, lits...)
+	}
+	const strategy = int(stratDFast)
+	shift := min(9-strategy, 3)
+	minToCompress := 8 << shift
+	if e.prevHuf.rep == hufRepeatValid {
+		minToCompress = 6
+	}
+	if n < minToCompress {
+		raw()
+		return
+	}
+	lhSize := 3
+	if n >= 1<<10 {
+		lhSize++
+	}
+	if n >= 16<<10 {
+		lhSize++
+	}
+	single := n < 256
+	repeat := e.prevHuf.rep
+	if repeat == hufRepeatValid && lhSize == 3 {
+		single = true
+	}
+	preferRepeat := strategy < int(stratLazy) && n <= 1024
+	out, rle := hufCompress(nil, lits, single, preferRepeat, &e.nextHuf.t, &repeat)
+	cLit := len(out)
+	if out == nil {
+		cLit = 0
+	}
+	typ := 2 // set_compressed
+	if repeat != hufRepeatNone {
+		typ = 3 // set_repeat
+	}
+	minGain := (n >> 6) + 2
+	if cLit == 0 || cLit >= n-minGain {
+		raw()
+		return
+	}
+	if rle && cLit == 1 || cLit == 1 && (n >= 8 || allIdentical(lits)) {
+		e.nextHuf = e.prevHuf
+		e.body = litHeader(e.body, 1, n, 0, false)
+		e.body = append(e.body, lits[0])
+		return
+	}
+	e.nextHuf.rep = e.prevHuf.rep
+	if typ == 2 {
+		e.nextHuf.rep = hufRepeatCheck
+	}
+	e.body = appendLitCompressedHeader(e.body, typ, n, cLit, lhSize, single)
+	e.body = append(e.body, out...)
+}
+
+func allIdentical(b []byte) bool {
+	for _, c := range b {
+		if c != b[0] {
+			return false
 		}
 	}
-	e.body = litHeader(e.body, 0, n, 0, false)
-	e.body = append(e.body, lits...)
+	return true
+}
+
+func appendLitCompressedHeader(b []byte, typ, n, c, lhSize int, single bool) []byte {
+	switch lhSize {
+	case 3:
+		v := uint32(typ) + uint32(map[bool]int{true: 0, false: 1}[single])<<2 + uint32(n)<<4 + uint32(c)<<14
+		return append(b, byte(v), byte(v>>8), byte(v>>16))
+	case 4:
+		return binary.LittleEndian.AppendUint32(b, uint32(typ)+2<<2+uint32(n)<<4+uint32(c)<<18)
+	default:
+		v := uint64(typ) + 3<<2 + uint64(n)<<4 + uint64(c)<<22
+		return append(b, byte(v), byte(v>>8), byte(v>>16), byte(v>>24), byte(v>>32))
+	}
 }
 
 // litHeader writes a literals section header; typ 0 raw, 1 RLE, 2 compressed, 3 treeless.

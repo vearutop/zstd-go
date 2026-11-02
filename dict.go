@@ -19,6 +19,8 @@ type Dict struct {
 	ll, ml, of    *cTable        // repeat tables, nil if none
 	dll, dml, dof *dTable        // the same for decoding
 	huffDec       *huff0.Decoder
+	huffC         hufTable  // literal table for encoding
+	huffRepeat    hufRepeat // how a block may reuse it (libzstd's repeatMode of the dictionary)
 	cdMu          sync.Mutex
 	cdicts        map[int]*cdict // prepared per level
 	raw           []byte
@@ -32,13 +34,19 @@ func LoadDict(b []byte) (*Dict, error) {
 		d.id = binary.LittleEndian.Uint32(b[4:])
 		var err error
 		var rem []byte
-		if d.huff, rem, err = huff0.ReadTable(b[8:], nil); err != nil {
-			// huff0 rejects tables libzstd accepts (12-bit codes); skip the table and go without literal table reuse.
-			hl := huffHeaderLen(b[8:])
-			if hl == 0 || hl > len(b)-8 {
-				return nil, err
-			}
-			d.huff, rem = nil, b[8+hl:]
+		ht, hsz, hasZero, ok := hufReadCTable(b[8:])
+		if !ok {
+			return nil, errors.New("zstd: bad dictionary literal table")
+		}
+		d.huffC = ht
+		d.huffRepeat = hufRepeatCheck
+		if !hasZero && ht.maxSym == 255 { // only a table that codes every symbol may be used blindly
+			d.huffRepeat = hufRepeatValid
+		}
+		rem = b[8+hsz:]
+		// the decoder side uses klauspost's huff0, which rejects 12-bit tables libzstd accepts: go without it then
+		if d.huff, _, err = huff0.ReadTable(b[8:], nil); err != nil {
+			d.huff = nil
 		}
 		if d.huff != nil {
 			d.huffDec = d.huff.Decoder()
@@ -101,17 +109,3 @@ func (d *Dict) Compress(dst, src []byte) []byte {
 	d.pool.Put(e)
 	return dst
 }
-
-// huffHeaderLen returns the byte length of a Huffman table description (weights), 0 if truncated.
-func huffHeaderLen(b []byte) int {
-	if len(b) < 1 {
-		return 0
-	}
-	if b[0] < 128 {
-		return 1 + int(b[0])
-	}
-	return 1 + (int(b[0])-127+1)/2
-}
-
-// Content returns the dictionary's raw content (shared, do not modify).
-func (d *Dict) Content() []byte { return d.content }

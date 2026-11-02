@@ -90,6 +90,7 @@ func TestExact(t *testing.T) {
 		refs[i] = ref.New(r, 3)
 	}
 	nodict := ref.NewNoDict(3)
+	dec0, _ := zstd.NewDecoder()
 	buf := make([]byte, 0, 1<<22)
 	type bucket struct {
 		same, n int
@@ -125,8 +126,15 @@ func TestExact(t *testing.T) {
 		b.n++
 		if ours := e.EncodeAll(c.data, nil); bytes.Equal(ours, libz) {
 			b.same++
-		} else if len(b.first) < 6 {
-			b.first = append(b.first, fmt.Sprintf("%s (len %d: ours %d B, libzstd %d B)", c.name, len(c.data), len(ours), len(libz)))
+		} else if len(b.first) < 8 {
+			why := "?"
+			if c.dict >= 0 {
+				d1, _ := zstd.NewDecoder(dicts[c.dict])
+				why = classify(d1, ours, libz)
+			} else {
+				why = classify(dec0, ours, libz)
+			}
+			b.first = append(b.first, fmt.Sprintf("%s (len %d: ours %d B, libzstd %d B): %s", c.name, len(c.data), len(ours), len(libz), why))
 		}
 	}
 	var keys []string

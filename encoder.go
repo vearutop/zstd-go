@@ -1,7 +1,6 @@
 package zstd
 
 import (
-	"bytes"
 	"encoding/binary"
 	"math/bits"
 
@@ -19,20 +18,21 @@ type Encoder struct {
 	// Level is the compression level; 0 means 3 (libzstd's default). Only level 3 is byte-exact so far.
 	Level int
 
-	buf           []byte // dictionary content ++ source
-	bufDict       *Dict  // dictionary currently loaded at the start of buf
-	cd            *cdict
-	cp            cParams
-	reps          [3]uint32
-	first         bool
-	seqs          []seq
-	lits          []byte
-	body          []byte
-	long, short   []uint32
-	lit           huff0.Scratch
-	llc, ofc, mlc []uint8
-	fresh         [3]cTable
-	hdr           [3][]byte
+	buf              []byte // dictionary content ++ source
+	bufDict          *Dict  // dictionary currently loaded at the start of buf
+	cd               *cdict
+	cp               cParams
+	prevHuf, nextHuf hufState // literal table before / after the current block
+	reps             [3]uint32
+	first            bool
+	seqs             []seq
+	lits             []byte
+	body             []byte
+	long, short      []uint32
+	lit              huff0.Scratch
+	llc, ofc, mlc    []uint8
+	fresh            [3]cTable
+	hdr              [3][]byte
 }
 
 type seq struct{ ll, ml, off uint32 } // off is offBase: 1..3 repcode, else offset+3
@@ -88,8 +88,10 @@ func (e *Encoder) prepare(src []byte) (L int) {
 	e.long = grow(e.long, 1<<e.cp.hashLog)
 	e.short = grow(e.short, 1<<e.cp.chainLog)
 	e.reps = [3]uint32{1, 4, 8}
+	e.prevHuf = hufState{}
 	if e.dict != nil {
 		e.reps = e.dict.reps
+		e.prevHuf = hufState{e.dict.huffC, e.dict.huffRepeat}
 	}
 	return L
 }
@@ -162,31 +164,51 @@ func blockHeader(dst []byte, last bool, typ, size int) []byte {
 	return append(dst, byte(h), byte(h>>8), byte(h>>16))
 }
 
+// block is ZSTD_compress_frameChunk's per-block flow: ZSTD_compressBlock_internal plus the raw / RLE fallbacks.
 func (e *Encoder) block(dst, s []byte, L, base int, last bool) []byte {
-	if len(s) == 0 {
+	n := len(s)
+	if n == 0 {
 		return blockHeader(dst, last, 0, 0)
 	}
 	e.first = base == 0
-	e.seqs, e.lits = e.seqs[:0], e.lits[:0]
-	switch {
-	case e.cd != nil && e.cp.strategy == stratDFast:
-		e.dfastDict(e.cd, e.cp, L, L+base, L+base+len(s))
-	case e.cp.strategy == stratDFast:
-		e.dfastNoDict(e.cp, L+base, L+base+len(s), false)
-	default:
-		panic("zstd: strategy not ported yet")
+	cSize := 0
+	if n >= 6 { // MIN_CBLOCK_SIZE + ZSTD_blockHeaderSize + 1: smaller blocks are not even attempted
+		e.seqs, e.lits = e.seqs[:0], e.lits[:0]
+		switch {
+		case e.cd != nil && e.cp.strategy == stratDFast:
+			e.dfastDict(e.cd, e.cp, L, L+base, L+base+n)
+		case e.cp.strategy == stratDFast:
+			e.dfastNoDict(e.cp, L+base, L+base+n, false)
+		default:
+			panic("zstd: strategy not ported yet")
+		}
+		e.body = e.body[:0]
+		e.writeLiterals(s, base)
+		e.writeSequences()
+		cSize = len(e.body)
+		if cSize >= n-((n>>6)+2) { // ZSTD_entropyCompressSeqStore: not compressible enough
+			cSize = 0
+		}
 	}
-	e.body = e.body[:0]
-	e.writeLiterals(s, base)
-	e.writeSequences()
-	if len(e.body) < len(s) {
-		dst = blockHeader(dst, last, 2, len(e.body))
-		return append(dst, e.body...)
+	const rleMaxLength = 25
+	if !e.first && cSize < rleMaxLength && isRLE(s) {
+		return append(blockHeader(dst, last, 1, n), s[0])
 	}
-	if len(s) > 1 && bytes.Count(s, s[:1]) == len(s) {
-		return append(blockHeader(dst, last, 1, len(s)), s[0])
+	if cSize == 0 {
+		return append(blockHeader(dst, last, 0, n), s...)
 	}
-	return append(blockHeader(dst, last, 0, len(s)), s...)
+	e.prevHuf = e.nextHuf // ZSTD_blockState_confirmRepcodesAndEntropyTables
+	dst = blockHeader(dst, last, 2, cSize)
+	return append(dst, e.body...)
+}
+
+func isRLE(b []byte) bool {
+	for _, c := range b[1:] {
+		if c != b[0] {
+			return false
+		}
+	}
+	return true
 }
 
 func updateRep(r *[3]uint32, offBase uint32, ll0 bool) {
