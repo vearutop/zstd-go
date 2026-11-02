@@ -1,10 +1,30 @@
 # zstd-go
 
-[![Build Status](https://github.com/vearutop/zstd-go/workflows/test-unit/badge.svg)](https://github.com/vearutop/zstd-go/actions?query=branch%3Amaster+workflow%3Atest-unit)
-[![Coverage Status](https://codecov.io/gh/vearutop/zstd-go/branch/master/graph/badge.svg)](https://codecov.io/gh/vearutop/zstd-go)
-[![GoDevDoc](https://img.shields.io/badge/dev-doc-00ADD8?logo=go)](https://pkg.go.dev/github.com/vearutop/zstd-go)
-[![Time Tracker](https://wakatime.com/badge/github/vearutop/zstd-go.svg)](https://wakatime.com/badge/github/vearutop/zstd-go)
-![Code lines](https://sloc.xyz/github/vearutop/zstd-go/?category=code)
-![Comments](https://sloc.xyz/github/vearutop/zstd-go/?category=comments)
+Pure-Go (no cgo) zstd encoder for small values with dictionaries, ported from libzstd (BSD-3).
+Built for clients that compress each record separately with one shared dictionary (see vearutop/aerust-dev#341).
 
-<!--- TODO Update README.md -->
+```go
+d, _ := zstd.LoadDict(dictBytes)          // zstd-format or raw-content dictionary, immutable, shared
+frame := d.Compress(nil, value)           // pooled encoders, safe for concurrent use
+dec, _ := zstd.NewDecoder(d)              // wraps klauspost DecodeAll (single-shot)
+value, _ = dec.DecodeAll(frame, nil)
+
+e := zstd.NewEncoder(d)                   // or own an Encoder (not concurrency-safe, zero allocs per call)
+seekable := e.EncodeSeekable(big, nil, 64<<10) // independent frames + seek table
+r, _ := zstd.OpenSeekable(bytes.NewReader(seekable), int64(len(seekable)), decodeFrame) // ReadAt
+```
+
+Frames are single-segment with content size, an optional checksum (`Encoder.NoChecksum`) and the dictionary id.
+Level is about libzstd 3 (double-fast match finder, repcodes into the dictionary, dictionary FSE/Huffman tables reused).
+
+## Status
+
+- Verified against libzstd's CLI and klauspost's decoder (round trips, fuzz). No cgo in the default build.
+- Blocks after the first in a >128 KB value match only within themselves and the dictionary.
+- Not done: own decoder, SIMD (the profile does not point at byte compares), optimal parsing.
+
+## Benchmarks
+
+`go test -bench .` runs the port against klauspost; `-tags libzstd` adds a cgo libzstd reference
+(edit the `#cgo` paths in `internal/ref`). `ZSTD_DATA=lines.log ZSTD_DICT=dict.bin go test -run Real -bench Real`
+evaluates real data (first 3000 lines are the training set).

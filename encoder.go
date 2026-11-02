@@ -275,6 +275,27 @@ func (e *Encoder) findSequences(s []byte, base int) {
 			}
 			off = uint32(ip - m)
 		}
+		// lazy: a clearly longer match one byte later wins
+		if !isRep && ip+1 <= ilimit {
+			v1 := le64(s, ip+1)
+			h1 := hash8(v1, hl)
+			if c1 := long[h1]; c1 != 0 && int(c1) <= ip+1 && le64(s, int(c1)-1) == v1 { // candidate must precede ip+1 (the table already holds this iteration's position)
+				m1 := int(c1) - 1
+				if l1 := 8 + count(s[ip+9:], s[m1+8:]); l1 >= ml+2 {
+					ip++
+					ml, off = l1, uint32(ip-m1)
+				}
+			} else if c := int(dl2(dl, dhl, v1)); c != 0 && c+7 <= len(dc) && le64(dc, c-1) == v1 {
+				l1 := count(dc[c-1:], s[ip+1:])
+				if base == 0 && c-1+l1 == len(dc) && l1 < n-ip-1 {
+					l1 += count(s, s[ip+1+l1:])
+				}
+				if l1 >= ml+2 {
+					ip++
+					ml, off = l1, uint32(len(dc)-(c-1))+uint32(base+ip)
+				}
+			}
+		}
 		ll := uint32(ip - anchor)
 		e.lits = append(e.lits, s[anchor:ip]...)
 		ob := offBaseFor(off, ll == 0, &e.reps)
