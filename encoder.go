@@ -18,10 +18,15 @@ type Encoder struct {
 	// Level is the compression level; 0 means 3 (libzstd's default). Only level 3 is byte-exact so far.
 	Level int
 
-	buf              []byte // dictionary content ++ source
-	bufDict          *Dict  // dictionary currently loaded at the start of buf
-	cd               *cdict
-	cp               cParams
+	buf     []byte // dictionary content ++ source
+	bufDict *Dict  // dictionary currently loaded at the start of buf
+	cd      *cdict
+	cp      cParams
+	// per-frame window state (libzstd's ms->window / loadedDictEnd)
+	copyMode         bool     // dictionary copied into the window (extDict loop) instead of attached
+	loadedDictEnd    uint32   // 0 once the dictionary is out of the window
+	dictLimit        uint32   // index where the source starts
+	lowLimit         uint32   // lowest valid index (start of the dictionary in copy mode)
 	prevHuf, nextHuf hufState // literal table before / after the current block
 	reps             [3]uint32
 	first            bool
@@ -45,7 +50,7 @@ func NewEncoder(d *Dict) *Encoder { return &Encoder{dict: d} }
 func (e *Encoder) EncodeAll(src, dst []byte) []byte {
 	dst = e.header(dst, uint64(len(src)))
 	L := e.prepare(src)
-	bs := min(blockMax, 1<<e.cp.windowLog, max(len(src), 1))
+	bs := min(blockMax, 1<<e.cp.windowLog, max(len(src), 1)) // blockSize = min(128 KiB, windowSize)
 	for base := 0; ; base += bs {
 		end := min(base+bs, len(src))
 		dst = e.block(dst, src[base:end], L, base, end == len(src))
@@ -66,10 +71,13 @@ func (e *Encoder) level() int {
 	return e.Level
 }
 
-// prepare loads dictionary and source into e.buf, derives the working parameters and clears the tables.
-// It returns the dictionary length.
+var attachDictSizeCutoffs = [...]int{8 << 10, 8 << 10, 16 << 10, 32 << 10, 32 << 10, 32 << 10, 32 << 10, 32 << 10, 8 << 10, 8 << 10}
+
+// prepare loads dictionary and source into e.buf, derives the working parameters (ZSTD_compressBegin_usingCDict_internal,
+// ZSTD_resetCCtx_byAttachingCDict / byCopyingCDict) and sets up the tables. It returns the dictionary length.
 func (e *Encoder) prepare(src []byte) (L int) {
 	n := uint64(len(src))
+	e.copyMode, e.loadedDictEnd, e.dictLimit, e.lowLimit = false, 0, windowStartIndex, windowStartIndex
 	if d := e.dict; d != nil && len(d.content) > 0 {
 		L = len(d.content)
 		if e.bufDict != d {
@@ -78,16 +86,49 @@ func (e *Encoder) prepare(src []byte) (L int) {
 		}
 		e.buf = append(e.buf[:L], src...)
 		e.cd = d.cdict(e.level())
-		e.cp = adjustCParams(e.cd.cp, n, uint64(L), cpmAttachDict)
-		e.cp.windowLog = e.cd.cp.windowLog // ZSTD_resetCCtx_byAttachingCDict keeps the window log
-		// ponytail: sources above the attach cutoff (16 KiB for dfast) copy the dictionary tables in libzstd; not ported
+		cdp := e.cd.cp
+		// ZSTD_compressBegin_internal: the prepared dictionary is reused for small sources only; for large ones
+		// libzstd loads the dictionary content into the context with the parameters of the source size.
+		reuse := n < 128<<10 || n < uint64(L)*6
+		params := cdp
+		if !reuse {
+			params = getCParams(e.level(), n, uint64(L), cpmUnknown)
+		}
+		limited := min(n, 1<<19)
+		limitedLog := uint32(1)
+		if limited > 1 {
+			limitedLog = highbit32(uint32(limited-1)) + 1
+		}
+		windowLog := max(params.windowLog, limitedLog)
+		e.loadedDictEnd = uint32(L + windowStartIndex)
+		e.dictLimit = e.loadedDictEnd
+		switch {
+		case !reuse:
+			e.copyMode = true
+			e.cp = params
+			e.cp.windowLog = windowLog
+			e.long = grow(e.long, 1<<e.cp.hashLog)
+			e.short = grow(e.short, 1<<e.cp.chainLog)
+			e.fillDictTables(d.content)
+		case n <= uint64(attachDictSizeCutoffs[cdp.strategy]):
+			e.cp = adjustCParams(cdp, n, uint64(L), cpmAttachDict)
+			e.cp.windowLog = windowLog
+			e.long = grow(e.long, 1<<e.cp.hashLog)
+			e.short = grow(e.short, 1<<e.cp.chainLog)
+		default:
+			e.copyMode = true
+			e.cp = cdp
+			e.cp.windowLog = windowLog
+			e.long = growCopy(e.long, e.cd.long)
+			e.short = growCopy(e.short, e.cd.short)
+		}
 	} else {
 		e.buf = append(e.buf[:0], src...)
 		e.bufDict, e.cd = nil, nil
 		e.cp = getCParams(e.level(), n, 0, cpmUnknown)
+		e.long = grow(e.long, 1<<e.cp.hashLog)
+		e.short = grow(e.short, 1<<e.cp.chainLog)
 	}
-	e.long = grow(e.long, 1<<e.cp.hashLog)
-	e.short = grow(e.short, 1<<e.cp.chainLog)
 	e.reps = [3]uint32{1, 4, 8}
 	e.prevHuf, e.prevFse = hufState{}, fseTables{}
 	if e.dict != nil {
@@ -96,6 +137,18 @@ func (e *Encoder) prepare(src []byte) (L int) {
 		e.prevFse = e.dict.fse
 	}
 	return L
+}
+
+// growCopy fills b with the untagged indices of a tagged dictionary table (ZSTD_copyCDictTableIntoCCtx).
+func growCopy(b []uint32, tagged []uint32) []uint32 {
+	if cap(b) < len(tagged) {
+		b = make([]uint32, len(tagged))
+	}
+	b = b[:len(tagged)]
+	for i, v := range tagged {
+		b[i] = v >> shortCacheTagBits
+	}
+	return b
 }
 
 func grow(b []uint32, n int) []uint32 {
@@ -176,14 +229,7 @@ func (e *Encoder) block(dst, s []byte, L, base int, last bool) []byte {
 	cSize := 0
 	if n >= 6 { // MIN_CBLOCK_SIZE + ZSTD_blockHeaderSize + 1: smaller blocks are not even attempted
 		e.seqs, e.lits = e.seqs[:0], e.lits[:0]
-		switch {
-		case e.cd != nil && e.cp.strategy == stratDFast:
-			e.dfastDict(e.cd, e.cp, L, L+base, L+base+n)
-		case e.cp.strategy == stratDFast:
-			e.dfastNoDict(e.cp, L+base, L+base+n, false)
-		default:
-			panic("zstd: strategy not ported yet")
-		}
+		e.matchFind(L, base, n)
 		e.body = e.body[:0]
 		e.writeLiterals(s, base)
 		if !e.writeSequences() {
@@ -266,4 +312,41 @@ func offRepeatAfterBlock(r fseRepeat) fseRepeat {
 		return fseRepeatCheck
 	}
 	return r
+}
+
+// matchFind runs the match finder libzstd would pick for this block (ZSTD_selectBlockCompressor).
+func (e *Encoder) matchFind(L, base, n int) {
+	if e.cp.strategy != stratDFast {
+		panic("zstd: strategy not ported yet")
+	}
+	start, end := L+base, L+base+n
+	maxDist := uint32(1) << e.cp.windowLog
+	if e.loadedDictEnd != 0 && uint32(end+windowStartIndex) > maxDist+e.loadedDictEnd { // ZSTD_checkDictValidity
+		e.loadedDictEnd = 0
+	}
+	switch {
+	case e.copyMode:
+		endIndex := uint32(end + windowStartIndex)
+		low := e.lowLimit // ZSTD_getLowestMatchIndex
+		if e.loadedDictEnd == 0 && endIndex-low > maxDist {
+			low = endIndex - maxDist
+		}
+		e.dfastExtDict(e.cp, start, end, low, e.dictLimit)
+	case e.cd != nil && e.loadedDictEnd != 0:
+		e.dfastDict(e.cd, e.cp, L, start, end)
+	default:
+		e.dfastNoDict(e.cp, start, end, e.dictLimit, false)
+	}
+}
+
+// fillDictTables is ZSTD_fillDoubleHashTableForCCtx with ZSTD_dtlm_fast: every third dictionary position.
+func (e *Encoder) fillDictTables(content []byte) {
+	buf := append(append([]byte(nil), content...), make([]byte, 8)...)
+	iend := len(content) - hashReadSize
+	for ip := 0; ip+2 <= iend; ip += 3 {
+		v := rd64(buf, ip)
+		curr := uint32(ip + windowStartIndex)
+		e.short[hashPtr(v, e.cp.chainLog, e.cp.minMatch)] = curr
+		e.long[hashPtr(v, e.cp.hashLog, 8)] = curr
+	}
 }

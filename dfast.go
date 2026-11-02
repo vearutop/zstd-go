@@ -262,13 +262,13 @@ func getLowestPrefixIndex(lowestValid, curr, windowLog uint32, isDictionary bool
 
 // dfastNoDict is ZSTD_compressBlock_doubleFast_noDict_generic for the block buf[start:iend].
 // lowestValid is the window start index; isDict is set when a dictionary is part of the window (copy mode).
-func (e *Encoder) dfastNoDict(cp cParams, start, iend int, isDict bool) {
+func (e *Encoder) dfastNoDict(cp cParams, start, iend int, lowestValid uint32, isDict bool) {
 	buf := e.buf
 	hBitsL, hBitsS, mls := cp.hashLog, cp.chainLog, cp.minMatch
 	hashLong, hashSmall := e.long, e.short
 	idx := func(p int) uint32 { return uint32(p + windowStartIndex) }
 	endIndex := idx(iend)
-	prefixLowestIndex := getLowestPrefixIndex(windowStartIndex, endIndex, cp.windowLog, isDict)
+	prefixLowestIndex := getLowestPrefixIndex(lowestValid, endIndex, cp.windowLog, isDict)
 	prefixLowest := int(prefixLowestIndex) - windowStartIndex
 	ilimit := iend - hashReadSize
 	offset1, offset2 := e.reps[0], e.reps[1]
@@ -281,7 +281,7 @@ func (e *Encoder) dfastNoDict(cp cParams, start, iend int, isDict bool) {
 	}
 	{
 		current := idx(ip)
-		windowLow := getLowestPrefixIndex(windowStartIndex, current, cp.windowLog, isDict)
+		windowLow := getLowestPrefixIndex(lowestValid, current, cp.windowLog, isDict)
 		maxRep := current - windowLow
 		if offset2 > maxRep {
 			offsetSaved2, offset2 = offset2, 0
@@ -416,5 +416,117 @@ func (e *Encoder) dfastNoDict(cp cParams, start, iend int, isDict bool) {
 	} else {
 		e.reps[1] = offsetSaved2
 	}
+	e.lits = append(e.lits, buf[anchor:iend]...)
+}
+
+// dfastExtDict is ZSTD_compressBlock_doubleFast_extDict_generic: the dictionary sits below the prefix in the window
+// (copy mode). lowLimit is ZSTD_getLowestMatchIndex, dictLimit the index where the source starts.
+func (e *Encoder) dfastExtDict(cp cParams, start, iend int, lowLimit, dictLimit uint32) {
+	buf := e.buf
+	hBitsL, hBitsS, mls := cp.hashLog, cp.chainLog, cp.minMatch
+	hashLong, hashSmall := e.long, e.short
+	idx := func(p int) uint32 { return uint32(p + windowStartIndex) }
+	dictStartIndex := lowLimit
+	prefixStartIndex := max(dictLimit, lowLimit)
+	prefixStart := int(prefixStartIndex) - windowStartIndex
+	dictStart := int(dictStartIndex) - windowStartIndex
+	if prefixStartIndex == dictStartIndex {
+		e.dfastNoDict(cp, start, iend, dictLimit, false)
+		return
+	}
+	ilimit := iend - 8
+	offset1, offset2 := e.reps[0], e.reps[1]
+	ip, anchor := start, start
+
+	lowPtr := func(index uint32) int { // lowMatchPtr
+		if index < prefixStartIndex {
+			return dictStart
+		}
+		return prefixStart
+	}
+	for ip < ilimit {
+		v := rd64(buf, ip)
+		hSmall, hLong := hashPtr(v, hBitsS, mls), hashPtr(v, hBitsL, 8)
+		matchIndex, matchLongIndex := hashSmall[hSmall], hashLong[hLong]
+		match, matchLong := int(matchIndex)-windowStartIndex, int(matchLongIndex)-windowStartIndex
+		curr := idx(ip)
+		repIndex := curr + 1 - offset1
+		hashSmall[hSmall], hashLong[hLong] = curr, curr
+
+		var mLength int
+		if overlapOK(prefixStartIndex, repIndex) && offset1 <= curr+1-dictStartIndex && repIndex >= windowStartIndex &&
+			rd32(buf, int(repIndex)-windowStartIndex) == rd32(buf, ip+1) {
+			mLength = cnt(buf, ip+1+4, int(repIndex)-windowStartIndex+4, iend) + 4
+			ip++
+			e.storeSeq(anchor, ip-anchor, 1, mLength)
+		} else if matchLongIndex > dictStartIndex && rd64(buf, matchLong) == v {
+			mLength = cnt(buf, ip+8, matchLong+8, iend) + 8
+			offset := curr - matchLongIndex
+			low := lowPtr(matchLongIndex)
+			for ip > anchor && matchLong > low && buf[ip-1] == buf[matchLong-1] {
+				ip--
+				matchLong--
+				mLength++
+			}
+			offset2, offset1 = offset1, offset
+			e.storeSeq(anchor, ip-anchor, offset+3, mLength)
+		} else if matchIndex > dictStartIndex && rd32(buf, match) == uint32(v) {
+			h3 := hashPtr(rd64(buf, ip+1), hBitsL, 8)
+			matchIndex3 := hashLong[h3]
+			match3 := int(matchIndex3) - windowStartIndex
+			hashLong[h3] = curr + 1
+			var offset uint32
+			if matchIndex3 > dictStartIndex && rd64(buf, match3) == rd64(buf, ip+1) {
+				mLength = cnt(buf, ip+9, match3+8, iend) + 8
+				ip++
+				offset = curr + 1 - matchIndex3
+				low := lowPtr(matchIndex3)
+				for ip > anchor && match3 > low && buf[ip-1] == buf[match3-1] {
+					ip--
+					match3--
+					mLength++
+				}
+			} else {
+				mLength = cnt(buf, ip+4, match+4, iend) + 4
+				offset = curr - matchIndex
+				low := lowPtr(matchIndex)
+				for ip > anchor && match > low && buf[ip-1] == buf[match-1] {
+					ip--
+					match--
+					mLength++
+				}
+			}
+			offset2, offset1 = offset1, offset
+			e.storeSeq(anchor, ip-anchor, offset+3, mLength)
+		} else {
+			ip += (ip-anchor)>>searchStrength + 1
+			continue
+		}
+		ip += mLength
+		anchor = ip
+		if ip <= ilimit {
+			ins := curr + 2
+			hashLong[hashPtr(rd64(buf, int(ins)-windowStartIndex), hBitsL, 8)] = ins
+			hashLong[hashPtr(rd64(buf, ip-2), hBitsL, 8)] = idx(ip - 2)
+			hashSmall[hashPtr(rd64(buf, int(ins)-windowStartIndex), hBitsS, mls)] = ins
+			hashSmall[hashPtr(rd64(buf, ip-1), hBitsS, mls)] = idx(ip - 1)
+			for ip <= ilimit {
+				cur2 := idx(ip)
+				rep2 := cur2 - offset2
+				if !(overlapOK(prefixStartIndex, rep2) && offset2 <= cur2-dictStartIndex && rep2 >= windowStartIndex &&
+					rd32(buf, int(rep2)-windowStartIndex) == rd32(buf, ip)) {
+					break
+				}
+				l2 := cnt(buf, ip+4, int(rep2)-windowStartIndex+4, iend) + 4
+				offset2, offset1 = offset1, offset2
+				e.storeSeq(anchor, 0, 1, l2)
+				hashSmall[hashPtr(rd64(buf, ip), hBitsS, mls)] = cur2
+				hashLong[hashPtr(rd64(buf, ip), hBitsL, 8)] = cur2
+				ip += l2
+				anchor = ip
+			}
+		}
+	}
+	e.reps[0], e.reps[1] = offset1, offset2
 	e.lits = append(e.lits, buf[anchor:iend]...)
 }
