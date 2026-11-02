@@ -72,13 +72,55 @@ func splitBlockByChunks(src []byte) int {
 	return psBlockSize
 }
 
-// optimalBlockSize is ZSTD_optimalBlockSize for dfast.
-func optimalBlockSize(src []byte, blockSizeMax int, savings int64) int {
+// fromBorders is ZSTD_splitBlock_fromBorders (level 0, strategy fast).
+func splitBlockFromBorders(src []byte) int {
+	const segment = 512
+	var past, nw, mid fingerprint
+	for _, b := range src[:segment] {
+		past.events[b]++
+	}
+	for _, b := range src[psBlockSize-segment : psBlockSize] {
+		nw.events[b]++
+	}
+	past.nbEvents, nw.nbEvents = segment, segment
+	if !compareFingerprints(&past, &nw, 0) {
+		return psBlockSize
+	}
+	for _, b := range src[psBlockSize/2-segment/2 : psBlockSize/2+segment/2] {
+		mid.events[b]++
+	}
+	mid.nbEvents = segment
+	distFromBegin := fpDistance(&past, &mid)
+	distFromEnd := fpDistance(&nw, &mid)
+	const minDistance = segment * segment / 3
+	d := int64(distFromBegin) - int64(distFromEnd)
+	if d < 0 {
+		d = -d
+	}
+	if d < minDistance {
+		return 64 << 10
+	}
+	if distFromBegin > distFromEnd {
+		return 32 << 10
+	}
+	return 96 << 10
+}
+
+// optimalBlockSize is ZSTD_optimalBlockSize with the default (auto) split level of the strategy.
+func optimalBlockSize(src []byte, blockSizeMax int, savings int64, strat strategy) int {
+	splitLevels := [...]int{0, 0, 1, 2, 2, 3, 3, 4, 4, 4}
 	if len(src) < psBlockSize || blockSizeMax < psBlockSize {
 		return min(len(src), blockSizeMax)
 	}
 	if savings < 3 {
 		return psBlockSize
 	}
-	return splitBlockByChunks(src)
+	switch level := splitLevels[strat]; level {
+	case 0:
+		return splitBlockFromBorders(src)
+	case 1:
+		return splitBlockByChunks(src)
+	default:
+		panic("zstd: block split levels above 1 are not ported")
+	}
 }

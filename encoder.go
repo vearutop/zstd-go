@@ -53,7 +53,7 @@ func (e *Encoder) EncodeAll(src, dst []byte) []byte {
 	bsMax := min(blockMax, 1<<e.cp.windowLog, max(len(src), 1)) // cctx->blockSizeMax = min(128 KiB, windowSize)
 	var savings int64
 	for base := 0; ; {
-		bs := optimalBlockSize(src[base:], bsMax, savings)
+		bs := optimalBlockSize(src[base:], bsMax, savings, e.cp.strategy)
 		end := base + bs
 		before := len(dst)
 		dst = e.block(dst, src[base:end], L, base, end == len(src))
@@ -112,14 +112,12 @@ func (e *Encoder) prepare(src []byte) (L int) {
 			e.copyMode = true
 			e.cp = params
 			e.cp.windowLog = windowLog
-			e.long = grow(e.long, 1<<e.cp.hashLog)
-			e.short = grow(e.short, 1<<e.cp.chainLog)
+			e.growTables()
 			e.fillDictTables(d.content)
 		case n <= uint64(attachDictSizeCutoffs[cdp.strategy]):
 			e.cp = adjustCParams(cdp, n, e.cd.dictSize, cpmAttachDict)
 			e.cp.windowLog = windowLog
-			e.long = grow(e.long, 1<<e.cp.hashLog)
-			e.short = grow(e.short, 1<<e.cp.chainLog)
+			e.growTables()
 		default:
 			e.copyMode = true
 			e.cp = cdp
@@ -131,8 +129,7 @@ func (e *Encoder) prepare(src []byte) (L int) {
 		e.buf = append(e.buf[:0], src...)
 		e.bufDict, e.cd = nil, nil
 		e.cp = getCParams(e.level(), n, 0, cpmUnknown)
-		e.long = grow(e.long, 1<<e.cp.hashLog)
-		e.short = grow(e.short, 1<<e.cp.chainLog)
+		e.growTables()
 	}
 	e.reps = [3]uint32{1, 4, 8}
 	e.prevHuf, e.prevFse = hufState{}, fseTables{}
@@ -333,9 +330,6 @@ func offRepeatAfterBlock(r fseRepeat) fseRepeat {
 
 // matchFind runs the match finder libzstd would pick for this block (ZSTD_selectBlockCompressor).
 func (e *Encoder) matchFind(L, base, n int) {
-	if e.cp.strategy != stratDFast {
-		panic("zstd: strategy not ported yet")
-	}
 	start, end := L+base, L+base+n
 	maxDist := uint32(1) << e.cp.windowLog
 	if blockEnd := uint32(end + windowStartIndex); blockEnd > maxDist+e.loadedDictEnd { // ZSTD_checkDictValidity
@@ -346,23 +340,57 @@ func (e *Encoder) matchFind(L, base, n int) {
 		e.dictLimit = max(e.dictLimit, e.lowLimit)
 		e.loadedDictEnd = 0
 	}
-	switch {
-	case e.copyMode:
-		endIndex := uint32(end + windowStartIndex)
-		low := e.lowLimit // ZSTD_getLowestMatchIndex
-		if e.loadedDictEnd == 0 && endIndex-low > maxDist {
-			low = endIndex - maxDist
+	attached := e.cd != nil && e.loadedDictEnd != 0 && !e.copyMode
+	switch e.cp.strategy {
+	case stratFast:
+		switch {
+		case e.copyMode:
+			e.fastExtDict(e.cp, start, end, e.lowMatchIndex(end, maxDist), e.dictLimit)
+		case attached:
+			e.fastDict(e.cd, e.cp, L, start, end)
+		default:
+			e.fastNoDict(e.cp, start, end, e.dictLimit, false)
 		}
-		e.dfastExtDict(e.cp, start, end, low, e.dictLimit)
-	case e.cd != nil && e.loadedDictEnd != 0:
-		e.dfastDict(e.cd, e.cp, L, start, end)
+	case stratDFast:
+		switch {
+		case e.copyMode:
+			e.dfastExtDict(e.cp, start, end, e.lowMatchIndex(end, maxDist), e.dictLimit)
+		case attached:
+			e.dfastDict(e.cd, e.cp, L, start, end)
+		default:
+			e.dfastNoDict(e.cp, start, end, e.dictLimit, false)
+		}
 	default:
-		e.dfastNoDict(e.cp, start, end, e.dictLimit, false)
+		panic("zstd: strategy not ported yet")
 	}
 }
 
-// fillDictTables is ZSTD_fillDoubleHashTableForCCtx with ZSTD_dtlm_fast: every third dictionary position.
+// lowMatchIndex is ZSTD_getLowestMatchIndex.
+func (e *Encoder) lowMatchIndex(end int, maxDist uint32) uint32 {
+	endIndex := uint32(end + windowStartIndex)
+	low := e.lowLimit
+	if e.loadedDictEnd == 0 && endIndex-low > maxDist {
+		low = endIndex - maxDist
+	}
+	return low
+}
+
+// growTables clears the working tables sized by the parameters (the fast strategy has no second table).
+func (e *Encoder) growTables() {
+	e.long = grow(e.long, 1<<e.cp.hashLog)
+	if e.cp.strategy == stratFast {
+		e.short = e.short[:0]
+		return
+	}
+	e.short = grow(e.short, 1<<e.cp.chainLog)
+}
+
+// fillDictTables loads the dictionary into the context tables (ZSTD_dtlm_fast, every third position).
 func (e *Encoder) fillDictTables(content []byte) {
+	if e.cp.strategy == stratFast {
+		e.fillCCtxFast(content)
+		return
+	}
 	buf := append(append([]byte(nil), content...), make([]byte, 8)...)
 	iend := len(content) - hashReadSize
 	for ip := 0; ip+2 <= iend; ip += 3 {

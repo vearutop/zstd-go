@@ -40,8 +40,14 @@ type cdict struct {
 // newCDict prepares a dictionary; dictSize is libzstd's dictContentSize, the whole dictionary buffer (header included).
 func newCDict(content []byte, dictSize uint64, level int) *cdict {
 	cd := &cdict{cp: getCParams(level, contentSizeUnknown, dictSize, cpmCreateCDict), dictSize: dictSize}
-	if cd.cp.strategy != stratDFast {
-		return cd // ponytail: only dfast tables are built so far
+	switch cd.cp.strategy {
+	case stratFast:
+		cd.long = make([]uint32, 1<<cd.cp.hashLog)
+		fillCDictFast(cd, content)
+		return cd
+	case stratDFast:
+	default:
+		return cd // ponytail: only fast and dfast tables are built so far
 	}
 	cd.long = make([]uint32, 1<<cd.cp.hashLog)
 	cd.short = make([]uint32, 1<<cd.cp.chainLog)

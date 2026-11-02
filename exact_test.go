@@ -182,6 +182,10 @@ func FuzzExact(f *testing.F) {
 
 // TestExactRandom: log-uniform sizes up to ~700 KB, mixed content, several dictionaries.
 func TestExactRandom(t *testing.T) {
+	level := 3
+	if s := os.Getenv("EXACT_LEVEL"); s != "" {
+		fmt.Sscan(s, &level)
+	}
 	_, raw0 := loadDict(t)
 	files := readZip(t, "testdata/klauspost/dict-tests-small.zip")
 	rawDicts := [][]byte{raw0, files["d1.dict"], files["d3.dict"], bytes.Repeat([]byte("raw content dictionary, no entropy tables. "), 200), []byte("tiny dict")}
@@ -193,9 +197,9 @@ func TestExactRandom(t *testing.T) {
 			t.Fatal(err)
 		}
 		dicts = append(dicts, d)
-		refs = append(refs, ref.New(r, 3))
+		refs = append(refs, ref.New(r, level))
 	}
-	noDict := ref.NewNoDict(3)
+	noDict := ref.NewNoDict(level)
 	seed, cases, maxN := int64(77), 600, 700000.0
 	if s := os.Getenv("EXACT_SEED"); s != "" {
 		fmt.Sscan(s, &seed)
@@ -251,9 +255,13 @@ func TestExactRandom(t *testing.T) {
 			e, libz = zstd.NewEncoder(dicts[di]), refs[di].Compress(buf, in)
 		}
 		e.NoChecksum = true
+		e.Level = level
 		total++
 		if ours := e.EncodeAll(in, nil); !bytes.Equal(ours, libz) {
 			bad++
+			if dir := os.Getenv("EXACT_DUMP"); dir != "" && bad <= 3 {
+				os.WriteFile(fmt.Sprintf("%s/fail-%d.bin", dir, i), in, 0o644)
+			}
 			if bad <= 8 {
 				var dd *zstd.Decoder
 				if di < 0 {
@@ -286,4 +294,14 @@ func TestExactReal(t *testing.T) {
 		}
 	}
 	t.Logf("%d / %d identical", len(lines)-bad, len(lines))
+}
+
+// TestExactLevels runs the randomized comparison for every level with a ported strategy.
+func TestExactLevels(t *testing.T) {
+	for _, level := range []int{-50, -7, -3, -1, 1, 2, 3} {
+		t.Run(fmt.Sprint(level), func(t *testing.T) {
+			t.Setenv("EXACT_LEVEL", fmt.Sprint(level))
+			TestExactRandom(t)
+		})
+	}
 }

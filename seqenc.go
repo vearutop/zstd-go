@@ -21,7 +21,11 @@ func (e *Encoder) writeLiterals(s []byte, base int) {
 		e.body = litHeader(e.body, 0, n, 0, false)
 		e.body = append(e.body, lits...)
 	}
-	const strategy = int(stratDFast)
+	strategy := int(e.cp.strategy)
+	if e.cp.strategy == stratFast && e.cp.targetLength > 0 { // ZSTD_literalsCompressionIsDisabled
+		raw()
+		return
+	}
 	shift := min(9-strategy, 3)
 	minToCompress := 8 << shift
 	if e.prevHuf.rep == hufRepeatValid {
@@ -191,7 +195,7 @@ const (
 )
 
 // selectEncodingType is ZSTD_selectEncodingType for strategy < lazy.
-func selectEncodingType(rep *fseRepeat, max int, mostFrequent, nbSeq int, defaultNormLog uint8, defaultAllowed bool) int {
+func selectEncodingType(rep *fseRepeat, max int, mostFrequent, nbSeq int, defaultNormLog uint8, defaultAllowed bool, strat strategy) int {
 	if mostFrequent == nbSeq {
 		*rep = fseRepeatNone
 		if defaultAllowed && nbSeq <= 2 {
@@ -201,7 +205,7 @@ func selectEncodingType(rep *fseRepeat, max int, mostFrequent, nbSeq int, defaul
 	}
 	if defaultAllowed {
 		const staticFseNbSeqMax = 1000
-		mult := 10 - int(stratDFast)
+		mult := 10 - int(strat)
 		dynamicFseNbSeqMin := ((1 << defaultNormLog) * mult) >> 3
 		if *rep == fseRepeatValid && nbSeq < staticFseNbSeqMax {
 			return modeRepeat
@@ -292,7 +296,7 @@ func (e *Encoder) writeSequences() bool {
 	hdrStart := len(e.body)
 
 	max, mf := histCodes(e.llc, &count, 35)
-	llMode := selectEncodingType(&e.nextFse.llRep, max, mf, n, 6, true)
+	llMode := selectEncodingType(&e.nextFse.llRep, max, mf, n, 6, true, e.cp.strategy)
 	lt, hdr := buildSeqTable(&slots[0], e.body, llMode, count[:], max, e.llc, 9, llPredef, e.prevFse.ll)
 	e.body, lastHdr = hdr, len(hdr)-hdrStart
 	if llMode == modeCompressed {
@@ -302,7 +306,7 @@ func (e *Encoder) writeSequences() bool {
 
 	hdrStart = len(e.body)
 	max, mf = histCodes(e.ofc, &count, 31)
-	ofMode := selectEncodingType(&e.nextFse.ofRep, max, mf, n, 5, max <= 28)
+	ofMode := selectEncodingType(&e.nextFse.ofRep, max, mf, n, 5, max <= 28, e.cp.strategy)
 	ot, hdr := buildSeqTable(&slots[1], e.body, ofMode, count[:], max, e.ofc, 8, ofPredef, e.prevFse.of)
 	e.body = hdr
 	if ofMode == modeCompressed {
@@ -312,7 +316,7 @@ func (e *Encoder) writeSequences() bool {
 
 	hdrStart = len(e.body)
 	max, mf = histCodes(e.mlc, &count, 52)
-	mlMode := selectEncodingType(&e.nextFse.mlRep, max, mf, n, 6, true)
+	mlMode := selectEncodingType(&e.nextFse.mlRep, max, mf, n, 6, true, e.cp.strategy)
 	mt, hdr := buildSeqTable(&slots[2], e.body, mlMode, count[:], max, e.mlc, 9, mlPredef, e.prevFse.ml)
 	e.body = hdr
 	if mlMode == modeCompressed {
