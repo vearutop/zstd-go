@@ -89,3 +89,17 @@ func classify(dec *zstd.Decoder, ours, theirs []byte) string {
 	}
 	return "tail"
 }
+
+// firstSeqDiff describes where the sequence lists of two frames first differ.
+func firstSeqDiff(dec *zstd.Decoder, ours, theirs []byte) string {
+	sa, _ := zstd.SequencesForTest(dec, ours)
+	sb, _ := zstd.SequencesForTest(dec, theirs)
+	pos := 0
+	for k := 0; k < len(sa) && k < len(sb); k++ {
+		if sa[k] != sb[k] {
+			return fmt.Sprintf("seq %d at output pos %d (of %d/%d seqs): ours %v theirs %v", k, pos, len(sa), len(sb), sa[k:min(len(sa), k+3)], sb[k:min(len(sb), k+3)])
+		}
+		pos += sa[k][0] + sa[k][1]
+	}
+	return "sequence lists equal up to the shorter one"
+}

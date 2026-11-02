@@ -33,11 +33,13 @@ func hashPtr(v uint64, hBits uint32, mls uint32) uint32 {
 // cdict is a dictionary prepared for one level (ZSTD_CDict): parameters and tagged double-hash tables.
 type cdict struct {
 	cp          cParams
+	dictSize    uint64
 	long, short []uint32 // (index << 8) | tag
 }
 
-func newCDict(content []byte, level int) *cdict {
-	cd := &cdict{cp: getCParams(level, contentSizeUnknown, uint64(len(content)), cpmCreateCDict)}
+// newCDict prepares a dictionary; dictSize is libzstd's dictContentSize, the whole dictionary buffer (header included).
+func newCDict(content []byte, dictSize uint64, level int) *cdict {
+	cd := &cdict{cp: getCParams(level, contentSizeUnknown, dictSize, cpmCreateCDict), dictSize: dictSize}
 	if cd.cp.strategy != stratDFast {
 		return cd // ponytail: only dfast tables are built so far
 	}

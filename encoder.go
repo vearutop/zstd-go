@@ -48,12 +48,17 @@ func NewEncoder(d *Dict) *Encoder { return &Encoder{dict: d} }
 
 // EncodeAll appends a complete frame of src to dst. Frame has content size (single segment) and checksum.
 func (e *Encoder) EncodeAll(src, dst []byte) []byte {
-	dst = e.header(dst, uint64(len(src)))
 	L := e.prepare(src)
-	bs := min(blockMax, 1<<e.cp.windowLog, max(len(src), 1)) // blockSize = min(128 KiB, windowSize)
-	for base := 0; ; base += bs {
-		end := min(base+bs, len(src))
+	dst = e.header(dst, uint64(len(src)))
+	bsMax := min(blockMax, 1<<e.cp.windowLog, max(len(src), 1)) // cctx->blockSizeMax = min(128 KiB, windowSize)
+	var savings int64
+	for base := 0; ; {
+		bs := optimalBlockSize(src[base:], bsMax, savings)
+		end := base + bs
+		before := len(dst)
 		dst = e.block(dst, src[base:end], L, base, end == len(src))
+		savings += int64(bs) - int64(len(dst)-before)
+		base = end
 		if end == len(src) {
 			break
 		}
@@ -89,10 +94,10 @@ func (e *Encoder) prepare(src []byte) (L int) {
 		cdp := e.cd.cp
 		// ZSTD_compressBegin_internal: the prepared dictionary is reused for small sources only; for large ones
 		// libzstd loads the dictionary content into the context with the parameters of the source size.
-		reuse := n < 128<<10 || n < uint64(L)*6
+		reuse := n < 128<<10 || n < e.cd.dictSize*6
 		params := cdp
 		if !reuse {
-			params = getCParams(e.level(), n, uint64(L), cpmUnknown)
+			params = getCParams(e.level(), n, e.cd.dictSize, cpmUnknown)
 		}
 		limited := min(n, 1<<19)
 		limitedLog := uint32(1)
@@ -111,7 +116,7 @@ func (e *Encoder) prepare(src []byte) (L int) {
 			e.short = grow(e.short, 1<<e.cp.chainLog)
 			e.fillDictTables(d.content)
 		case n <= uint64(attachDictSizeCutoffs[cdp.strategy]):
-			e.cp = adjustCParams(cdp, n, uint64(L), cpmAttachDict)
+			e.cp = adjustCParams(cdp, n, e.cd.dictSize, cpmAttachDict)
 			e.cp.windowLog = windowLog
 			e.long = grow(e.long, 1<<e.cp.hashLog)
 			e.short = grow(e.short, 1<<e.cp.chainLog)
@@ -160,50 +165,62 @@ func grow(b []uint32, n int) []uint32 {
 	return b
 }
 
+// header is ZSTD_writeFrameHeader (content size always recorded). The frame is single-segment only when the
+// window covers the whole content.
 func (e *Encoder) header(dst []byte, size uint64) []byte {
-	dst = append(dst, 0x28, 0xB5, 0x2F, 0xFD)
-	var fhd byte = 1 << 5
-	if !e.NoChecksum {
-		fhd |= 1 << 2
-	}
 	var id uint32
 	if e.dict != nil {
 		id = e.dict.id
 	}
-	switch {
-	case id == 0:
-	case id < 256:
-		fhd |= 1
-	case id < 65536:
-		fhd |= 2
-	default:
-		fhd |= 3
+	idCode := 0
+	if id > 0 {
+		idCode++
 	}
-	switch {
-	case size < 256:
-	case size < 65536+256:
-		fhd |= 1 << 6
-	case size < 1<<32:
-		fhd |= 2 << 6
-	default:
-		fhd |= 3 << 6
+	if id >= 256 {
+		idCode++
 	}
-	dst = append(dst, fhd)
-	switch {
-	case id == 0:
-	case id < 256:
+	if id >= 65536 {
+		idCode++
+	}
+	windowSize := uint64(1) << e.cp.windowLog
+	single := windowSize >= size
+	fcsCode := 0
+	if size >= 256 {
+		fcsCode++
+	}
+	if size >= 65536+256 {
+		fcsCode++
+	}
+	if size >= 0xFFFFFFFF {
+		fcsCode++
+	}
+	fhd := byte(idCode + fcsCode<<6)
+	if !e.NoChecksum {
+		fhd |= 1 << 2
+	}
+	if single {
+		fhd |= 1 << 5
+	}
+	dst = append(dst, 0x28, 0xB5, 0x2F, 0xFD, fhd)
+	if !single {
+		dst = append(dst, byte((e.cp.windowLog-windowLogAbsMin)<<3))
+	}
+	switch idCode {
+	case 1:
 		dst = append(dst, byte(id))
-	case id < 65536:
+	case 2:
 		dst = binary.LittleEndian.AppendUint16(dst, uint16(id))
-	default:
+	case 3:
 		dst = binary.LittleEndian.AppendUint32(dst, id)
 	}
-	switch {
-	case size < 256:
-		dst = append(dst, byte(size))
-	case size < 65536+256:
+	switch fcsCode {
+	case 0:
+		if single {
+			dst = append(dst, byte(size))
+		}
+	case 1:
 		dst = binary.LittleEndian.AppendUint16(dst, uint16(size-256))
-	case size < 1<<32:
+	case 2:
 		dst = binary.LittleEndian.AppendUint32(dst, uint32(size))
 	default:
 		dst = binary.LittleEndian.AppendUint64(dst, size)
@@ -321,7 +338,12 @@ func (e *Encoder) matchFind(L, base, n int) {
 	}
 	start, end := L+base, L+base+n
 	maxDist := uint32(1) << e.cp.windowLog
-	if e.loadedDictEnd != 0 && uint32(end+windowStartIndex) > maxDist+e.loadedDictEnd { // ZSTD_checkDictValidity
+	if blockEnd := uint32(end + windowStartIndex); blockEnd > maxDist+e.loadedDictEnd { // ZSTD_checkDictValidity
+		e.loadedDictEnd = 0
+	}
+	if blockStart := uint32(start + windowStartIndex); blockStart > maxDist+e.loadedDictEnd { // ZSTD_window_enforceMaxDist
+		e.lowLimit = max(e.lowLimit, blockStart-maxDist)
+		e.dictLimit = max(e.dictLimit, e.lowLimit)
 		e.loadedDictEnd = 0
 	}
 	switch {

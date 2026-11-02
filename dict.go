@@ -108,7 +108,7 @@ func (d *Dict) cdict(level int) *cdict {
 	if d.cdicts == nil {
 		d.cdicts = map[int]*cdict{}
 	}
-	cd := newCDict(d.content, level)
+	cd := newCDict(d.content, uint64(len(d.raw)), level)
 	d.cdicts[level] = cd
 	return cd
 }

@@ -14,3 +14,6 @@ func SequencesForTest(d *Decoder, frame []byte) ([][3]int, error) {
 	_, err := d.DecodeAll(frame, nil)
 	return seqs, err
 }
+
+// ContentLenForTest returns the dictionary content length.
+func (d *Dict) ContentLenForTest() int { return len(d.content) }

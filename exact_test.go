@@ -5,6 +5,7 @@ package zstd_test
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -149,4 +150,140 @@ func TestExact(t *testing.T) {
 			t.Logf("    differs: %s", f)
 		}
 	}
+}
+
+// FuzzExact compares our frame with libzstd's byte for byte on arbitrary input, with and without a dictionary.
+// go test -tags libzstd -run xxx -fuzz FuzzExact
+func FuzzExact(f *testing.F) {
+	_, raw := loadDict(f)
+	d, _ := zstd.LoadDict(raw)
+	withDict, noDict := ref.New(raw, 3), ref.NewNoDict(3)
+	for _, c := range corpus(6, 3) {
+		f.Add(c, true)
+		f.Add(c, false)
+	}
+	f.Add(bytes.Repeat([]byte("abcd"), 5000), true)
+	f.Add(bytes.Repeat([]byte{0}, 70000), false)
+	buf := make([]byte, 0, 1<<22)
+	f.Fuzz(func(t *testing.T, in []byte, useDict bool) {
+		var e *zstd.Encoder
+		var libz []byte
+		if useDict {
+			e, libz = zstd.NewEncoder(d), withDict.Compress(buf, in)
+		} else {
+			e, libz = zstd.NewEncoder(nil), noDict.Compress(buf, in)
+		}
+		e.NoChecksum = true
+		if ours := e.EncodeAll(in, nil); !bytes.Equal(ours, libz) {
+			t.Fatalf("dict=%v len=%d: ours %d B, libzstd %d B", useDict, len(in), len(ours), len(libz))
+		}
+	})
+}
+
+// TestExactRandom: log-uniform sizes up to ~700 KB, mixed content, several dictionaries.
+func TestExactRandom(t *testing.T) {
+	_, raw0 := loadDict(t)
+	files := readZip(t, "testdata/klauspost/dict-tests-small.zip")
+	rawDicts := [][]byte{raw0, files["d1.dict"], files["d3.dict"], bytes.Repeat([]byte("raw content dictionary, no entropy tables. "), 200), []byte("tiny dict")}
+	var dicts []*zstd.Dict
+	var refs []*ref.Compressor
+	for _, r := range rawDicts {
+		d, err := zstd.LoadDict(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dicts = append(dicts, d)
+		refs = append(refs, ref.New(r, 3))
+	}
+	noDict := ref.NewNoDict(3)
+	seed, cases, maxN := int64(77), 600, 700000.0
+	if s := os.Getenv("EXACT_SEED"); s != "" {
+		fmt.Sscan(s, &seed)
+		cases, maxN = 3000, 3e6
+	}
+	rng := rand.New(rand.NewSource(seed))
+	words := strings.Fields("the quick brown fox jumps over lazy dog alpha beta gamma delta {\"id\": \"user\": 12345 true false null")
+	gen := func(n int) []byte {
+		b := make([]byte, 0, n)
+		switch rng.Intn(5) {
+		case 0: // random bytes
+			b = b[:n]
+			rng.Read(b)
+		case 1: // words
+			for len(b) < n {
+				b = append(b, words[rng.Intn(len(words))]...)
+				b = append(b, ' ')
+			}
+		case 2: // runs
+			for len(b) < n {
+				c := byte(rng.Intn(256))
+				for i, k := 0, 1+rng.Intn(300); i < k; i++ {
+					b = append(b, c)
+				}
+			}
+		case 3: // records with numbers
+			for len(b) < n {
+				b = append(b, fmt.Sprintf(`{"id":%d,"name":"%s","v":%d},`, rng.Intn(1e6), words[rng.Intn(len(words))], rng.Intn(100))...)
+			}
+		default: // mix: copies of earlier parts
+			for len(b) < n {
+				if len(b) > 100 && rng.Intn(2) == 0 {
+					s := rng.Intn(len(b) - 50)
+					b = append(b, b[s:s+10+rng.Intn(40)]...)
+				} else {
+					b = append(b, byte(rng.Intn(256)))
+				}
+			}
+		}
+		return b[:n]
+	}
+	buf := make([]byte, 0, 1<<23)
+	bad, total := 0, 0
+	for i := 0; i < cases; i++ {
+		n := int(math.Exp(rng.Float64() * math.Log(maxN)))
+		in := gen(n)
+		di := rng.Intn(len(dicts)+1) - 1
+		var e *zstd.Encoder
+		var libz []byte
+		if di < 0 {
+			e, libz = zstd.NewEncoder(nil), noDict.Compress(buf, in)
+		} else {
+			e, libz = zstd.NewEncoder(dicts[di]), refs[di].Compress(buf, in)
+		}
+		e.NoChecksum = true
+		total++
+		if ours := e.EncodeAll(in, nil); !bytes.Equal(ours, libz) {
+			bad++
+			if bad <= 8 {
+				var dd *zstd.Decoder
+				if di < 0 {
+					dd, _ = zstd.NewDecoder()
+				} else {
+					dd, _ = zstd.NewDecoder(dicts[di])
+				}
+				t.Errorf("case %d: dict %d len %d: ours %d B, libzstd %d B: %s", i, di, n, len(ours), len(libz), classify(dd, ours, libz)+"; "+firstSeqDiff(dd, ours, libz))
+			}
+		}
+	}
+	t.Logf("%d / %d identical", total-bad, total)
+}
+
+// TestExactReal checks every evaluation record of real data (ZSTD_DATA / ZSTD_DICT, see realData).
+func TestExactReal(t *testing.T) {
+	lines, raw := realData(t)
+	d, _ := zstd.LoadDict(raw)
+	e := zstd.NewEncoder(d)
+	e.NoChecksum = true
+	c := ref.New(raw, 3)
+	buf := make([]byte, 0, 1<<20)
+	bad := 0
+	for i, l := range lines {
+		if !bytes.Equal(e.EncodeAll(l, nil), c.Compress(buf, l)) {
+			bad++
+			if bad <= 5 {
+				t.Errorf("record %d differs", i)
+			}
+		}
+	}
+	t.Logf("%d / %d identical", len(lines)-bad, len(lines))
 }
