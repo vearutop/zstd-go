@@ -116,38 +116,58 @@ func (w *bitWriter) encode(st *fseState, sym uint8) {
 	st.val = uint32(st.ct.stateTable[int32(st.val>>nb)+t.deltaFindState])
 }
 
-// pickTable chooses the cheapest of predefined / dict repeat / RLE for the code stream.
-// It returns the mode and the table (nil for RLE).
-func pickTable(codes []uint8, predef, repeat *cTable) (mode int, ct *cTable) {
-	same := true
-	for _, c := range codes {
-		if c != codes[0] {
-			same = false
-			break
+func entropyBits(h []uint32, n int) float64 {
+	var sum float64
+	for _, c := range h {
+		if c > 0 {
+			sum += float64(c) * (log2i(n) - log2i(int(c)))
 		}
 	}
-	if same && len(codes) > 2 {
+	return sum
+}
+
+// pick chooses among predefined / dict repeat / RLE / a freshly normalized table for one code stream
+// and stores its header bytes in e.hdr[i]. It returns the mode (0 basic, 1 rle, 2 compressed, 3 repeat) and the table.
+func (e *Encoder) pick(i int, codes []uint8, predef, repeat *cTable, maxLog uint8) (int, *cTable) {
+	n := len(codes)
+	e.hdr[i] = e.hdr[i][:0]
+	var hist [64]uint32
+	maxSym := 0
+	for _, c := range codes {
+		hist[c]++
+		maxSym = max(maxSym, int(c))
+	}
+	h := hist[:maxSym+1]
+	if int(hist[codes[0]]) == n && n > 2 {
+		e.hdr[i] = append(e.hdr[i], codes[0])
 		return 1, nil
 	}
-	cost := func(t *cTable) int {
-		if t == nil {
-			return -1
+	best, mode, ct := -1.0, 0, predef
+	if c := predef.histCost(h); c >= 0 {
+		best = c
+	}
+	if repeat != nil {
+		if c := repeat.histCost(h); c >= 0 && (best < 0 || c <= best) {
+			best, mode, ct = c, 3, repeat
 		}
-		sum := 0
-		for _, c := range codes {
-			k := t.cost(int(c))
-			if k < 0 {
-				return -1
+	}
+	if n > 2 && best-entropyBits(h, n) > 24 { // a header costs at least ~3 bytes
+		var norm [64]int16
+		log := optimalTableLog(maxLog, n, maxSym)
+		if normalize(norm[:maxSym+1], log, h, n, maxSym, n >= 2048) {
+			hdr := writeNCount(e.hdr[i], norm[:maxSym+1], log)
+			e.hdr[i] = hdr[:0] // keep the capacity
+			e.fresh[i].build(norm[:maxSym+1], log)
+			if c := e.fresh[i].histCost(h); c >= 0 {
+				c += 8 * float64(len(hdr))
+				if best < 0 || c < best {
+					best, mode, ct = c, 2, &e.fresh[i]
+					e.hdr[i] = hdr
+				}
 			}
-			sum += k
 		}
-		return sum
 	}
-	cp, cr := cost(predef), cost(repeat)
-	if cr >= 0 && (cp < 0 || cr <= cp) {
-		return 3, repeat
-	}
-	return 0, predef
+	return mode, ct
 }
 
 func (e *Encoder) writeSequences() {
@@ -173,19 +193,11 @@ func (e *Encoder) writeSequences() {
 	if e.dict != nil && e.first {
 		rl, ro, rm = e.dict.ll, e.dict.of, e.dict.ml
 	}
-	lm, lt := pickTable(e.llc, llPredef, rl)
-	om, ot := pickTable(e.ofc, ofPredef, ro)
-	mm, mt := pickTable(e.mlc, mlPredef, rm)
+	lm, lt := e.pick(0, e.llc, llPredef, rl, 9)
+	om, ot := e.pick(1, e.ofc, ofPredef, ro, 8)
+	mm, mt := e.pick(2, e.mlc, mlPredef, rm, 9)
 	e.body = append(e.body, byte(lm<<6|om<<4|mm<<2))
-	if lm == 1 {
-		e.body = append(e.body, e.llc[0])
-	}
-	if om == 1 {
-		e.body = append(e.body, e.ofc[0])
-	}
-	if mm == 1 {
-		e.body = append(e.body, e.mlc[0])
-	}
+	e.body = append(append(append(e.body, e.hdr[0]...), e.hdr[1]...), e.hdr[2]...)
 
 	var w bitWriter
 	w.buf = e.body

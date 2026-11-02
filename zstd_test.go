@@ -66,9 +66,20 @@ func TestCLI(t *testing.T) {
 		t.Skip("no zstd cli")
 	}
 	d, _ := loadDict(t)
-	e := zstd.NewEncoder(d)
+	for _, withDict := range []bool{true, false} {
+		testCLI(t, d, withDict)
+	}
+}
+
+func testCLI(t *testing.T, d *zstd.Dict, withDict bool) {
+	args := []string{"-d", "-q", "-c"}
+	e := zstd.NewEncoder(nil)
+	if withDict {
+		e = zstd.NewEncoder(d)
+		args = append(args, "-D", "testdata/dict.bin")
+	}
 	for i, c := range cases(rand.New(rand.NewSource(1)))[:210] {
-		cmd := exec.Command("zstd", "-d", "-q", "-c", "-D", "testdata/dict.bin")
+		cmd := exec.Command("zstd", args...)
 		cmd.Stdin = bytes.NewReader(e.EncodeAll(c, nil))
 		var o, er bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &o, &er

@@ -25,6 +25,8 @@ type Encoder struct {
 	long, short   []uint32
 	lit           huff0.Scratch
 	llc, ofc, mlc []uint8
+	fresh         [3]cTable
+	hdr           [3][]byte
 }
 
 type seq struct{ ll, ml, off uint32 } // off is offBase: 1..3 repcode, else offset+3

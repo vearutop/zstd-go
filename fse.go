@@ -15,18 +15,39 @@ type symTT struct {
 type cTable struct {
 	log        uint8
 	norm       []int16
+	sym        []uint8
 	stateTable []uint16
 	tt         []symTT
 }
 
 // buildCTable is a port of FSE_buildCTable_wksp.
 func buildCTable(norm []int16, log uint8) *cTable {
+	ct := &cTable{}
+	ct.build(norm, log)
+	return ct
+}
+
+// build (re)fills ct from a normalized count, reusing its storage; norm is copied.
+func (ct *cTable) build(normIn []int16, log uint8) {
 	size := 1 << log
 	mask := size - 1
 	step := (size >> 1) + (size >> 3) + 3
-	ct := &cTable{norm: norm, log: log, stateTable: make([]uint16, size), tt: make([]symTT, len(norm))}
-	cumul := make([]int, len(norm)+1)
-	sym := make([]uint8, size)
+	ct.log = log
+	ct.norm = append(ct.norm[:0], normIn...)
+	norm := ct.norm
+	if cap(ct.stateTable) < size {
+		ct.stateTable = make([]uint16, size)
+	}
+	ct.stateTable = ct.stateTable[:size]
+	if cap(ct.tt) < len(norm) {
+		ct.tt = make([]symTT, len(norm))
+	}
+	ct.tt = ct.tt[:len(norm)]
+	var cumul [64]int
+	if cap(ct.sym) < size {
+		ct.sym = make([]uint8, size)
+	}
+	sym := ct.sym[:size]
 	high := size - 1
 	for u := 1; u <= len(norm); u++ {
 		if norm[u-1] == -1 {
@@ -56,19 +77,16 @@ func buildCTable(norm []int16, log uint8) *cTable {
 	for s, n := range norm {
 		switch n {
 		case 0:
-			ct.tt[s].deltaNbBits = (uint32(log)+1)<<16 - 1<<log
+			ct.tt[s] = symTT{deltaNbBits: (uint32(log)+1)<<16 - 1<<log}
 		case -1, 1:
-			ct.tt[s].deltaNbBits = uint32(log)<<16 - 1<<log
-			ct.tt[s].deltaFindState = int32(total - 1)
+			ct.tt[s] = symTT{uint32(log)<<16 - 1<<log, int32(total - 1)}
 			total++
 		default:
 			maxBits := uint32(log) - uint32(bits.Len32(uint32(n)-1)-1)
-			ct.tt[s].deltaNbBits = maxBits<<16 - uint32(n)<<maxBits
-			ct.tt[s].deltaFindState = int32(total - int(n))
+			ct.tt[s] = symTT{maxBits<<16 - uint32(n)<<maxBits, int32(total - int(n))}
 			total += int(n)
 		}
 	}
-	return ct
 }
 
 // cost is an upper-bound bit cost of symbol s, or -1 if the table cannot code it.
