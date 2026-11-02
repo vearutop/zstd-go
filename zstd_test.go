@@ -128,6 +128,11 @@ func TestSeekable(t *testing.T) {
 	if o, err := cmd.Output(); err != nil || !bytes.Equal(o, src) {
 		t.Fatal("cli mismatch", err)
 	}
+	for _, fs := range []int{0, -1, 1 << 40} { // must terminate with a single frame
+		if len(e.EncodeSeekable(src[:5000], nil, fs)) == 0 {
+			t.Fatal("empty")
+		}
+	}
 	s, err := zstd.OpenSeekable(bytes.NewReader(st), int64(len(st)), func(dst, f []byte) ([]byte, error) { return dec.DecodeAll(f, dst) })
 	if err != nil {
 		t.Fatal(err)

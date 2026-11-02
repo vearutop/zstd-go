@@ -16,8 +16,12 @@ const (
 )
 
 // EncodeSeekable appends src to dst as independent frames of frameSize bytes of input each, plus a seek table.
+// frameSize <= 0 or above 1 GiB means 1 GiB (the seek table stores sizes as uint32).
 // The result is a valid zstd stream for any decoder; seekable readers can use OpenSeekable.
 func (e *Encoder) EncodeSeekable(src, dst []byte, frameSize int) []byte {
+	if frameSize <= 0 || frameSize > 1<<30 {
+		frameSize = 1 << 30
+	}
 	type ent struct{ c, d, sum uint32 }
 	var table []ent
 	for off := 0; off < len(src) || off == 0; off += frameSize {
