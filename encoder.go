@@ -31,8 +31,9 @@ type Encoder struct {
 	long, short      []uint32
 	lit              huff0.Scratch
 	llc, ofc, mlc    []uint8
-	fresh            [3]cTable
-	hdr              [3][]byte
+	prevFse, nextFse fseTables
+	slots            [2][3]cTable // storage for tables built per block; e.slot is the one in use
+	slot             int
 }
 
 type seq struct{ ll, ml, off uint32 } // off is offBase: 1..3 repcode, else offset+3
@@ -88,10 +89,11 @@ func (e *Encoder) prepare(src []byte) (L int) {
 	e.long = grow(e.long, 1<<e.cp.hashLog)
 	e.short = grow(e.short, 1<<e.cp.chainLog)
 	e.reps = [3]uint32{1, 4, 8}
-	e.prevHuf = hufState{}
+	e.prevHuf, e.prevFse = hufState{}, fseTables{}
 	if e.dict != nil {
 		e.reps = e.dict.reps
 		e.prevHuf = hufState{e.dict.huffC, e.dict.huffRepeat}
+		e.prevFse = e.dict.fse
 	}
 	return L
 }
@@ -184,7 +186,9 @@ func (e *Encoder) block(dst, s []byte, L, base int, last bool) []byte {
 		}
 		e.body = e.body[:0]
 		e.writeLiterals(s, base)
-		e.writeSequences()
+		if !e.writeSequences() {
+			e.body = e.body[:0]
+		}
 		cSize = len(e.body)
 		if cSize >= n-((n>>6)+2) { // ZSTD_entropyCompressSeqStore: not compressible enough
 			cSize = 0
@@ -192,12 +196,16 @@ func (e *Encoder) block(dst, s []byte, L, base int, last bool) []byte {
 	}
 	const rleMaxLength = 25
 	if !e.first && cSize < rleMaxLength && isRLE(s) {
+		e.prevFse.ofRep = offRepeatAfterBlock(e.prevFse.ofRep)
 		return append(blockHeader(dst, last, 1, n), s[0])
 	}
 	if cSize == 0 {
+		e.prevFse.ofRep = offRepeatAfterBlock(e.prevFse.ofRep)
 		return append(blockHeader(dst, last, 0, n), s...)
 	}
-	e.prevHuf = e.nextHuf // ZSTD_blockState_confirmRepcodesAndEntropyTables
+	e.prevHuf, e.prevFse = e.nextHuf, e.nextFse // ZSTD_blockState_confirmRepcodesAndEntropyTables
+	e.slot ^= 1
+	e.prevFse.ofRep = offRepeatAfterBlock(e.prevFse.ofRep)
 	dst = blockHeader(dst, last, 2, cSize)
 	return append(dst, e.body...)
 }
@@ -250,4 +258,12 @@ func count(a, b []byte) int {
 	for ; i < n && a[i] == b[i]; i++ {
 	}
 	return i
+}
+
+// offRepeatAfterBlock: a dictionary's offset table is only known to cover every offset for the first block.
+func offRepeatAfterBlock(r fseRepeat) fseRepeat {
+	if r == fseRepeatValid {
+		return fseRepeatCheck
+	}
+	return r
 }

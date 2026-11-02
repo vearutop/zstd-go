@@ -166,65 +166,104 @@ func (w *bitWriter) encode(st *fseState, sym uint8) {
 	st.val = uint32(st.ct.stateTable[int32(st.val>>nb)+t.deltaFindState])
 }
 
-func entropyBits(h []uint32, n int) float64 {
-	var sum float64
-	for _, c := range h {
-		if c > 0 {
-			sum += float64(c) * (log2i(n) - log2i(int(c)))
-		}
-	}
-	return sum
+// Sequence section coding, a port of ZSTD_buildSequencesStatistics / ZSTD_selectEncodingType / ZSTD_buildCTable
+// for the dfast strategy (count-based decisions).
+
+type fseRepeat uint8
+
+const (
+	fseRepeatNone fseRepeat = iota
+	fseRepeatCheck
+	fseRepeatValid
+)
+
+// fseTables are the sequence tables carried from block to block (the "previous entropy").
+type fseTables struct {
+	ll, of, ml          *cTable // nil: RLE or none
+	llRep, ofRep, mlRep fseRepeat
 }
 
-// pick chooses among predefined / dict repeat / RLE / a freshly normalized table for one code stream
-// and stores its header bytes in e.hdr[i]. It returns the mode (0 basic, 1 rle, 2 compressed, 3 repeat) and the table.
-func (e *Encoder) pick(i int, codes []uint8, predef, repeat *cTable, maxLog uint8) (int, *cTable) {
-	n := len(codes)
-	e.hdr[i] = e.hdr[i][:0]
-	var hist [64]uint32
-	maxSym, distinct := 0, 0
+const (
+	modeBasic = iota
+	modeRLE
+	modeCompressed
+	modeRepeat
+)
+
+// selectEncodingType is ZSTD_selectEncodingType for strategy < lazy.
+func selectEncodingType(rep *fseRepeat, max int, mostFrequent, nbSeq int, defaultNormLog uint8, defaultAllowed bool) int {
+	if mostFrequent == nbSeq {
+		*rep = fseRepeatNone
+		if defaultAllowed && nbSeq <= 2 {
+			return modeBasic
+		}
+		return modeRLE
+	}
+	if defaultAllowed {
+		const staticFseNbSeqMax = 1000
+		mult := 10 - int(stratDFast)
+		dynamicFseNbSeqMin := ((1 << defaultNormLog) * mult) >> 3
+		if *rep == fseRepeatValid && nbSeq < staticFseNbSeqMax {
+			return modeRepeat
+		}
+		if nbSeq < dynamicFseNbSeqMin || mostFrequent < nbSeq>>(defaultNormLog-1) {
+			*rep = fseRepeatNone
+			return modeBasic
+		}
+	}
+	*rep = fseRepeatCheck
+	return modeCompressed
+}
+
+// buildSeqTable is ZSTD_buildCTable: it returns the table to code with and the header bytes to write.
+func buildSeqTable(slot *cTable, hdr []byte, mode int, count []uint32, max int, codes []uint8, fseLog uint8, predef, prev *cTable) (*cTable, []byte) {
+	nbSeq := len(codes)
+	switch mode {
+	case modeRLE:
+		return nil, append(hdr, byte(max))
+	case modeRepeat:
+		return prev, hdr
+	case modeBasic:
+		return predef, hdr
+	}
+	log := optimalTableLog(fseLog, nbSeq, max)
+	nbSeq1 := nbSeq
+	if count[codes[nbSeq-1]] > 1 {
+		count[codes[nbSeq-1]]--
+		nbSeq1--
+	}
+	var norm [maxSeqSymbols]int16
+	normalize(norm[:max+1], log, count[:max+1], nbSeq1, max, nbSeq1 >= 2048)
+	hdr = writeNCount(hdr, norm[:max+1], log)
+	slot.build(norm[:max+1], log)
+	return slot, hdr
+}
+
+const maxSeqSymbols = 53
+
+func histCodes(codes []uint8, count *[maxSeqSymbols + 1]uint32, maxInit int) (max, mostFrequent int) {
+	*count = [maxSeqSymbols + 1]uint32{}
 	for _, c := range codes {
-		if hist[c] == 0 {
-			distinct++
-		}
-		hist[c]++
-		maxSym = max(maxSym, int(c))
+		count[c]++
 	}
-	h := hist[:maxSym+1]
-	if int(hist[codes[0]]) == n && n > 2 {
-		e.hdr[i] = append(e.hdr[i], codes[0])
-		return 1, nil
+	for max = maxInit; max > 0 && count[max] == 0; max-- {
 	}
-	best, mode, ct := -1.0, 0, predef
-	if repeat != nil {
-		best = repeat.histCost(h)
-		mode, ct = 3, repeat
+	for s := 0; s <= max; s++ {
+		mostFrequent = max2(mostFrequent, int(count[s]))
 	}
-	if best < 0 { // no usable dictionary table: the predefined one (a trained table beats it when it fits)
-		best, mode, ct = predef.histCost(h), 0, predef
-	}
-	// A header costs roughly 16 bits plus 4 per distinct symbol; skip the attempt when the entropy bound leaves no room.
-	hdrGuess := 16 + 4*float64(distinct)
-	if n > 2 && best > hdrGuess && best-entropyBits(h, n) > hdrGuess {
-		var norm [64]int16
-		log := optimalTableLog(maxLog, n, maxSym)
-		if normalize(norm[:maxSym+1], log, h, n, maxSym, n >= 2048) {
-			hdr := writeNCount(e.hdr[i], norm[:maxSym+1], log)
-			e.hdr[i] = hdr[:0] // keep the capacity
-			e.fresh[i].build(norm[:maxSym+1], log)
-			if c := e.fresh[i].histCost(h); c >= 0 {
-				c += 8 * float64(len(hdr))
-				if best < 0 || c < best {
-					best, mode, ct = c, 2, &e.fresh[i]
-					e.hdr[i] = hdr
-				}
-			}
-		}
-	}
-	return mode, ct
+	return
 }
 
-func (e *Encoder) writeSequences() {
+func max2(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// writeSequences is the sequences part of ZSTD_entropyCompressSeqStore_internal. It returns false when libzstd
+// would emit the block uncompressed (the "bug in 1.3.4" rule).
+func (e *Encoder) writeSequences() bool {
 	n := len(e.seqs)
 	switch {
 	case n < 128:
@@ -234,8 +273,9 @@ func (e *Encoder) writeSequences() {
 	default:
 		e.body = append(e.body, 255, byte(n-0x7F00), byte((n-0x7F00)>>8))
 	}
+	e.nextFse = e.prevFse
 	if n == 0 {
-		return
+		return true
 	}
 	e.llc, e.ofc, e.mlc = e.llc[:0], e.ofc[:0], e.mlc[:0]
 	for _, q := range e.seqs {
@@ -243,16 +283,45 @@ func (e *Encoder) writeSequences() {
 		e.ofc = append(e.ofc, uint8(bits.Len32(q.off)-1))
 		e.mlc = append(e.mlc, mlCode(q.ml-3))
 	}
-	var rl, ro, rm *cTable
-	if e.dict != nil && e.first {
-		rl, ro, rm = e.dict.ll, e.dict.of, e.dict.ml
-	}
-	lm, lt := e.pick(0, e.llc, llPredef, rl, 9)
-	om, ot := e.pick(1, e.ofc, ofPredef, ro, 8)
-	mm, mt := e.pick(2, e.mlc, mlPredef, rm, 9)
-	e.body = append(e.body, byte(lm<<6|om<<4|mm<<2))
-	e.body = append(append(append(e.body, e.hdr[0]...), e.hdr[1]...), e.hdr[2]...)
+	slots := &e.slots[e.slot]
+	var count [maxSeqSymbols + 1]uint32
+	modeAt := len(e.body)
+	e.body = append(e.body, 0)
+	lastCount := 0
+	var lastHdr int
+	hdrStart := len(e.body)
 
+	max, mf := histCodes(e.llc, &count, 35)
+	llMode := selectEncodingType(&e.nextFse.llRep, max, mf, n, 6, true)
+	lt, hdr := buildSeqTable(&slots[0], e.body, llMode, count[:], max, e.llc, 9, llPredef, e.prevFse.ll)
+	e.body, lastHdr = hdr, len(hdr)-hdrStart
+	if llMode == modeCompressed {
+		lastCount = lastHdr
+	}
+	e.nextFse.ll = lt
+
+	hdrStart = len(e.body)
+	max, mf = histCodes(e.ofc, &count, 31)
+	ofMode := selectEncodingType(&e.nextFse.ofRep, max, mf, n, 5, max <= 28)
+	ot, hdr := buildSeqTable(&slots[1], e.body, ofMode, count[:], max, e.ofc, 8, ofPredef, e.prevFse.of)
+	e.body = hdr
+	if ofMode == modeCompressed {
+		lastCount = len(hdr) - hdrStart
+	}
+	e.nextFse.of = ot
+
+	hdrStart = len(e.body)
+	max, mf = histCodes(e.mlc, &count, 52)
+	mlMode := selectEncodingType(&e.nextFse.mlRep, max, mf, n, 6, true)
+	mt, hdr := buildSeqTable(&slots[2], e.body, mlMode, count[:], max, e.mlc, 9, mlPredef, e.prevFse.ml)
+	e.body = hdr
+	if mlMode == modeCompressed {
+		lastCount = len(hdr) - hdrStart
+	}
+	e.nextFse.ml = mt
+	e.body[modeAt] = byte(llMode<<6 | ofMode<<4 | mlMode<<2)
+
+	bitStart := len(e.body)
 	var w bitWriter
 	w.buf = e.body
 	var sl, so, sm fseState
@@ -304,4 +373,6 @@ func (e *Encoder) writeSequences() {
 		w.buf = append(w.buf, byte(w.acc))
 	}
 	e.body = w.buf
+	// zstd <= 1.3.4 misreads a last table of 3 bytes followed by a 1-byte stream: libzstd emits a raw block then
+	return !(lastCount != 0 && lastCount+len(e.body)-bitStart < 4)
 }

@@ -20,6 +20,7 @@ type Dict struct {
 	dll, dml, dof *dTable        // the same for decoding
 	huffDec       *huff0.Decoder
 	huffC         hufTable  // literal table for encoding
+	fse           fseTables // the dictionary's sequence tables for encoding
 	huffRepeat    hufRepeat // how a block may reuse it (libzstd's repeatMode of the dictionary)
 	cdMu          sync.Mutex
 	cdicts        map[int]*cdict // prepared per level
@@ -51,13 +52,13 @@ func LoadDict(b []byte) (*Dict, error) {
 		if d.huff != nil {
 			d.huffDec = d.huff.Decoder()
 		}
-		for _, t := range []struct {
-			p      **cTable
+		var norms [3][]int16 // of, ml, ll
+		for i, t := range []struct {
 			dp     **dTable
 			kind   int
 			max    int
 			maxLog uint8
-		}{{&d.of, &d.dof, kindOF, 31, 8}, {&d.ml, &d.dml, kindML, 52, 9}, {&d.ll, &d.dll, kindLL, 35, 9}} {
+		}{{&d.dof, kindOF, 31, 8}, {&d.dml, kindML, 52, 9}, {&d.dll, kindLL, 35, 9}} {
 			norm, lg, n, err := readNCount(rem, t.max)
 			if err != nil {
 				return nil, err
@@ -65,8 +66,21 @@ func LoadDict(b []byte) (*Dict, error) {
 			if lg > t.maxLog {
 				return nil, errors.New("zstd: dictionary FSE table too large")
 			}
-			*t.p = buildCTable(norm, lg)
-			*t.dp = buildDTable(norm, lg, t.kind)
+			norms[i] = norm
+			tn := norm
+			if t.kind == kindOF { // libzstd builds the offset table over all MaxOff+1 symbols
+				tn = append(norm[:len(norm):len(norm)], make([]int16, 32-len(norm))...)
+			}
+			ct := buildCTable(tn, lg)
+			switch t.kind {
+			case kindOF:
+				d.fse.of = ct
+			case kindML:
+				d.fse.ml = ct
+			default:
+				d.fse.ll = ct
+			}
+			*t.dp = buildDTable(tn, lg, t.kind)
 			rem = rem[n:]
 		}
 		if len(rem) < 12 {
@@ -76,6 +90,9 @@ func LoadDict(b []byte) (*Dict, error) {
 			d.reps[i] = binary.LittleEndian.Uint32(rem[4*i:])
 		}
 		b = rem[12:]
+		d.fse.ofRep = dictNCountRepeat(norms[0], min(highbit32(uint32(len(b))+128<<10), 31))
+		d.fse.mlRep = dictNCountRepeat(norms[1], 52)
+		d.fse.llRep = dictNCountRepeat(norms[2], 35)
 	}
 	d.content = append(make([]byte, 0, len(b)+wildPad), b...) // spare capacity: the decoder copies 32 bytes at a time
 	return d, nil
@@ -108,4 +125,17 @@ func (d *Dict) Compress(dst, src []byte) []byte {
 	dst = e.EncodeAll(src, dst)
 	d.pool.Put(e)
 	return dst
+}
+
+// dictNCountRepeat is ZSTD_dictNCountRepeat: the table may be used blindly only if it codes every symbol up to max.
+func dictNCountRepeat(norm []int16, max uint32) fseRepeat {
+	if uint32(len(norm))-1 < max {
+		return fseRepeatCheck
+	}
+	for s := uint32(0); s <= max; s++ {
+		if norm[s] == 0 {
+			return fseRepeatCheck
+		}
+	}
+	return fseRepeatValid
 }
