@@ -17,3 +17,6 @@ func SequencesForTest(d *Decoder, frame []byte) ([][3]int, error) {
 
 // ContentLenForTest returns the dictionary content length.
 func (d *Dict) ContentLenForTest() int { return len(d.content) }
+
+// SetDebugErrsForTest makes corruption errors name their source line.
+func SetDebugErrsForTest(on bool) { debugErrs = on }
