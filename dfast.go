@@ -44,7 +44,12 @@ type cdict struct {
 
 // newCDict prepares a dictionary; dictSize is libzstd's dictContentSize, the whole dictionary buffer (header included).
 func newCDict(content []byte, dictSize uint64, level int) *cdict {
-	cd := &cdict{cp: getCParams(level, contentSizeUnknown, dictSize, cpmCreateCDict), dictSize: dictSize}
+	return newCDictWithParams(content, dictSize, getCParams(level, contentSizeUnknown, dictSize, cpmCreateCDict))
+}
+
+// newCDictWithParams is ZSTD_createCDict_advanced: cp are the (already create-CDict adjusted) compression parameters.
+func newCDictWithParams(content []byte, dictSize uint64, cp cParams) *cdict {
+	cd := &cdict{cp: cp, dictSize: dictSize}
 	switch cd.cp.strategy {
 	case stratFast:
 		cd.long = make([]uint32, 1<<cd.cp.hashLog)
