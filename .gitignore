@@ -5,3 +5,4 @@
 /vendor
 testdata/samples
 zstdbench-linux-amd64.tar.gz
+.claude/worktrees/
