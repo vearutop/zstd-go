@@ -85,6 +85,9 @@ func (e *Encoder) buildLitStats(lits []byte) (hType int, desSize uint64, next hu
 	prev := e.prevHuf
 	next = prev
 	n := len(lits)
+	if e.litOff {
+		return setBasic, 0, next, true
+	}
 	minLitSize := 63 // COMPRESS_LITERALS_SIZE_MIN
 	if prev.rep == hufRepeatValid {
 		minLitSize = 6

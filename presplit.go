@@ -120,8 +120,8 @@ func splitBlockFromBorders(src []byte) int {
 	return 96 << 10
 }
 
-// optimalBlockSize is ZSTD_optimalBlockSize with the default (auto) split level of the strategy.
-func optimalBlockSize(src []byte, blockSizeMax int, savings int64, strat strategy) int {
+// optimalBlockSize is ZSTD_optimalBlockSize; splitLevel is preBlockSplitter_level (0: the default of the strategy).
+func optimalBlockSize(src []byte, blockSizeMax int, savings int64, splitLevel int, strat strategy) int {
 	splitLevels := [...]int{0, 0, 1, 2, 2, 3, 3, 4, 4, 4}
 	if len(src) < psBlockSize || blockSizeMax < psBlockSize {
 		return min(len(src), blockSizeMax)
@@ -129,7 +129,13 @@ func optimalBlockSize(src []byte, blockSizeMax int, savings int64, strat strateg
 	if savings < 3 {
 		return psBlockSize
 	}
+	if splitLevel == 1 {
+		return psBlockSize
+	}
 	level := splitLevels[strat]
+	if splitLevel != 0 {
+		level = splitLevel - 2
+	}
 	if level == 0 {
 		return splitBlockFromBorders(src)
 	}

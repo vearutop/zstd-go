@@ -379,8 +379,9 @@ func (e *Encoder) searchMax(ip, iend int, mls, rowLog uint32, mode int, off *uin
 // loadLazyDict is the table part of ZSTD_loadDictionaryContent for the greedy..lazy2 strategies: the dictionary is
 // buf[:L] and the tables are the (zeroed) tables of the match state.
 func (e *Encoder) loadLazyDict(L int) {
-	e.nextToUpdate = windowStartIndex
-	if L <= hashReadSize {
+	start := dictStart(e.cp, L)
+	e.nextToUpdate = idxOf(start)
+	if L-start <= hashReadSize {
 		return
 	}
 	if e.useRow {

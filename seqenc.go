@@ -22,7 +22,7 @@ func (e *Encoder) writeLiterals() {
 		e.body = append(e.body, lits...)
 	}
 	strategy := int(e.cp.strategy)
-	if e.cp.strategy == stratFast && e.cp.targetLength > 0 { // ZSTD_literalsCompressionIsDisabled
+	if e.litOff { // ZSTD_literalsCompressionIsDisabled
 		raw()
 		return
 	}

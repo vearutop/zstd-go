@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"math/bits"
 
-	"github.com/cespare/xxhash/v2"
 	"github.com/klauspost/compress/huff0"
 )
 
@@ -52,129 +51,21 @@ type Encoder struct {
 	hashLog3  uint32
 	idxShift  uint32 // indices are positions + windowStartIndex + idxShift (ZSTD_initStats_ultra moves window.base)
 	postSplit bool   // ZSTD_ps_enable for the post block splitter (strategy >= btopt and windowLog >= 17 of the requested parameters)
+	// frame configuration of the current frame (appliedParams)
+	fp       frameParams
+	blockMax int    // params->maxBlockSize
+	preSplit int    // preBlockSplitter_level
+	litOff   bool   // ZSTD_literalsCompressionIsDisabled
+	dictID   uint32 // cctx->dictID
+	// Compress2 configuration
+	params  Params
+	refCD   *CDict // ZSTD_CCtx_refCDict
+	local   *Dict  // ZSTD_CCtx_loadDictionary
+	localCD *CDict
+	prefix  *Dict // ZSTD_CCtx_refPrefix: next frame only
 }
 
 type seq struct{ ll, ml, off uint32 } // off is offBase: 1..3 repcode, else offset+3
-
-// NewEncoder returns an encoder; d may be nil.
-func NewEncoder(d *Dict) *Encoder { return &Encoder{dict: d} }
-
-// EncodeAll appends a complete frame of src to dst. Frame has content size (single segment) and checksum.
-func (e *Encoder) EncodeAll(src, dst []byte) []byte {
-	L := e.prepare(src)
-	dst = e.header(dst, uint64(len(src)))
-	bsMax := min(blockMax, 1<<e.cp.windowLog, max(len(src), 1)) // cctx->blockSizeMax = min(128 KiB, windowSize)
-	var savings int64
-	for base := 0; ; {
-		bs := optimalBlockSize(src[base:], bsMax, savings, e.cp.strategy)
-		end := base + bs
-		before := len(dst)
-		dst = e.block(dst, src[base:end], L, base, end == len(src))
-		savings += int64(bs) - int64(len(dst)-before)
-		base = end
-		if end == len(src) {
-			break
-		}
-	}
-	if !e.NoChecksum {
-		dst = binary.LittleEndian.AppendUint32(dst, uint32(xxhash.Sum64(src)))
-	}
-	return dst
-}
-
-func (e *Encoder) level() int {
-	if e.Level == 0 {
-		return defaultLevel
-	}
-	return e.Level
-}
-
-var attachDictSizeCutoffs = [...]int{8 << 10, 8 << 10, 16 << 10, 32 << 10, 32 << 10, 32 << 10, 32 << 10, 32 << 10, 8 << 10, 8 << 10}
-
-// prepare loads dictionary and source into e.buf, derives the working parameters (ZSTD_compressBegin_usingCDict_internal,
-// ZSTD_resetCCtx_byAttachingCDict / byCopyingCDict) and sets up the tables. It returns the dictionary length.
-func (e *Encoder) prepare(src []byte) (L int) {
-	n := uint64(len(src))
-	e.copyMode, e.loadedDictEnd, e.dictLimit, e.lowLimit = false, 0, windowStartIndex, windowStartIndex
-	e.nextToUpdate, e.hashCache, e.lazySkipping = windowStartIndex, [rowHashCacheSize]uint32{}, false
-	if d := e.dict; d != nil && len(d.content) > 0 {
-		L = len(d.content)
-		if e.bufDict != d {
-			e.buf = append(e.buf[:0], d.content...)
-			e.bufDict = d
-		}
-		e.buf = append(e.buf[:L], src...)
-		e.cd = d.cdict(e.level())
-		cdp := e.cd.cp
-		// ZSTD_compressBegin_internal: the prepared dictionary is reused for small sources only; for large ones
-		// libzstd loads the dictionary content into the context with the parameters of the source size.
-		reuse := n < 128<<10 || n < e.cd.dictSize*6
-		params := cdp
-		if !reuse {
-			params = getCParams(e.level(), n, e.cd.dictSize, cpmUnknown)
-		}
-		limited := min(n, 1<<19)
-		limitedLog := uint32(1)
-		if limited > 1 {
-			limitedLog = highbit32(uint32(limited-1)) + 1
-		}
-		windowLog := max(params.windowLog, limitedLog)
-		e.postSplit = params.strategy >= stratBtOpt && params.windowLog >= 17 // ZSTD_resolveBlockSplitterMode, before the window log is raised
-		e.loadedDictEnd = uint32(L + windowStartIndex)
-		e.dictLimit = e.loadedDictEnd
-		e.dms = nil
-		switch {
-		case !reuse:
-			e.copyMode = true
-			e.useRow = resolveRowMatchFinder(params) // resolved before the window log is raised
-			e.cp = params
-			e.cp.windowLog = windowLog
-			e.growTables()
-			e.fillDictTables(d.content)
-		case n <= uint64(attachDictSizeCutoffs[cdp.strategy]):
-			e.useRow = e.cd.row // the CDict overrides
-			e.cp = adjustCParams(cdp, n, e.cd.dictSize, cpmAttachDict)
-			e.cp.windowLog = windowLog
-			e.lowLimit = e.dictLimit // the attached dictionary lives in the CDict: the window starts at the source
-			e.dms = e.cd
-			e.growTables()
-		default:
-			e.copyMode = true
-			e.useRow = e.cd.row
-			e.cp = cdp
-			e.cp.windowLog = windowLog
-			e.copyCDictTables()
-		}
-	} else {
-		e.buf = append(e.buf[:0], src...)
-		e.bufDict, e.cd = nil, nil
-		e.cp = getCParams(e.level(), n, 0, cpmUnknown)
-		e.useRow = resolveRowMatchFinder(e.cp)
-		e.postSplit = e.cp.strategy >= stratBtOpt && e.cp.windowLog >= 17
-		e.growTables()
-	}
-	e.idxShift = 0
-	if e.cp.strategy >= stratBtOpt { // ZSTD_reset_matchState: optimal parser space, hashTable3
-		if e.opt == nil {
-			e.opt = new(optState)
-		}
-		e.opt.litLengthSum = 0 // ZSTD_invalidateMatchState: force reset of btopt stats
-		e.hashLog3 = 0
-		if e.cp.minMatch == 3 {
-			e.hashLog3 = min(hashLog3Max, e.cp.windowLog)
-			e.h3 = grow(e.h3, 1<<e.hashLog3)
-		}
-	}
-	e.reps = [3]uint32{1, 4, 8}
-	e.prevHuf, e.prevFse = hufState{}, fseTables{}
-	if e.dict != nil {
-		e.reps = e.dict.reps
-		e.prevHuf = hufState{e.dict.huffC, e.dict.huffRepeat}
-		e.prevFse = e.dict.fse
-	}
-	return L
-}
-
 // copyCDictTables is ZSTD_resetCCtx_byCopyingCDict's table copy: the tagged (fast, dfast) tables lose their tags
 // (ZSTD_copyCDictTableIntoCCtx), the others are copied as they are, with the tag table.
 func (e *Encoder) copyCDictTables() {
@@ -216,10 +107,7 @@ func grow(b []uint32, n int) []uint32 {
 // header is ZSTD_writeFrameHeader (content size always recorded). The frame is single-segment only when the
 // window covers the whole content.
 func (e *Encoder) header(dst []byte, size uint64) []byte {
-	var id uint32
-	if e.dict != nil {
-		id = e.dict.id
-	}
+	id := e.dictID
 	idCode := 0
 	if id > 0 {
 		idCode++
@@ -230,26 +118,34 @@ func (e *Encoder) header(dst []byte, size uint64) []byte {
 	if id >= 65536 {
 		idCode++
 	}
+	if e.fp.noDictID {
+		idCode = 0
+	}
 	windowSize := uint64(1) << e.cp.windowLog
-	single := windowSize >= size
+	single := e.fp.contentSize && windowSize >= size
 	fcsCode := 0
-	if size >= 256 {
-		fcsCode++
-	}
-	if size >= 65536+256 {
-		fcsCode++
-	}
-	if size >= 0xFFFFFFFF {
-		fcsCode++
+	if e.fp.contentSize {
+		if size >= 256 {
+			fcsCode++
+		}
+		if size >= 65536+256 {
+			fcsCode++
+		}
+		if size >= 0xFFFFFFFF {
+			fcsCode++
+		}
 	}
 	fhd := byte(idCode + fcsCode<<6)
-	if !e.NoChecksum {
+	if e.fp.checksum {
 		fhd |= 1 << 2
 	}
 	if single {
 		fhd |= 1 << 5
 	}
-	dst = append(dst, 0x28, 0xB5, 0x2F, 0xFD, fhd)
+	if !e.fp.magicless {
+		dst = append(dst, 0x28, 0xB5, 0x2F, 0xFD)
+	}
+	dst = append(dst, fhd)
 	if !single {
 		dst = append(dst, byte((e.cp.windowLog-windowLogAbsMin)<<3))
 	}
@@ -503,7 +399,7 @@ func (e *Encoder) fillDictTables(content []byte) {
 	}
 	buf := append(append([]byte(nil), content...), make([]byte, 8)...)
 	iend := len(content) - hashReadSize
-	for ip := 0; ip+2 <= iend; ip += 3 {
+	for ip := dictStart(e.cp, len(content)); ip+2 <= iend; ip += 3 {
 		v := rd64(buf, ip)
 		curr := uint32(ip + windowStartIndex)
 		e.short[hashPtr(v, e.cp.chainLog, e.cp.minMatch)] = curr

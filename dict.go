@@ -22,14 +22,23 @@ type Dict struct {
 	huffRepeat    hufRepeat // how a block may reuse it (libzstd's repeatMode of the dictionary)
 	cdMu          sync.Mutex
 	cdicts        map[int]*cdict // prepared per level
+	cdAdv         map[cdictKey]*cdict
 	raw           []byte
 	pool          sync.Pool // *Encoder
 }
 
 // LoadDict parses a dictionary. Without the zstd magic, b is used as raw content (id 0).
-func LoadDict(b []byte) (*Dict, error) {
+func LoadDict(b []byte) (*Dict, error) { return LoadDictType(b, DictAuto) }
+
+// LoadDictType is LoadDict with the ZSTD_dictContentType_e of ZSTD_CCtx_loadDictionary_advanced: DictRaw uses b as raw
+// content even when it carries the zstd magic, DictFull requires a zstd-format dictionary.
+func LoadDictType(b []byte, typ DictContentType) (*Dict, error) {
 	d := &Dict{reps: [3]uint32{1, 4, 8}, raw: b}
-	if len(b) >= 8 && binary.LittleEndian.Uint32(b) == dictMagic {
+	isZstd := len(b) >= 8 && binary.LittleEndian.Uint32(b) == dictMagic
+	if typ == DictFull && !isZstd {
+		return nil, errors.New("zstd: not a zstd-format dictionary")
+	}
+	if isZstd && typ != DictRaw {
 		d.id = binary.LittleEndian.Uint32(b[4:])
 		var rem []byte
 		ht, hsz, hasZero, ok := hufReadCTable(b[8:])
@@ -100,10 +109,45 @@ func (d *Dict) cdict(level int) *cdict {
 	if d.cdicts == nil {
 		d.cdicts = map[int]*cdict{}
 	}
-	cd := newCDict(d.content, uint64(len(d.raw)), level)
+	cd := newCDict(d.cdictContent(), uint64(len(d.raw)), level)
 	d.cdicts[level] = cd
 	return cd
 }
+
+func (d *Dict) cdictContent() []byte {
+	if !d.loadable() {
+		return nil
+	}
+	return d.content
+}
+
+type cdictKey struct {
+	cp  cParams
+	row bool
+}
+
+// cdictAdvanced is ZSTD_createCDict_advanced2 with the parameters c (what ZSTD_CCtx_loadDictionary builds on first use).
+func (d *Dict) cdictAdvanced(c *ctxParams) *cdict {
+	dictSize := uint64(len(d.raw))
+	cp := getCParamsFromCCtxParams(c, contentSizeUnknown, dictSize, cpmCreateCDict)
+	row := rowUsed(cp.strategy, resolveRow(c.UseRowMatchFinder, cp))
+	key := cdictKey{cp, row}
+	d.cdMu.Lock()
+	defer d.cdMu.Unlock()
+	if cd := d.cdAdv[key]; cd != nil {
+		return cd
+	}
+	if d.cdAdv == nil {
+		d.cdAdv = map[cdictKey]*cdict{}
+	}
+	cd := buildCDict(d.cdictContent(), dictSize, cp, row)
+	d.cdAdv[key] = cd
+	return cd
+}
+
+// loadable reports whether the dictionary has content libzstd loads into the match state (ZSTD_compress_insertDictionary
+// ignores dictionaries below 8 bytes; the content must exceed HASH_READ_SIZE to produce tables).
+func (d *Dict) loadable() bool { return len(d.raw) >= 8 && len(d.content) >= 8 }
 
 // ID returns the dictionary id (0 for raw content).
 func (d *Dict) ID() uint32 { return d.id }
