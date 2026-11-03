@@ -100,6 +100,7 @@ var (
 type decState struct {
 	bm            int  // max block size in the current frame (compressed block and literals limit)
 	litDirect     bool // the block's raw literals are read in place from the input
+	maxBlockParam int  // ZSTD_d_maxBlockSize (0: none)
 	oneShot       bool // ZSTD_decompress semantics (not streaming)
 	limited       bool // Decoder.MaxSize is set: the destination capacity is maxEnd
 	outLim        int  // limit on the bytes a block may generate: bm when streaming, unbounded for ZSTD_decompress

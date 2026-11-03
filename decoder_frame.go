@@ -293,9 +293,33 @@ func readSkippableFrameSize(src []byte) (int, error) {
 
 // DecodeAll appends the decompressed content of all frames in src to dst (skippable frames are ignored).
 func (d *Decoder) DecodeAll(src, dst []byte) ([]byte, error) {
+	return d.decodeAll(src, dst, d.MaxSize, d.MaxSize > 0, 0)
+}
+
+// begin is ZSTD_decompressBegin_usingDDict: it resets the per-frame state and returns the dictionary content.
+func (st *decState) begin(dict *Dict) (dc []byte) {
+	st.reps = [3]uint32{1, 4, 8}
+	st.hdecValid = false
+	st.hdec = nil
+	st.pll, st.pof, st.pml = nil, nil, nil
+	if dict != nil {
+		dc = dict.content
+		st.reps = dict.reps
+		if h := dictHuf(dict); h != nil {
+			st.hdec, st.hdecValid = h, true
+		}
+		st.pll, st.pof, st.pml = dict.dll, dict.dof, dict.dml
+	}
+	return dc
+}
+
+// decodeAll is DecodeAll with an explicit capacity (limited: the output may not exceed maxSize bytes).
+func (d *Decoder) decodeAll(src, dst []byte, maxSize int, limited bool, maxBlock int) ([]byte, error) {
 	st := d.get()
 	defer d.pool.Put(st)
-	st.maxEnd = len(dst) + d.MaxSize
+	st.limited = limited
+	st.maxBlockParam = maxBlock
+	st.maxEnd = len(dst) + maxSize
 	minIn := 5
 	if d.Magicless {
 		minIn = 1
@@ -355,7 +379,7 @@ func (d *Decoder) frame(st *decState, src, dst []byte) ([]byte, []byte, error) {
 	}
 	base := len(dst)
 	if h.hasSize {
-		if d.MaxSize > 0 && h.size > uint64(d.MaxSize) {
+		if st.limited && h.size > uint64(st.maxEnd-len(dst)) {
 			return dst, src, ErrTooLarge
 		}
 		if h.size <= 64<<20 && cap(dst)-len(dst) < int(h.size)+wildPad { // larger claims grow on demand, a header must not force a big allocation
@@ -365,21 +389,11 @@ func (d *Decoder) frame(st *decState, src, dst []byte) ([]byte, []byte, error) {
 		}
 	}
 	st.bm = int(h.blockMax)
-	st.oneShot = true
-	st.limited = d.MaxSize > 0
-	st.reps = [3]uint32{1, 4, 8}
-	var dc []byte
-	st.hdecValid = false
-	st.hdec = nil
-	st.pll, st.pof, st.pml = nil, nil, nil
-	if dict != nil {
-		dc = dict.content
-		st.reps = dict.reps
-		if h := dictHuf(dict); h != nil {
-			st.hdec, st.hdecValid = h, true
-		}
-		st.pll, st.pof, st.pml = dict.dll, dict.dof, dict.dml
+	if st.maxBlockParam != 0 && st.bm > st.maxBlockParam {
+		st.bm = st.maxBlockParam
 	}
+	st.oneShot = true
+	dc := st.begin(dict)
 	for last := false; !last; {
 		if len(src) < 3 {
 			return dst, src, errSrcSize
@@ -414,7 +428,7 @@ func (d *Decoder) frame(st *decState, src, dst []byte) ([]byte, []byte, error) {
 			}
 		}
 		src = src[csize:]
-		if d.MaxSize > 0 && len(dst) > st.maxEnd {
+		if st.limited && len(dst) > st.maxEnd {
 			return dst, src, ErrTooLarge
 		}
 		if h.hasSize && uint64(len(dst)-base) > h.size {
