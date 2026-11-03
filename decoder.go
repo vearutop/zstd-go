@@ -99,6 +99,7 @@ var (
 
 type decState struct {
 	bm            int  // max block size in the current frame (compressed block and literals limit)
+	litDirect     bool // the block's raw literals are read in place from the input
 	oneShot       bool // ZSTD_decompress semantics (not streaming)
 	limited       bool // Decoder.MaxSize is set: the destination capacity is maxEnd
 	outLim        int  // limit on the bytes a block may generate: bm when streaming, unbounded for ZSTD_decompress
@@ -132,7 +133,7 @@ func (st *decState) block(in, out []byte, base int, dc []byte) ([]byte, error) {
 		// ZSTD_allocateLiteralsBuffer: with room to spare the literals sit behind blockSizeMax+WILDCOPY_OVERLENGTH bytes of
 		// the destination and the block's output may not reach them; otherwise only the destination capacity bounds it.
 		st.outLim = int(^uint(0) >> 1)
-		if !st.limited || st.maxEnd-len(out) > st.bm+wildOverlength+len(lits)+wildOverlength {
+		if !st.litDirect && (!st.limited || st.maxEnd-len(out) > st.bm+wildOverlength+len(lits)+wildOverlength) {
 			st.outLim = st.bm + wildOverlength
 		}
 	}
@@ -215,6 +216,8 @@ func (st *decState) literals(in []byte) (lits, rest []byte, err error) {
 	}
 	b := uint32(in[0])
 	typ, sf := b&3, (b>>2)&3
+	st.litDirect = false
+	srcSize := len(in)
 	if typ < 2 { // raw / RLE
 		var n, hl int
 		switch sf {
@@ -236,6 +239,8 @@ func (st *decState) literals(in []byte) (lits, rest []byte, err error) {
 			if len(in) < n || n > st.bm {
 				return nil, in, corrupt()
 			}
+			// raw literals with 32 spare bytes behind them are read in place (ZSTD_not_in_dst)
+			st.litDirect = hl+n+wildOverlength <= srcSize
 			return in[:n], in[n:], nil
 		}
 		if len(in) < 1 || n > st.bm {
