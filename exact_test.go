@@ -216,6 +216,9 @@ func TestExactRandom(t *testing.T) {
 	if s := os.Getenv("EXACT_SEED"); s != "" {
 		fmt.Sscan(s, &seed)
 		cases, maxN = 3000, 3e6
+		if c := os.Getenv("EXACT_CASES"); c != "" { // fewer cases for the slowest levels
+			fmt.Sscan(c, &cases)
+		}
 	}
 	rng := rand.New(rand.NewSource(seed))
 	words := strings.Fields("the quick brown fox jumps over lazy dog alpha beta gamma delta {\"id\": \"user\": 12345 true false null")
