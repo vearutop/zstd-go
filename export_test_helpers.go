@@ -20,3 +20,6 @@ func (d *Dict) ContentLenForTest() int { return len(d.content) }
 
 // SetDebugErrsForTest makes corruption errors name their source line.
 func SetDebugErrsForTest(on bool) { debugErrs = on }
+
+// DictDecodableForTest reports whether the decoder accepts the dictionary's entropy tables (ZSTD_createDDict succeeds).
+func DictDecodableForTest(d *Dict) bool { return dictDecodable(d) == nil }

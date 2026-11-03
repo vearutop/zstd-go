@@ -471,3 +471,16 @@ func DecompressParams(p DParams, src []byte, capacity int) ([]byte, ErrCode) {
 	}
 	return append([]byte(nil), dst[:r]...), 0
 }
+
+// RefDDictOneShotPrepare is a no-op kept for readability of callers (a DStream's context is used by DecompressDCtx).
+func RefDDictOneShotPrepare(s *DStream) {}
+
+// DecompressDCtx is ZSTD_decompressDCtx on the stream's context (it uses the referenced DDict(s)).
+func (s *DStream) DecompressDCtx(src []byte, capacity int) ([]byte, ErrCode) {
+	dst := scratchBuf(capacity + 1)
+	r := C.ZSTD_decompressDCtx(s.d, unsafe.Pointer(&dst[0]), C.size_t(capacity), ptr(src), C.size_t(len(src)))
+	if e := C.errCode(r); e != 0 {
+		return nil, ErrCode(e)
+	}
+	return append([]byte(nil), dst[:r]...), 0
+}
