@@ -508,3 +508,34 @@ func TestDecodeOne(t *testing.T) {
 	got, err := c.ours(t, frame, diffCap)
 	t.Logf("libzstd: %d bytes, code %d; ours: %d bytes, err %v", len(want), code, len(got), err)
 }
+
+// TestDecodeBadZip prints libzstd's verdict on the klauspost "bad" corpus.
+func TestDecodeBadZip(t *testing.T) {
+	cfgs := decCfgs(t)
+	for n, b := range readZip(t, "testdata/klauspost/bad.zip") {
+		_, code := cfgs[0].lib(b, diffCap)
+		_, err := cfgs[0].ours(t, b, diffCap)
+		if (code == 0) != (err == nil) {
+			t.Errorf("%s: libzstd %d ours %v", n, code, err)
+		}
+		if code == 0 {
+			t.Logf("%s: libzstd accepts too", n)
+		}
+	}
+}
+
+func TestDecodeBadZip2(t *testing.T) {
+	cfgs := decCfgs(t)
+	for n, b := range readZip(t, "testdata/klauspost/bad.zip") {
+		if !strings.HasSuffix(n, ".zst") {
+			continue
+		}
+		cfgs[0].dec.MaxSize = 0
+		out, err := cfgs[0].dec.DecodeAll(b, nil)
+		_, code := cfgs[0].lib(b, 1<<28)
+		_, code2 := cfgs[0].lib(b, 1<<21)
+		if err == nil {
+			t.Logf("%s: ours accepts %d bytes; libzstd codes %d (cap 256M) %d (cap 2M)", n, len(out), code, code2)
+		}
+	}
+}
