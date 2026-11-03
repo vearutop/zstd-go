@@ -266,3 +266,34 @@ func TestEntropyReadersVsLibzstd(t *testing.T) {
 	}
 	t.Logf("%d huffman and %d fse headers compared, %d divergences", nh, nf, bad)
 }
+
+// TestStreamBoundedMemory checks that the history stays near the window size.
+func TestStreamBoundedMemory(t *testing.T) {
+	r := rand.New(rand.NewSource(3))
+	data := make([]byte, 24<<20)
+	for i := range data {
+		data[i] = byte(r.Intn(4)) + byte(i>>14)
+	}
+	f := ref.CompressAdv(data, nil, ref.CParam{Level: 3, WindowLog: 13})
+	s := NewDStream(nil)
+	out := make([]byte, 100000)
+	pos, total := 0, 0
+	for pos < len(f) || total < len(data) {
+		in := f[pos:min(pos+30000, len(f))]
+		a, b, _, err := s.Decompress(in, out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(out[:b], data[total:total+b]) {
+			t.Fatal("output differs")
+		}
+		pos, total = pos+a, total+b
+		if a == 0 && b == 0 {
+			break
+		}
+	}
+	if total != len(data) || cap(s.hist) > 2<<20 {
+		t.Fatalf("total %d of %d, history capacity %d", total, len(data), cap(s.hist))
+	}
+	t.Logf("history capacity %d for window %d", cap(s.hist), 1<<13)
+}

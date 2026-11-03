@@ -3,7 +3,9 @@
 package zstd_test
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"math/rand"
 	"testing"
 
@@ -139,4 +141,95 @@ func TestStreamVsLibzstd(t *testing.T) {
 		})
 	}
 	t.Logf("%d stream runs, %d divergences", n, bad)
+}
+
+// TestMagiclessVsLibzstd compares magicless frames: one shot (ZSTD_decompressDCtx) and streaming, plus mutations.
+func TestMagiclessVsLibzstd(t *testing.T) {
+	cfgs := decCfgs(t)
+	r := rand.New(rand.NewSource(int64(envInt("DECODE_SEED", 1))))
+	n, bad := 0, 0
+	for i := 0; i < envInt("DECODE_FRAMES", 100); i++ {
+		c := cfgs[r.Intn(len(cfgs))]
+		data := genData(r, r.Intn(6), []int{0, 1, 20, 500, 5000, 70000, 200000}[r.Intn(7)])
+		f := ref.CompressAdv(data, c.raw, ref.CParam{Level: []int{1, 3, 9}[r.Intn(3)], Checksum: r.Intn(2) == 0, Magicless: true, NoContentSz: r.Intn(3) == 0})
+		if f == nil {
+			continue
+		}
+		dec, _ := zstd.NewDecoder(c.decDicts()...)
+		dec.Magicless = true
+		one := func(m []byte) {
+			n++
+			want, code := ref.DecompressParams(ref.DParams{Magicless: true}, m, diffCap)
+			if c.dd != nil { // with a dictionary: ZSTD_decompressDCtx has none, use a stream instead
+				return
+			}
+			dec.MaxSize = diffCap
+			got, err := dec.DecodeAll(m, nil)
+			if (code != 0) != (err != nil) || (err == nil && string(want) != string(got)) {
+				bad++
+				if bad < 10 {
+					t.Errorf("one-shot len=%d: libzstd %d (%d bytes), ours %v (%d bytes)", len(m), code, len(want), err, len(got))
+				}
+			}
+		}
+		one(f)
+		mutate(r, f, 30, one)
+		o := streamOpts{magicless: true}
+		for k := 0; k < 3; k++ {
+			n++
+			if msg := streamLockstep(c, o, f, r); msg != "" {
+				bad++
+				t.Errorf("magicless stream %s: %s", c.name, msg)
+			}
+		}
+		mutate(r, f, 10, func(m []byte) {
+			if len(m) < 20000 {
+				n++
+				if msg := streamLockstep(c, o, m, r); msg != "" {
+					bad++
+					if bad < 10 {
+						t.Errorf("magicless stream %s len=%d: %s", c.name, len(m), msg)
+					}
+				}
+			}
+		})
+	}
+	t.Logf("%d runs, %d divergences", n, bad)
+}
+
+// TestStreamLargeVsLibzstd runs multi-megabyte frames with small windows through both streams (the sliding history trims).
+func TestStreamLargeVsLibzstd(t *testing.T) {
+	cfgs := decCfgs(t)
+	r := rand.New(rand.NewSource(int64(envInt("DECODE_SEED", 1))))
+	n, bad := 0, 0
+	for i := 0; i < envInt("DECODE_LARGE", 12); i++ {
+		c := cfgs[r.Intn(len(cfgs))]
+		data := genData(r, []int{2, 3, 4, 5}[r.Intn(4)], 800000+r.Intn(2500000))
+		p := ref.CParam{Level: []int{1, 3, 9, 15}[r.Intn(4)], Checksum: r.Intn(2) == 0, WindowLog: 10 + r.Intn(10)}
+		var f []byte
+		if i%2 == 0 {
+			f = ref.StreamCompress(data, c.raw, p, 1+r.Intn(300000))
+		} else {
+			f = ref.CompressAdv(data, c.raw, p)
+		}
+		if f == nil {
+			continue
+		}
+		for k := 0; k < 4; k++ {
+			n++
+			if msg := streamLockstep(c, streamOpts{}, f, r); msg != "" {
+				bad++
+				t.Errorf("%s wlog=%d len=%d: %s", c.name, p.WindowLog, len(f), msg)
+			}
+		}
+		// the whole output equals the input
+		dec, _ := zstd.NewDecoder(c.decDicts()...)
+		rd := zstd.NewReader(bytes.NewReader(f), dec)
+		got, err := io.ReadAll(rd)
+		if err != nil || !bytes.Equal(got, data) {
+			bad++
+			t.Errorf("Reader: %v, %d vs %d bytes", err, len(got), len(data))
+		}
+	}
+	t.Logf("%d runs, %d divergences", n, bad)
 }

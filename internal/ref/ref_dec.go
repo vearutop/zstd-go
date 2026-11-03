@@ -456,3 +456,18 @@ func HufDecompress(src []byte, dstSize int, fourStreams bool, flags int) ([]byte
 	}
 	return dst[:r], 0
 }
+
+// DecompressParams is ZSTD_decompressDCtx (one shot) on a context configured with p.
+func DecompressParams(p DParams, src []byte, capacity int) ([]byte, ErrCode) {
+	s, e := NewDStream(p)
+	if e != 0 {
+		return nil, e
+	}
+	defer s.Free()
+	dst := scratchBuf(capacity + 1)
+	r := C.ZSTD_decompressDCtx(s.d, unsafe.Pointer(&dst[0]), C.size_t(capacity), ptr(src), C.size_t(len(src)))
+	if e := C.errCode(r); e != 0 {
+		return nil, ErrCode(e)
+	}
+	return append([]byte(nil), dst[:r]...), 0
+}
