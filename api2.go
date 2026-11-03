@@ -84,16 +84,28 @@ func (e *Encoder) clearDicts() { e.refCD, e.local, e.localCD, e.prefix = nil, ni
 // with RefCDict / LoadDictionary / RefPrefix. Without any of them a dictionary given to NewEncoder is used as
 // ZSTD_createCDict(dict, e.Level) referenced by ZSTD_CCtx_refCDict.
 func (e *Encoder) Compress2(dst, src []byte) ([]byte, error) {
-	c, err := e.params.resolved()
+	r, err := e.buildRequest(uint64(len(src)))
 	if err != nil {
 		return dst, err
 	}
-	if c.DedicatedDictSearch || c.TargetCBlockSize != 0 {
-		return dst, ErrUnsupported
+	return e.frame(src, dst, e.begin(src, r)), nil
+}
+
+// buildRequest is ZSTD_CCtx_init_compressStream2: the requested parameters and dictionary resolved for a frame of
+// pledged bytes (contentSizeUnknown if not known).
+func (e *Encoder) buildRequest(pledged uint64) (*request, error) {
+	c, err := e.params.resolved()
+	if err != nil {
+		return nil, err
 	}
-	n := uint64(len(src))
-	r := &request{pledged: n}
+	if c.DedicatedDictSearch || c.TargetCBlockSize != 0 {
+		return nil, ErrUnsupported
+	}
+	r := &request{pledged: pledged}
 	c.fill(r)
+	if pledged == contentSizeUnknown {
+		r.fp.contentSize = false // ZSTD_resetCCtx_internal
+	}
 	var dictSize uint64
 	mode := cpmNoAttachDict
 	switch {
@@ -115,16 +127,16 @@ func (e *Encoder) Compress2(dst, src []byte) ([]byte, error) {
 			if e.refCD != nil || e.local == nil { // an explicit CDict's level takes priority over the requested one
 				c.level = cdc.cd.level
 			}
-			if shouldAttachDict(cdc.cd, c.ForceAttachDict, n) {
+			if shouldAttachDict(cdc.cd, c.ForceAttachDict, pledged) {
 				mode = cpmAttachDict
 			}
 		}
 	}
-	r.cp = getCParamsFromCCtxParams(&c, n, dictSize, mode)
+	r.cp = getCParamsFromCCtxParams(&c, pledged, dictSize, mode)
 	r.postSplit = resolveBlockSplitter(c.PostBlockSplitter, r.cp)
 	r.useRow = resolveRow(c.UseRowMatchFinder, r.cp)
 	if r.cp.strategy >= stratBtOpt && r.cp.windowLog >= 27 {
-		return dst, ErrUnsupported // ZSTD_resolveEnableLdm: long distance matching is not ported
+		return nil, ErrUnsupported // ZSTD_resolveEnableLdm: long distance matching is not ported
 	}
-	return e.frame(src, dst, e.begin(src, r)), nil
+	return r, nil
 }

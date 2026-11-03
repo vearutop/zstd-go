@@ -57,6 +57,8 @@ type Encoder struct {
 	preSplit int    // preBlockSplitter_level
 	litOff   bool   // ZSTD_literalsCompressionIsDisabled
 	dictID   uint32 // cctx->dictID
+	pledged  uint64 // pledged source size (contentSizeUnknown if unknown)
+	st       streamState
 	// Compress2 configuration
 	params  Params
 	refCD   *CDict // ZSTD_CCtx_refCDict
@@ -296,7 +298,7 @@ func offRepeatAfterBlock(r fseRepeat) fseRepeat {
 func (e *Encoder) matchFind(L, base, n int) {
 	start, end := L+base, L+base+n
 	maxDist := uint32(1) << e.cp.windowLog
-	if blockEnd := e.ix(end); blockEnd > maxDist+e.loadedDictEnd { // ZSTD_checkDictValidity
+	if blockEnd := e.ix(end); blockEnd > maxDist+e.loadedDictEnd || e.loadedDictEnd != e.dictLimit { // ZSTD_checkDictValidity (a non contiguous update also invalidates)
 		e.loadedDictEnd = 0
 	}
 	if blockStart := e.ix(start); blockStart > maxDist+e.loadedDictEnd { // ZSTD_window_enforceMaxDist

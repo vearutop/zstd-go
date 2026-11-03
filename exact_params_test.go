@@ -253,9 +253,11 @@ func newParamDicts(t testing.TB) *paramDicts {
 	return pd
 }
 
-// runParamCase compresses in with ps and one dictionary configuration in both implementations.
-func runParamCase(t *testing.T, pd *paramDicts, cc *ref.CCtx, e *zstd.Encoder, rng *rand.Rand, in []byte, ps paramSet, di int, kind dictKind) (ours, theirs []byte, desc string) {
+// setupCase configures both implementations with ps and one dictionary configuration; done releases libzstd's CDict.
+func setupCase(t *testing.T, pd *paramDicts, cc *ref.CCtx, e *zstd.Encoder, rng *rand.Rand, ps paramSet, di int, kind dictKind) (desc string, done func()) {
 	cc.Reset()
+	e.ResetSession()
+	done = func() {}
 	applyRef(t, cc, ps)
 	if err := e.SetParams(ps.Params); err != nil {
 		t.Fatalf("our parameters rejected: %v (%v)", err, ps)
@@ -280,7 +282,7 @@ func runParamCase(t *testing.T, pd *paramDicts, cc *ref.CCtx, e *zstd.Encoder, r
 		level := []int{-3, 1, 3, 3, 5, 9, 12, 19}[rng.Intn(8)]
 		desc += fmt.Sprintf(" level %d", level)
 		cdRef = ref.CreateCDict(raw, level, rng.Intn(2) == 0)
-		defer cdRef.Close()
+		done = cdRef.Close
 		cc.RefCDict(cdRef)
 		e.RefCDict(pd.parsed[di].CDictLevel(level))
 	case dkRefCDictAdvanced:
@@ -308,7 +310,7 @@ func runParamCase(t *testing.T, pd *paramDicts, cc *ref.CCtx, e *zstd.Encoder, r
 		}
 		desc += fmt.Sprintf(" cParams %+v", rcp)
 		cdRef = ref.CreateCDictAdvanced(raw, false, ref.DctAuto, rcp)
-		defer cdRef.Close()
+		done = cdRef.Close
 		cc.RefCDict(cdRef)
 		ecp := cp
 		ecp.Level = 0
@@ -347,6 +349,13 @@ func runParamCase(t *testing.T, pd *paramDicts, cc *ref.CCtx, e *zstd.Encoder, r
 			t.Fatal(err)
 		}
 	}
+	return desc, done
+}
+
+// runParamCase compresses in with ps and one dictionary configuration in both implementations.
+func runParamCase(t *testing.T, pd *paramDicts, cc *ref.CCtx, e *zstd.Encoder, rng *rand.Rand, in []byte, ps paramSet, di int, kind dictKind) (ours, theirs []byte, desc string) {
+	desc, done := setupCase(t, pd, cc, e, rng, ps, di, kind)
+	defer done()
 	theirs, err := cc.Compress2(in)
 	if err != nil {
 		t.Fatalf("libzstd failed: %v (%v, %s)", err, ps, desc)

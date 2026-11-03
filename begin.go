@@ -68,21 +68,11 @@ func shouldAttachDict(cd *cdict, pref AttachPref, pledged uint64) bool {
 
 // frame is ZSTD_compressEnd_public after begin: header, the blocks of src, epilogue. L is the dictionary length.
 func (e *Encoder) frame(src, dst []byte, L int) []byte {
-	pledged := uint64(len(src))
-	dst = e.header(dst, pledged)
-	windowSize := max(1, min(uint64(1)<<e.cp.windowLog, pledged))
-	bsMax := int(min(uint64(e.blockMax), windowSize)) // cctx->blockSizeMax
-	var savings int64
-	for base := 0; ; {
-		bs := optimalBlockSize(src[base:], bsMax, savings, e.preSplit, e.cp.strategy)
-		end := base + bs
-		before := len(dst)
-		dst = e.block(dst, src[base:end], L, base, end == len(src))
-		savings += int64(bs) - int64(len(dst)-before)
-		base = end
-		if end == len(src) {
-			break
-		}
+	dst = e.header(dst, uint64(len(src)))
+	if len(src) == 0 {
+		dst = blockHeader(dst, true, 0, 0)
+	} else {
+		dst = e.chunk(dst, src, L, 0, true, 0)
 	}
 	if e.fp.checksum {
 		dst = binary.LittleEndian.AppendUint32(dst, uint32(xxhash.Sum64(src)))
@@ -90,11 +80,36 @@ func (e *Encoder) frame(src, dst []byte, L int) []byte {
 	return dst
 }
 
+// chunk is ZSTD_compress_frameChunk: the blocks of data, which starts at position base of the frame; savings is
+// consumedSrcSize - producedCSize.
+func (e *Encoder) chunk(dst, data []byte, L, base0 int, last bool, savings int64) []byte {
+	bsMax := e.blockSizeMax()
+	for base := 0; ; {
+		bs := optimalBlockSize(data[base:], bsMax, savings, e.preSplit, e.cp.strategy)
+		end := base + bs
+		before := len(dst)
+		dst = e.block(dst, data[base:end], L, base0+base, last && end == len(data))
+		savings += int64(bs) - int64(len(dst)-before)
+		base = end
+		if end == len(data) {
+			break
+		}
+	}
+	return dst
+}
+
+// blockSizeMax is cctx->blockSizeMax: min(maxBlockSize, windowSize) with windowSize = max(1, min(1 << windowLog, pledged)).
+func (e *Encoder) blockSizeMax() int {
+	windowSize := max(1, min(uint64(1)<<e.cp.windowLog, e.pledged))
+	return int(min(uint64(e.blockMax), windowSize))
+}
+
 // begin loads dictionary and source into e.buf, derives the working parameters (ZSTD_compressBegin_internal:
 // ZSTD_resetCCtx_usingCDict by attaching or copying, or the full dictionary load) and sets up the tables. It returns
 // the dictionary length in e.buf.
 func (e *Encoder) begin(src []byte, r *request) (L int) {
 	n := r.pledged
+	e.pledged = n
 	e.copyMode, e.loadedDictEnd, e.dictLimit, e.lowLimit = false, 0, windowStartIndex, windowStartIndex
 	e.nextToUpdate, e.hashCache, e.lazySkipping = windowStartIndex, [rowHashCacheSize]uint32{}, false
 	e.fp, e.blockMax, e.preSplit, e.litOff = r.fp, r.maxBlock, r.preSplit, false
