@@ -13,6 +13,9 @@ import (
 // (input, directive) calls, and the match state persists across calls like in libzstd's sliding window, including the
 // ring buffer (inBuff) wrap-around that turns the previous lap into the extDict.
 //
+// Memory: the whole frame stays in the history buffer (the match finders index it by position; libzstd's ring buffer is
+// modelled only as index bookkeeping), so memory grows with the frame length; call End to release it.
+//
 // Not modelled: ZSTD_c_stableInBuffer / stableOutBuffer, multithreading, index overflow correction (streams of more
 // than 3.5 GB), long distance matching, and output buffers smaller than ZSTD_compressBound of the pending input
 // (libzstd then goes through its internal output buffer and the block layout of ZSTD_e_end may differ).
