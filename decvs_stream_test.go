@@ -18,6 +18,7 @@ type streamOpts struct {
 	magicless    bool
 	ignoreCksum  bool
 	maxBlock     int
+	prefix       []byte
 }
 
 // streamLockstep feeds the same input/output chunk sequence to libzstd's ZSTD_decompressStream and to DStream and compares
@@ -31,10 +32,16 @@ func streamLockstep(c *decCfg, o streamOpts, frame []byte, r *rand.Rand) string 
 	if c.dd != nil {
 		ls.RefDDict(c.dd)
 	}
+	if o.prefix != nil {
+		ls.RefPrefix(o.prefix)
+	}
 	dec, _ := zstd.NewDecoder(c.decDicts()...)
 	dec.Magicless, dec.IgnoreChecksum = o.magicless, o.ignoreCksum
 	os := zstd.NewDStream(dec)
 	os.WindowLogMax, os.MaxBlockSize = o.windowLogMax, o.maxBlock
+	if o.prefix != nil {
+		os.RefPrefix(o.prefix)
+	}
 	inMax := []int{1, 3, 17, 500, 4096, 1 << 17}[r.Intn(6)]
 	outMax := []int{1, 5, 64, 1000, 4096, 1 << 17, 1 << 20}[r.Intn(7)]
 	var lo, oo []byte
@@ -230,6 +237,51 @@ func TestStreamLargeVsLibzstd(t *testing.T) {
 			bad++
 			t.Errorf("Reader: %v, %d vs %d bytes", err, len(got), len(data))
 		}
+	}
+	t.Logf("%d runs, %d divergences", n, bad)
+}
+
+// TestPrefixVsLibzstd compares ZSTD_DCtx_refPrefix: frames made with a prefix, the prefix used once, mutations.
+func TestPrefixVsLibzstd(t *testing.T) {
+	cfgs := decCfgs(t)
+	r := rand.New(rand.NewSource(int64(envInt("DECODE_SEED", 1))))
+	n, bad := 0, 0
+	for i := 0; i < envInt("DECODE_FRAMES", 100); i++ {
+		prefix := genData(r, r.Intn(6), 1+r.Intn(20000))
+		data := genData(r, r.Intn(6), r.Intn(60000))
+		if r.Intn(2) == 0 {
+			copy(data, prefix[r.Intn(len(prefix)):])
+		}
+		f := ref.CompressAdv(data, nil, ref.CParam{Level: []int{1, 3, 9}[r.Intn(3)], Checksum: r.Intn(2) == 0, Prefix: prefix})
+		if f == nil {
+			continue
+		}
+		o := streamOpts{prefix: prefix}
+		c := cfgs[0]
+		for k := 0; k < 3; k++ {
+			n++
+			if msg := streamLockstep(c, o, f, r); msg != "" {
+				bad++
+				t.Errorf("prefix stream: %s", msg)
+			}
+		}
+		g := append(append([]byte(nil), f...), f...) // the second frame has no prefix any more
+		n++
+		if msg := streamLockstep(c, o, g, r); msg != "" {
+			bad++
+			t.Errorf("prefix stream, two frames: %s", msg)
+		}
+		mutate(r, f, 8, func(m []byte) {
+			if len(m) < 20000 {
+				n++
+				if msg := streamLockstep(c, o, m, r); msg != "" {
+					bad++
+					if bad < 10 {
+						t.Errorf("prefix stream len=%d: %s", len(m), msg)
+					}
+				}
+			}
+		})
 	}
 	t.Logf("%d runs, %d divergences", n, bad)
 }

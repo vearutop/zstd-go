@@ -47,6 +47,9 @@ type DStream struct {
 	dec *Decoder
 	st  *decState
 
+	prefix   *Dict // RefPrefix: used by the next frame only, then no dictionary at all
+	dictMode uint8 // 0: the decoder's dictionaries, 1: prefix pending, 2: cleared by a used prefix
+
 	stage      dsStage
 	hdr        [18]byte
 	lhSize     int
@@ -75,6 +78,33 @@ func NewDStream(dec *Decoder) *DStream {
 		dec, _ = NewDecoder()
 	}
 	return &DStream{dec: dec, st: &decState{}, xx: xxhash.New()}
+}
+
+// RefPrefix makes the next frame use prefix as raw-content dictionary (ZSTD_DCtx_refPrefix); frames after it get no
+// dictionary. It fails unless the stream is between frames.
+func (s *DStream) RefPrefix(prefix []byte) error {
+	if s.stage != dsInit {
+		return newErr(ErrStageWrong, "RefPrefix in the middle of a frame")
+	}
+	s.prefix = nil
+	s.dictMode = 2
+	if len(prefix) != 0 {
+		s.prefix = &Dict{reps: [3]uint32{1, 4, 8}, content: append(make([]byte, 0, len(prefix)+wildPad), prefix...)}
+		s.dictMode = 1
+	}
+	return nil
+}
+
+// takeDict is ZSTD_getDDict: a pending prefix is handed out once.
+func (s *DStream) takeDict() dictSel {
+	switch s.dictMode {
+	case 1:
+		s.dictMode = 2
+		return dictSel{true, s.prefix}
+	case 2:
+		return dictSel{true, nil}
+	}
+	return dictSel{}
 }
 
 // midFrame reports whether a frame has been started and not completed.
@@ -154,7 +184,7 @@ func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) {
 			// single-pass shortcut
 			if h.hasSize && !h.skippable && uint64(len(out)-op) >= h.size {
 				if fi := findFrameSizeInfo(in, s.dec.Magicless); fi.err == nil && fi.compressed <= len(in) {
-					res, e := s.dec.decodeAll(in[:fi.compressed], nil, len(out)-op, true, s.MaxBlockSize)
+					res, e := s.dec.decodeAll(in[:fi.compressed], nil, len(out)-op, true, s.MaxBlockSize, s.takeDict())
 					if e != nil {
 						return 0, 0, 0, e
 					}
@@ -169,14 +199,22 @@ func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) {
 			// ZSTD_decompressBegin_usingDDict + frame header
 			s.decoded = 0
 			s.validate = false
+			sel := s.takeDict()
 			if !s.dec.Magicless && binary.LittleEndian.Uint32(s.hdr[:])&magicSkippableMask == magicSkippableBase {
 				s.expected = int(binary.LittleEndian.Uint32(s.hdr[4:]))
 				s.cstage = dcSkip
 				s.dc = nil
 			} else {
-				dict, e := s.dec.pick(h.dictID)
-				if e != nil {
-					return 0, 0, 0, e
+				var dict *Dict
+				if sel.on {
+					if dict = sel.d; h.dictID != 0 && (dict == nil || dict.id != h.dictID) {
+						return 0, 0, 0, errDictID
+					}
+				} else {
+					var e error
+					if dict, e = s.dec.pick(h.dictID); e != nil {
+						return 0, 0, 0, e
+					}
 				}
 				s.dc = s.st.begin(dict)
 				s.validate = h.checksum && !s.dec.IgnoreChecksum

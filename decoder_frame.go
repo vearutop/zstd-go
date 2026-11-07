@@ -293,7 +293,7 @@ func readSkippableFrameSize(src []byte) (int, error) {
 
 // DecodeAll appends the decompressed content of all frames in src to dst (skippable frames are ignored).
 func (d *Decoder) DecodeAll(src, dst []byte) ([]byte, error) {
-	return d.decodeAll(src, dst, d.MaxSize, d.MaxSize > 0, 0)
+	return d.decodeAll(src, dst, d.MaxSize, d.MaxSize > 0, 0, dictSel{})
 }
 
 // begin is ZSTD_decompressBegin_usingDDict: it resets the per-frame state and returns the dictionary content.
@@ -314,11 +314,18 @@ func (st *decState) begin(dict *Dict) (dc []byte) {
 }
 
 // decodeAll is DecodeAll with an explicit capacity (limited: the output may not exceed maxSize bytes).
-func (d *Decoder) decodeAll(src, dst []byte, maxSize int, limited bool, maxBlock int) ([]byte, error) {
+// dictSel overrides the decoder's dictionary choice (a stream's RefPrefix): the dictionary d, possibly none.
+type dictSel struct {
+	on bool
+	d  *Dict
+}
+
+func (d *Decoder) decodeAll(src, dst []byte, maxSize int, limited bool, maxBlock int, sel dictSel) ([]byte, error) {
 	st := d.get()
 	defer d.pool.Put(st)
 	st.limited = limited
 	st.maxBlockParam = maxBlock
+	st.sel = sel
 	st.maxEnd = len(dst) + maxSize
 	minIn := 5
 	if d.Magicless {
@@ -373,7 +380,14 @@ func (d *Decoder) frame(st *decState, src, dst []byte) ([]byte, []byte, error) {
 		return dst, src, errSrcSize
 	}
 	src = src[fhs:]
-	dict, err := d.pick(h.dictID)
+	var dict *Dict
+	if st.sel.on {
+		if dict = st.sel.d; h.dictID != 0 && (dict == nil || dict.id != h.dictID) {
+			return dst, src, errDictID
+		}
+	} else if dict, err = d.pick(h.dictID); err != nil {
+		return dst, src, err
+	}
 	if err != nil {
 		return dst, src, err
 	}

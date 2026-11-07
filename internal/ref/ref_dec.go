@@ -319,6 +319,7 @@ type CParam struct {
 	TargetCBlock int
 	Strategy     int
 	LongMatch    bool
+	Prefix       []byte // ZSTD_CCtx_refPrefix
 }
 
 // CompressAdv compresses src with ZSTD_compress2 (dict may be nil).
@@ -353,6 +354,9 @@ func CompressAdv(src, dict []byte, p CParam) []byte {
 	}
 	if len(dict) > 0 {
 		C.ZSTD_CCtx_loadDictionary(c, ptr(dict), C.size_t(len(dict)))
+	}
+	if len(p.Prefix) > 0 {
+		C.ZSTD_CCtx_refPrefix(c, ptr(p.Prefix), C.size_t(len(p.Prefix)))
 	}
 	dst := make([]byte, C.ZSTD_compressBound(C.size_t(len(src)))+64)
 	r := C.ZSTD_compress2(c, unsafe.Pointer(&dst[0]), C.size_t(len(dst)), ptr(src), C.size_t(len(src)))
