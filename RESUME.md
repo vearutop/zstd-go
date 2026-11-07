@@ -20,19 +20,11 @@ harness (`-tags libzstd`, `internal/ref`, tests `TestExact*`, `FuzzExact`).
 
 All three branches had `go vet .` passing at pause time, but each last commit is a WIP checkpoint: check `go test .`.
 
-1. `worktree-agent-a6ba086daa796c971` - **compression API paths** (agent a6ba086daa796c971; based on master before the decoder merge).
-   Committed/working (`go vet` ok, `go test .` ok): Params (ZSTD_c_* subset), CDict / CDictLevel / CDictAdvanced, LoadDictionary (auto, raw,
-   byRef, full), RefPrefix, RefCDict, Compress2, frame params (checksum, content size, dict id, magicless), explicit cParams overrides,
-   forceAttach/Copy/Load, literal-compression switch, row-matchfinder switch, pre/post block-splitter settings, max block size, suffix loading for
-   oversized dictionaries. `TestExactParams` (libzstd): 400/400 identical at each of seeds 1, 2, 3, 5 over 8 dictionary modes.
-   Streaming compression (CompressStream2 with Continue/Flush/End, pledged size, ring buffer, StreamWriter): committed as WIP; `TestExactStream`
-   sequences identical: seed 1 139/150, seed 2 147/150, seed 3 141/147, seed 5 145/150. Failing cases are mostly large sources (0.15-2.8 MB) with
-   pledge mode 2 / high levels (btopt+) at Continue/Flush steps, plus one refCDict(advanced) End step: block layout or window-ring bug to find.
-   Returns ErrUnsupported: dedicated dictionary search, targetCBlockSize, long-distance matching. Not started: multithreading (nbWorkers),
-   stable in/out buffers, external-sequence API (ZSTD_compressSequences / ZSTD_generateSequences), block-level API (ZSTD_compressBlock),
-   index overflow correction (> 3.5 GB streams), small-output-buffer streaming semantics.
-   Remaining plan: fix the ~5% streaming mismatches, merge (conflicts expected in encoder.go and streaming.go), then targetCBlockSize
-   (zstd_compress_superblock.c), dedicated dictionary search, LDM, then the rarely used APIs.
+1. `worktree-agent-a6ba086daa796c971` - **compression API paths**: DONE for what is listed in PARITY.md and MERGED into master
+   (merge commit on 2026-11-08; two small conflicts fixed: duplicate `ContentSizeUnknown`, duplicate test helpers envInt/genData).
+   Remaining optional backlog: targetCBlockSize (zstd_compress_superblock.c), dedicated dictionary search, forceMaxWindow, LDM,
+   multithreading, stable buffers, external-sequence API, block-level API, bounded streaming history (needs idxShift in the fast/dfast/lazy
+   match finders). The worktree can be removed (`git worktree remove`).
 2. branch `zdict-wip` (was worktree-agent-a39348e3c3f5a59c1, **parked by the user 2026-11-08**, no worktree, all committed) - **dictionary trainer (zdict)**.
    WIP only (one checkpoint commit 701878e, `go vet` passed): zdict.go, zdict_cover.go, zdict_fastcover.go, legacy trainer, suffix array,
    ref_zdict.go, `zdict_exact_test.go`; an edit of dfast.go (a hook to get the sequence store). Not verified byte-exact yet. To resume:

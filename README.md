@@ -48,6 +48,8 @@ function-by-function port of the C sources (match finders, Huffman, FSE selectio
 - Decoder: own FSE / sequence / Huffman code (12-bit tables included). `DecodeAll` follows `ZSTD_decompress`: window, offset, block-size,
   dictionary and checksum rules, magicless format, multi-dictionary selection, destination-capacity rules; verified against libzstd on
   millions of valid and mutated frames (PARITY.md has the numbers and the limitations).
+- Configuration API: `Encoder.SetParams` / `Compress2` (ZSTD_c_* subset), `LoadDictionary`, `RefPrefix`, `RefCDict`; streaming compression
+  `CompressStream2` / `StreamWriter` with libzstd's exact bytes. Not ported: targetCBlockSize, dedicated dictionary search, LDM, MT (PARITY.md).
 - Streaming: `Writer` writes independent frames (not libzstd's streaming compression mode). `DStream`/`Reader` follow
   `ZSTD_decompressStream` with a sliding window (hints, ring-buffer capacity errors, `RefPrefix`); frame utility API
   (`GetFrameHeader`, `FindFrameCompressedSize`, `DecompressBound`, ...). Verified in lockstep against libzstd. See PARITY.md for

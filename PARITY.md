@@ -16,23 +16,35 @@ frame header, multi-block frames.
 Checked by: randomized runs of 3000 inputs (up to 3 MB, five dictionaries or none) over many levels and seeds, fixed suites
 (klauspost and libzstd fixtures, real records, long-match and optimal-parser stress inputs), fuzzing.
 
-Known limitations of the compressor on master:
-- **Long-distance matching** (libzstd turns it on automatically for strategy >= btopt with windowLog >= 27, so sources above
-  64 MiB) is not ported.
-- **Multithreaded compression** (`nbWorkers > 0`, whose job layout changes the output) and **streaming compression** with
-  libzstd's buffering rules are not ported. `Writer`/`Reader` in `streaming.go` use independent frames and are not
-  libzstd's streaming mode.
-- **Dictionary paths:** only the prepared-dictionary path is exact. `ZSTD_CCtx_loadDictionary` as a distinct API, prefix
-  dictionaries, forced attach/copy and dictionaries larger than the match-finder tables (libzstd indexes only the suffix) are
-  not handled on master (part of this is on the paused compression-API branch).
-- **Dedicated dictionary search** is not ported (off by default in libzstd).
-- **Parameter overrides** (explicit window/hash/chain sizes, strategy, magicless format, frame flags) are not on master (paused branch).
+**Configuration API and streaming compression (merged from the compression-API branch):**
+`Encoder.SetParams` / `Compress2` are byte-identical to `ZSTD_compress2` for random combinations of the `ZSTD_c_*` parameters they
+cover (level, window/hash/chain/search log, minMatch, targetLength, strategy, content size / checksum / dictID flags, magicless,
+srcSizeHint, literal mode, row match finder, forceAttachDict, block-splitter levels, maxBlockSize), including `RefCDict`,
+`LoadDictionary` (auto / raw / full, by reference), `RefPrefix`, `CDictAdvanced` and dictionaries larger than the match-finder tables
+(only the suffix is indexed). Checked on 3000+ random cases at several seeds (400/400 per run at seeds 1-5 and 7 in my re-runs).
+`Encoder.CompressStream2` / `StreamWriter` give libzstd's exact bytes for the same (chunk, directive) sequences (buffered mode,
+known or unknown pledged size, ring-buffer wrap, flush/end patterns, empty frames, pledged-size errors): 150/150 sequences at
+seed 5, 10 seeds by the worker, and fresh seeds 11-13 in my re-runs (1-4 sequences per seed skipped for the long-distance-matching limit).
+
+Known limitations of the compressor:
+- **Long-distance matching** (libzstd turns it on automatically for strategy >= btopt with windowLog >= 27, e.g. levels 21/22 with
+  unknown size) is not ported; frames where libzstd would use it return `ErrUnsupported` in the configuration API and streaming.
+- **Not ported:** `targetCBlockSize` and `enableDedicatedDictSearch` (both return `ErrUnsupported`), `forceMaxWindow`, multithreaded
+  compression (`nbWorkers > 0`), `stableInBuffer` / `stableOutBuffer`, index overflow correction (streams over 3.5 GB), streaming with
+  output buffers smaller than `ZSTD_compressBound` of the pending input, the external-sequence API (`ZSTD_compressSequences`,
+  `ZSTD_generateSequences`) and the block-level API (`ZSTD_compressBlock`).
+- **Streaming memory:** the whole frame stays in `Encoder.buf` until `End`, so memory grows with frame length (libzstd keeps a window).
+- The simple `Writer` in `streaming.go` writes independent frames and is not libzstd's streaming mode (use `StreamWriter` for that).
 - **Trained dictionary FSE tables whose symbol range is below the maximum:** libzstd reads uninitialised memory when seeding the
   optimal parser's statistics from them; the port treats the missing entries as cost 0, which cannot be checked byte for byte.
 - **Row match finder salt:** libzstd salts row hashes from the history of the context; the salt only permutes rows and tags, so
   it does not change output and is not modelled.
-- **Dictionary trainer (zdict):** not on master (paused branch, work in progress, not verified).
-- Decoder parity is merged; the compression-API and trainer branches are still unmerged.
+- **Dictionary trainer (zdict):** not on master (parked on branch `zdict-wip`, work in progress, not verified).
+
+Found late (fixed in this merge): the FSE table-size calculation used signed arithmetic where libzstd wraps in 32 bits, so blocks with
+4 or fewer sequences could pick a different offset-table mode and come out 1 to 3 bytes larger than libzstd's. The randomized
+single-shot tests never produced such blocks; the streaming tests did. Verified by calling libzstd's `ZSTD_selectEncodingType` on
+200,000 random histograms (574 mismatches before, 0 after).
 
 ## Decoder (master, merged from the decoder-parity branch, last decoder commit `8760d20`)
 

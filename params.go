@@ -67,8 +67,17 @@ func dictAndWindowLog(windowLog uint32, srcSize, dictSize uint64) uint32 {
 	}
 }
 
-// adjustCParams is ZSTD_adjustCParams_internal (useRowMatchFinder auto).
-func adjustCParams(cp cParams, srcSize uint64, dictSize uint64, mode cpMode) cParams {
+// psMode is ZSTD_ParamSwitch_e.
+type psMode uint8
+
+const (
+	psAuto psMode = iota
+	psEnable
+	psDisable
+)
+
+// adjustCParams is ZSTD_adjustCParams_internal; row is the requested useRowMatchFinder.
+func adjustCParams(cp cParams, srcSize uint64, dictSize uint64, mode cpMode, row psMode) cParams {
 	const minSrcSize = 513
 	const maxWindowResize = uint64(1) << (windowLogMax - 1)
 	switch mode {
@@ -107,9 +116,9 @@ func adjustCParams(cp cParams, srcSize uint64, dictSize uint64, mode cpMode) cPa
 		cp.hashLog = min(cp.hashLog, maxShortCacheHashLog)
 		cp.chainLog = min(cp.chainLog, maxShortCacheHashLog)
 	}
-	// useRowMatchFinder is auto here: conservatively assume it is enabled. We can't hash more than 32 bits in total, so
+	// useRowMatchFinder auto: conservatively assume it is enabled. We can't hash more than 32 bits in total, so
 	// (hashLog - rowLog + 8) <= 32.
-	if rowMatchFinderSupported(cp.strategy) {
+	if rowMatchFinderSupported(cp.strategy) && row != psDisable {
 		if maxHashLog := 32 - rowHashTagBits + rowLogOf(cp); cp.hashLog > maxHashLog {
 			cp.hashLog = maxHashLog
 		}
@@ -154,5 +163,5 @@ func getCParams(level int, srcSizeHint uint64, dictSize uint64, mode cpMode) cPa
 	if level < 0 {
 		cp.targetLength = uint32(-max(level, -(1 << 17)))
 	}
-	return adjustCParams(cp, srcSizeHint, dictSize, mode)
+	return adjustCParams(cp, srcSizeHint, dictSize, mode, psAuto)
 }

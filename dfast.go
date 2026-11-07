@@ -33,6 +33,8 @@ func hashPtr(v uint64, hBits uint32, mls uint32) uint32 {
 // cdict is a dictionary prepared for one level (ZSTD_CDict): parameters and tagged double-hash tables.
 type cdict struct {
 	cp          cParams
+	level       int  // ZSTD_CDict.compressionLevel: 0 for the advanced API (ZSTD_NO_CLEVEL)
+	dds         bool // dedicated dictionary search tables
 	dictSize    uint64
 	long, short []uint32 // fast, dfast: (index << 8) | tag; greedy..lazy2: hash table, chain table
 	// greedy..lazy2
@@ -44,7 +46,19 @@ type cdict struct {
 
 // newCDict prepares a dictionary; dictSize is libzstd's dictContentSize, the whole dictionary buffer (header included).
 func newCDict(content []byte, dictSize uint64, level int) *cdict {
-	cd := &cdict{cp: getCParams(level, contentSizeUnknown, dictSize, cpmCreateCDict), dictSize: dictSize}
+	cp := getCParams(level, contentSizeUnknown, dictSize, cpmCreateCDict)
+	cd := buildCDict(content, dictSize, cp, resolveRowMatchFinder(cp))
+	cd.level = level
+	if level == 0 {
+		cd.level = defaultLevel
+	}
+	return cd
+}
+
+// buildCDict is ZSTD_createCDict_advanced_internal + ZSTD_initCDict_internal for the parameters cp (row: the resolved
+// useRowMatchFinder); content is the dictionary content to load (empty when the dictionary is too short to be loaded).
+func buildCDict(content []byte, dictSize uint64, cp cParams, row bool) *cdict {
+	cd := &cdict{cp: cp, dictSize: dictSize}
 	switch cd.cp.strategy {
 	case stratFast:
 		cd.long = make([]uint32, 1<<cd.cp.hashLog)
@@ -52,7 +66,7 @@ func newCDict(content []byte, dictSize uint64, level int) *cdict {
 		return cd
 	case stratDFast:
 	case stratGreedy, stratLazy, stratLazy2:
-		cd.row = resolveRowMatchFinder(cd.cp)
+		cd.row = row
 		cd.dictLen = len(content)
 		cd.long = make([]uint32, 1<<cd.cp.hashLog)
 		if cd.row {
@@ -80,7 +94,7 @@ func newCDict(content []byte, dictSize uint64, level int) *cdict {
 	iend := len(content) - hashReadSize
 	buf := append(append([]byte(nil), content...), make([]byte, 8)...)
 	const step = 3 // fastHashFillStep
-	for ip := 0; ip+step-1 <= iend; ip += step {
+	for ip := dictStart(cd.cp, len(content)); ip+step-1 <= iend; ip += step {
 		for i := 0; i < step; i++ { // ZSTD_dtlm_full
 			v := binary.LittleEndian.Uint64(buf[ip+i:])
 			sm, lg := hashPtr(v, hBitsS, mls), hashPtr(v, hBitsL, 8)
@@ -94,6 +108,13 @@ func newCDict(content []byte, dictSize uint64, level int) *cdict {
 		}
 	}
 	return cd
+}
+
+// dictStart is the position where ZSTD_loadDictionaryContent starts indexing: "if the dict is larger than we can
+// reasonably index in our tables, only load the suffix" (maxDictSize).
+func dictStart(cp cParams, size int) int {
+	maxDictSize := 1 << min(max(cp.hashLog+3, cp.chainLog+1), 31)
+	return max(0, size-maxDictSize)
 }
 
 func (e *Encoder) storeSeq(anchor, ll int, offBase uint32, ml int) {

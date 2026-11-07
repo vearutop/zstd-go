@@ -9,7 +9,7 @@ func fillCDictFast(cd *cdict, content []byte) {
 	buf := append(append([]byte(nil), content...), make([]byte, 8)...)
 	iend := len(content) - hashReadSize
 	const step = 3
-	for ip := 0; ip+step < iend+2; ip += step {
+	for ip := dictStart(cd.cp, len(content)); ip+step < iend+2; ip += step {
 		curr := uint32(ip + windowStartIndex)
 		h := hashPtr(rd64(buf, ip), hBits, mls)
 		cd.long[h>>shortCacheTagBits] = curr<<shortCacheTagBits | h&0xFF
@@ -26,7 +26,7 @@ func fillCDictFast(cd *cdict, content []byte) {
 func (e *Encoder) fillCCtxFast(content []byte) {
 	buf := append(append([]byte(nil), content...), make([]byte, 8)...)
 	iend := len(content) - hashReadSize
-	for ip := 0; ip+3 < iend+2; ip += 3 {
+	for ip := dictStart(e.cp, len(content)); ip+3 < iend+2; ip += 3 {
 		e.long[hashPtr(rd64(buf, ip), e.cp.hashLog, e.cp.minMatch)] = uint32(ip + windowStartIndex)
 	}
 }

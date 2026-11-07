@@ -309,11 +309,7 @@ func (e *Encoder) btUpdateTree(ip, iend int, mls uint32) {
 // loadBtDict is the table part of ZSTD_loadDictionaryContent for btlazy2 (and the optimal strategies): the dictionary
 // is buf[:L]; only the last maxDictSize bytes are indexed when it is larger than the tables.
 func (e *Encoder) loadBtDict(L int) {
-	start := 0
-	maxDictSize := 1 << min(max(e.cp.hashLog+3, e.cp.chainLog+1), 31)
-	if L > maxDictSize {
-		start = L - maxDictSize
-	}
+	start := dictStart(e.cp, L)
 	e.nextToUpdate = idxOf(start)
 	if L-start <= hashReadSize {
 		return
