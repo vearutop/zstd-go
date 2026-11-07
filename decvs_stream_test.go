@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"os"
 	"testing"
 
 	zstd "github.com/vearutop/zstd-go"
@@ -37,6 +38,9 @@ func streamLockstep(c *decCfg, o streamOpts, frame []byte, r *rand.Rand) string 
 	}
 	dec, _ := zstd.NewDecoder(c.decDicts()...)
 	dec.Magicless, dec.IgnoreChecksum = o.magicless, o.ignoreCksum
+	if !o.magicless && o.prefix == nil && zstd.ViolatesWindowForTest(dec, frame) {
+		return "" // beyond-window offsets read libzstd's ring buffer leftovers; not comparable
+	}
 	os := zstd.NewDStream(dec)
 	os.WindowLogMax, os.MaxBlockSize = o.windowLogMax, o.maxBlock
 	if o.prefix != nil {
@@ -123,12 +127,17 @@ func TestStreamVsLibzstd(t *testing.T) {
 	opts := []streamOpts{{}, {windowLogMax: 12}, {windowLogMax: 17}, {ignoreCksum: true}, {maxBlock: 4096}}
 	n, bad := 0, 0
 	check := func(c *decCfg, f []byte) {
-		o := opts[r.Intn(len(opts))]
+		oi := r.Intn(len(opts))
+		o := opts[oi]
+		rs := r.Int63()
 		n++
-		if msg := streamLockstep(c, o, f, r); msg != "" {
+		if msg := streamLockstep(c, o, f, rand.New(rand.NewSource(rs))); msg != "" {
 			bad++
 			if bad < 12 {
-				t.Errorf("%s %+v len=%d: %s", c.name, o, len(f), msg)
+				t.Errorf("%s %+v len=%d: %s (replay: STREAM_SEED=%d STREAM_OPT=%d STREAM_CFG=%d)", c.name, o, len(f), msg, rs, oi, cfgIndex(cfgs, c))
+				if dir := os.Getenv("DECODE_DUMP"); dir != "" {
+					os.WriteFile(fmt.Sprintf("%s/stream-%d.hex", dir, rs), []byte(fmt.Sprintf("%x", f)), 0o644)
+				}
 			}
 		}
 	}
@@ -284,4 +293,36 @@ func TestPrefixVsLibzstd(t *testing.T) {
 		})
 	}
 	t.Logf("%d runs, %d divergences", n, bad)
+}
+
+func cfgIndex(cfgs []*decCfg, c *decCfg) int {
+	for i := range cfgs {
+		if cfgs[i] == c {
+			return i
+		}
+	}
+	return 0
+}
+
+// STREAM_HEX=<frame hex> STREAM_SEED=n STREAM_OPT=i STREAM_CFG=i replays a failure of TestStreamVsLibzstd.
+func TestStreamReplay(t *testing.T) {
+	h := os.Getenv("STREAM_HEX")
+	if fn := os.Getenv("STREAM_FILE"); fn != "" {
+		b, _ := os.ReadFile(fn)
+		h = string(b)
+	}
+	if h == "" {
+		t.Skip()
+	}
+	var f []byte
+	fmt.Sscanf(h, "%x", &f)
+	opts := []streamOpts{{}, {windowLogMax: 12}, {windowLogMax: 17}, {ignoreCksum: true}, {maxBlock: 4096}}
+	cfgs := decCfgs(t)
+	msg := streamLockstep(cfgs[envInt("STREAM_CFG", 0)], opts[envInt("STREAM_OPT", 0)], f, rand.New(rand.NewSource(int64(envInt("STREAM_SEED", 1)))))
+	t.Logf("result: %q", msg)
+	hd, _, _ := zstd.GetFrameHeader(f, false)
+	c := cfgs[envInt("STREAM_CFG", 0)]
+	want, code := c.lib(f, diffCap)
+	got, err := c.ours(t, f, diffCap)
+	t.Logf("header %+v; one-shot libzstd %d bytes code %d, ours %d bytes err %v", hd, len(want), code, len(got), err)
 }
