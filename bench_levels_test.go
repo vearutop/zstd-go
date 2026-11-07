@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	zstd "github.com/vearutop/zstd-go"
+	kz "github.com/klauspost/compress/zstd"
 	"github.com/vearutop/zstd-go/internal/ref"
 )
 
@@ -67,6 +68,23 @@ func BenchmarkLevelsCompress(b *testing.B) {
 				}
 				b.ReportMetric(float64(out)/float64(b.N), "outB/op")
 			})
+			if level > 0 {
+				b.Run(fmt.Sprintf("%s/L%d/klauspost", in.name, level), func(b *testing.B) {
+					opts := []kz.EOption{kz.WithEncoderLevel(kz.EncoderLevelFromZstd(level)), kz.WithEncoderCRC(false), kz.WithEncoderConcurrency(1)}
+					if in.dict != nil {
+						opts = append(opts, kz.WithEncoderDict(in.dict))
+					}
+					e, _ := kz.NewWriter(nil, opts...)
+					var dst []byte
+					var out int
+					b.SetBytes(int64(avg))
+					for i := 0; i < b.N; i++ {
+						dst = e.EncodeAll(in.items[i%len(in.items)], dst[:0])
+						out += len(dst)
+					}
+					b.ReportMetric(float64(out)/float64(b.N), "outB/op")
+				})
+			}
 			b.Run(fmt.Sprintf("%s/L%d/libzstd", in.name, level), func(b *testing.B) {
 				var c *ref.Compressor
 				if in.dict != nil {
@@ -108,6 +126,18 @@ func BenchmarkLevelsDecompress(b *testing.B) {
 				b.SetBytes(int64(avg))
 				for i := 0; i < b.N; i++ {
 					dst, _ = dec.DecodeAll(frames[i%len(frames)], dst[:0])
+				}
+			})
+			b.Run(fmt.Sprintf("%s/L%d/klauspost", in.name, level), func(b *testing.B) {
+				opts := []kz.DOption{kz.WithDecoderConcurrency(1)}
+				if in.dict != nil {
+					opts = append(opts, kz.WithDecoderDicts(in.dict))
+				}
+				kd, _ := kz.NewReader(nil, opts...)
+				var dst []byte
+				b.SetBytes(int64(avg))
+				for i := 0; i < b.N; i++ {
+					dst, _ = kd.DecodeAll(frames[i%len(frames)], dst[:0])
 				}
 			})
 			b.Run(fmt.Sprintf("%s/L%d/libzstd", in.name, level), func(b *testing.B) {
