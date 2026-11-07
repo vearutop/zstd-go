@@ -46,7 +46,10 @@ function-by-function port of the C sources (match finders, Huffman, FSE selectio
   semantics, multithreading, the dictionary trainer. The row match finder's hash salt (`ms->hashSalt`, history of the CCtx) is not
   modelled: it permutes rows and tags bijectively and does not change the output.
 - Decoder: own FSE/sequence/dictionary/Huffman code with libzstd's validation (block size, empty sequences); Huffman literals (own implementation, accepts the 12-bit tables libzstd accepts). Window size is not enforced.
-- Streaming `Writer`/`Reader` use independent frames (not libzstd's streaming mode).
+- Streaming: `Writer` writes independent frames (not libzstd's streaming compression mode). `DStream`/`Reader` follow
+  `ZSTD_decompressStream` with a sliding window (hints, ring-buffer capacity errors, `RefPrefix`); frame utility API
+  (`GetFrameHeader`, `FindFrameCompressedSize`, `DecompressBound`, ...). Verified in lockstep against libzstd. See PARITY.md for
+  the known limitations (legacy v0.5-0.7, stable-output mode, bufferless/block API, offsets beyond the window).
 
 ## Benchmarks
 

@@ -32,25 +32,21 @@ Known limitations of the compressor on master:
 - **Row match finder salt:** libzstd salts row hashes from the history of the context; the salt only permutes rows and tags, so
   it does not change output and is not modelled.
 - **Dictionary trainer (zdict):** not on master (paused branch, work in progress, not verified).
+- Decoder parity is merged; the compression-API and trainer branches are still unmerged.
 
-## Decoder
+## Decoder (master, merged from the decoder-parity branch, last decoder commit `8760d20`)
 
-Two states exist; the second is **not merged into master yet**.
+- `DecodeAll` follows `ZSTD_decompress`: window, offset, block-size, dictionary and checksum rules, magicless format,
+  multi-dictionary selection, libzstd's destination-capacity rules, X1 and X2 Huffman decoders and the fast path.
+- `DStream` / `Reader` follow `ZSTD_decompressStream` (hints, ring-buffer capacity errors, `RefPrefix`, sliding window with
+  bounded memory), frame utility API (`GetFrameHeader`, `FindFrameCompressedSize`, `DecompressBound`, `IsFrame`, ...), error codes.
+- Verified against libzstd (about 4.6 million one-shot comparisons over seeds 1-5; streaming in lockstep, same input and
+  output chunks, with about 445 thousand runs at seeds 3-4, 408 thousand magicless runs and 316 thousand `RefPrefix` runs;
+  95 thousand utility inputs; 1.2 million FSE/Huffman header inputs; 15 thousand mutated dictionaries): no accept/reject or
+  output divergences, except the limitations below. Seeds 3-5 of the one-shot sweep predate the last error-class fixes.
+  After the merge: `go vet`, `go test -race .`, a streaming lockstep run at a fresh seed, and compression exactness at levels 3, 9, 16 pass.
 
-- **Master:** own FSE / sequence / Huffman decoder with libzstd's frame and block validation for the common cases; fuzzed
-  against klauspost's decoder, not against libzstd. Treat it as a correct decoder with approximately libzstd's accept/reject
-  behaviour.
-- **Branch `worktree-agent-a85806bade3027ca1` (checkout under `.claude/worktrees/`, HEAD `8760d20`), decoder parity work, stopped by decision:**
-  - `DecodeAll` follows `ZSTD_decompress`: window, offset, block-size, dictionary and checksum rules, magicless format,
-    multi-dictionary selection, libzstd's destination-capacity rules, X1 and X2 Huffman decoders and the fast path.
-  - `DStream` / `Reader` follow `ZSTD_decompressStream` (hints, ring-buffer capacity errors, `RefPrefix`, sliding window with
-    bounded memory), frame utility API (`GetFrameHeader`, `FindFrameCompressedSize`, `DecompressBound`, `IsFrame`, ...), error codes.
-  - Verified against libzstd (about 4.6 million one-shot comparisons over seeds 1-5; streaming in lockstep, same input and
-    output chunks, with about 445 thousand runs at seeds 3-4, 408 thousand magicless runs and 316 thousand `RefPrefix` runs;
-    95 thousand utility inputs; 1.2 million FSE/Huffman header inputs; 15 thousand mutated dictionaries): no accept/reject or
-    output divergences, except the limitations below. Seeds 3-5 of the one-shot sweep predate the last error-class fixes.
-
-Known limitations of the decoder (on that branch; master has all of them and more):
+Known limitations of the decoder:
 1. **Legacy formats v0.5-v0.7 are not ported.** libzstd decodes them but cannot produce them, the repo has no legacy frames,
    and rewriting the magic of modern frames is rejected by all three legacy decoders, so a port could not be verified.
 2. **Stable-output mode** (`ZSTD_d_stableOutBuffer`) and the **bufferless / block API** (`ZSTD_decompressContinue`,
@@ -71,5 +67,5 @@ Known limitations of the decoder (on that branch; master has all of them and mor
 - `go vet ./... && go test -race .` (pure Go).
 - Compression: `EXACT_LEVEL=<n> [EXACT_SEED=<k>] [EXACT_CASES=<n>] go test -tags libzstd -run TestExactRandom -v .`,
   `go test -tags libzstd -run 'TestExactLevels|TestExact$' .`, real data via `ZSTD_DATA` / `ZSTD_DICT` and `TestExactReal`.
-- Decoder (on its branch): `DECODE_SEED=<n> DECODE_FRAMES=<n> go test -tags libzstd -run 'Stream|Magicless|Util|Sweep' .`
+- Decoder: `DECODE_SEED=<n> DECODE_FRAMES=<n> go test -tags libzstd -run 'Stream|Magicless|Util|Sweep' .`
 - Paths of the cgo wrappers point at `/opt/homebrew`; adjust the `#cgo` lines in `internal/ref` elsewhere.
