@@ -28,3 +28,13 @@ Decompression, MB/s of output (libzstd / port):
 
 Rules for optimization work: output must stay byte-identical (`TestExact*` with `-tags libzstd`, fuzzers), and the decoder must keep
 matching libzstd in the differential decoder tests.
+
+## Optimization log (output stays byte-identical; each step gated by TestExact*)
+
+- 6539a4a: single bounds check in rd64/rd32/le64/le32 (about +4% fast/dfast).
+- Row match finder: SWAR tag mask (ZSTD_row_getMatchMask equivalent) instead of a per-entry scan: +5-17% at L5-L12
+  (blob L6 55 -> 60 MB/s, L9 27 -> 31, text L9 37 -> 39).
+- Decoder: FSE normalized counts on the stack: 80 -> 0 allocs/op for small values, 80 -> 16 for 2 MB frames.
+- Not worth it: moving rowFind's matchBuffer into the Encoder (no change; the profile line was sampling skid).
+- Remaining hot spots: dfast/fast match-finder inner loops (about 40 bounds checks), bitWriter.encode/add in writeSequences,
+  rowFind cache misses (libzstd prefetches rows; Go has no prefetch), decoder `sequences` bit-reader dependency chain.
