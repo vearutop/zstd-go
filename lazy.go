@@ -1,6 +1,9 @@
 package zstd
 
-import "math/bits"
+import (
+	"encoding/binary"
+	"math/bits"
+)
 
 // Port of libzstd's greedy / lazy / lazy2 strategies (zstd_lazy.c): hash-chain and row-based match finders for the
 // noDict, extDict and dictMatchState modes, the two block loops (ZSTD_compressBlock_lazy_generic and
@@ -272,11 +275,8 @@ func (e *Encoder) rowFind(ip, iend int, mls, rowLog uint32, mode int, off *uint3
 	head := uint32(tagRow[0]) & rowMask
 	var matchBuffer [64]uint32
 	numMatches := 0
-	for k := uint32(0); k < rowEntries && nbAttempts > 0; k++ {
-		matchPos := (head + k) & rowMask
-		if tagRow[matchPos] != tag {
-			continue
-		}
+	for matches := rowMatchMask(tagRow, tag, head, rowEntries); matches != 0 && nbAttempts > 0; matches &= matches - 1 {
+		matchPos := (head + uint32(bits.TrailingZeros64(matches))) & rowMask
 		matchIndex := row[matchPos]
 		if matchPos == 0 {
 			continue
@@ -808,4 +808,23 @@ func (e *Encoder) lazyExtDictGeneric(blockStart, iend, depth int) {
 	}
 	e.reps[0], e.reps[1] = offset1, offset2 // save reps for next block
 	e.lits = append(e.lits, buf[anchor:iend]...)
+}
+
+// rowMatchMask is ZSTD_row_getMatchMask: bit k is set when tagRow[(head+k)&(n-1)] == tag (n = 16, 32 or 64 entries),
+// computed 8 tags at a time with an exact SWAR byte compare.
+func rowMatchMask(tagRow []uint8, tag uint8, head, n uint32) uint64 {
+	const lo7, hi = 0x7f7f7f7f7f7f7f7f, 0x8080808080808080
+	rep := uint64(tag) * 0x0101010101010101
+	var m uint64
+	for i := uint32(0); i < n; i += 8 {
+		x := binary.LittleEndian.Uint64(tagRow[i:i+8]) ^ rep
+		nz := ((x & lo7) + lo7 | x) & hi // 0x80 in every non-zero byte
+		eq := ^nz & hi
+		m |= ((eq >> 7) * 0x0102040810204080 >> 56) << i
+	}
+	if n < 64 {
+		m = (m>>head | m<<(n-head)) & (1<<n - 1)
+		return m
+	}
+	return bits.RotateLeft64(m, -int(head))
 }

@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"testing"
 
-	zstd "github.com/vearutop/zstd-go"
 	kz "github.com/klauspost/compress/zstd"
+	zstd "github.com/vearutop/zstd-go"
 	"github.com/vearutop/zstd-go/internal/ref"
 )
 
