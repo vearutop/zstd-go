@@ -269,8 +269,8 @@ func updateRep(r *[3]uint32, offBase uint32, ll0 bool) {
 	r[1], r[0] = r[0], cur
 }
 
-func le64(b []byte, i int) uint64 { return binary.LittleEndian.Uint64(b[i:]) }
-func le32(b []byte, i int) uint32 { return binary.LittleEndian.Uint32(b[i:]) }
+func le64(b []byte, i int) uint64 { return binary.LittleEndian.Uint64(b[i : i+8]) }
+func le32(b []byte, i int) uint32 { return binary.LittleEndian.Uint32(b[i : i+4]) }
 
 // count returns the common prefix length of a and b (b no longer than a is not required).
 func count(a, b []byte) int {

@@ -122,8 +122,8 @@ func (e *Encoder) storeSeq(anchor, ll int, offBase uint32, ml int) {
 	e.seqs = append(e.seqs, seq{uint32(ll), uint32(ml), offBase})
 }
 
-func rd64(b []byte, i int) uint64 { return binary.LittleEndian.Uint64(b[i:]) }
-func rd32(b []byte, i int) uint32 { return binary.LittleEndian.Uint32(b[i:]) }
+func rd64(b []byte, i int) uint64 { return binary.LittleEndian.Uint64(b[i : i+8]) }
+func rd32(b []byte, i int) uint32 { return binary.LittleEndian.Uint32(b[i : i+4]) }
 
 // cnt is ZSTD_count: equal bytes of buf[ip:iend] and buf[m:].
 func cnt(buf []byte, ip, m, iend int) int {
