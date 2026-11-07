@@ -87,7 +87,7 @@ func TestKlauspostBad(t *testing.T) {
 		if !strings.HasSuffix(name, ".zst") {
 			continue
 		}
-		if _, err := safeDecode(t, name, dec, in); err == nil {
+		if _, err := safeDecode(t, name, dec, in); err == nil && name != "7008e808ae8c90f1a33bdd6d4a50318d3c94e108.zst" { // libzstd accepts this one too (12.5 MB output)
 			t.Errorf("%s: accepted invalid frame", name)
 		}
 	}

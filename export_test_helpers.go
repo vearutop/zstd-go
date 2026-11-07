@@ -17,3 +17,27 @@ func SequencesForTest(d *Decoder, frame []byte) ([][3]int, error) {
 
 // ContentLenForTest returns the dictionary content length.
 func (d *Dict) ContentLenForTest() int { return len(d.content) }
+
+// SetDebugErrsForTest makes corruption errors name their source line.
+func SetDebugErrsForTest(on bool) { debugErrs = on }
+
+// DictDecodableForTest reports whether the decoder accepts the dictionary's entropy tables (ZSTD_createDDict succeeds).
+func DictDecodableForTest(d *Dict) bool { return dictDecodable(d) == nil }
+
+// ViolatesWindowForTest reports whether decoding frame uses a match offset beyond the frame's declared window size
+// (an invalid frame that libzstd's streaming ring buffer treats differently from a sliding window).
+func ViolatesWindowForTest(d *Decoder, frame []byte) bool {
+	hd, _, err := parseHeader(frame)
+	if err != nil {
+		return false
+	}
+	bad := false
+	offTrace = func(off, produced int) {
+		if uint64(off) > hd.window {
+			bad = true
+		}
+	}
+	defer func() { offTrace = nil }()
+	d.DecodeAll(frame, nil)
+	return bad
+}

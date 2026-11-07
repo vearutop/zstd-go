@@ -2,11 +2,7 @@ package zstd
 
 import (
 	"encoding/binary"
-	"errors"
 	"math/bits"
-	"sync"
-
-	"github.com/cespare/xxhash/v2"
 )
 
 // FSE decoding table (libzstd FSE_DTable): sym, nbBits and the next-state base per state.
@@ -99,38 +95,21 @@ var (
 	llPredefD = buildDTable(llDefaultNorm, 6, kindLL)
 	mlPredefD = buildDTable(mlDefaultNorm, 6, kindML)
 	ofPredefD = buildDTable(ofDefaultNorm, 5, kindOF)
-
-	errCorrupt = errors.New("zstd: corrupt input")
-	// ErrTooLarge is returned when the output exceeds Decoder.MaxSize.
-	ErrTooLarge = errors.New("zstd: decompressed size exceeds limit")
 )
 
-// Decoder decompresses whole frames (single-shot, no goroutines); safe for concurrent use.
-// Frames with a dictionary id use the dictionary registered under it; frames without one use the id-0 (raw) dictionary, if any.
-type Decoder struct {
-	// MaxSize limits the decompressed bytes appended by one DecodeAll call; 0 means no limit.
-	MaxSize int
-
-	dicts map[uint32]*Dict
-	pool  sync.Pool // *decState
-}
-
-// NewDecoder returns a decoder that knows the given dictionaries.
-func NewDecoder(dicts ...*Dict) (*Decoder, error) {
-	d := &Decoder{dicts: map[uint32]*Dict{}}
-	for _, dc := range dicts {
-		d.dicts[dc.id] = dc
-	}
-	return d, nil
-}
-
 type decState struct {
-	bm            int // max block size in the current frame
-	blockStart    int // output length at the start of the current block
+	bm            int     // max block size in the current frame (compressed block and literals limit)
+	litDirect     bool    // the block's raw literals are read in place from the input
+	maxBlockParam int     // ZSTD_d_maxBlockSize (0: none)
+	sel           dictSel // dictionary override of the current call
+	oneShot       bool    // ZSTD_decompress semantics (not streaming)
+	limited       bool    // Decoder.MaxSize is set: the destination capacity is maxEnd
+	outLim        int     // limit on the bytes a block may generate: bm when streaming, unbounded for ZSTD_decompress
+	blockStart    int     // output length at the start of the current block
 	maxEnd        int
 	lits          []byte
-	huffTab       hufTable // table of the current frame's last compressed-literals block
-	hdec          hufDec
+	hown          hufDec  // table read from the current frame's last compressed-literals block
+	hdec          *hufDec // table for treeless literals: hown or the dictionary's
 	hdecValid     bool    // hdec holds the table for treeless literals
 	ll, of, ml    dTable  // tables of the current block (also the "repeat" tables of the next)
 	pll, pof, pml *dTable // active tables: predefined, rle, built or dictionary's
@@ -145,187 +124,6 @@ func (d *Decoder) get() *decState {
 	return &decState{}
 }
 
-// ContentSize returns the content size recorded in the first frame's header, if any.
-func ContentSize(frame []byte) (uint64, bool) {
-	h, _, err := parseHeader(frame)
-	return h.size, err == nil && h.hasSize
-}
-
-type frameHeader struct {
-	window   uint64
-	size     uint64
-	hasSize  bool
-	checksum bool
-	dictID   uint32
-}
-
-func parseHeader(b []byte) (h frameHeader, n int, err error) {
-	if len(b) < 6 || binary.LittleEndian.Uint32(b) != 0xFD2FB528 {
-		return h, 0, errors.New("zstd: bad magic")
-	}
-	fhd := b[4]
-	n = 5
-	if fhd&8 != 0 {
-		return h, 0, errCorrupt
-	}
-	single := fhd&(1<<5) != 0
-	h.checksum = fhd&(1<<2) != 0
-	if !single {
-		w := b[n] // window descriptor; ponytail: only used for the block size limit, offsets reach the whole history
-		n++
-		base := uint64(1) << (10 + w>>3)
-		h.window = base + base>>3*uint64(w&7)
-	}
-	dlen := [...]int{0, 1, 2, 4}[fhd&3]
-	flen := [...]int{0, 2, 4, 8}[fhd>>6]
-	if fhd>>6 == 0 && single {
-		flen = 1
-	}
-	if len(b) < n+dlen+flen {
-		return h, 0, errCorrupt
-	}
-	for i := 0; i < dlen; i++ {
-		h.dictID |= uint32(b[n+i]) << (8 * i)
-	}
-	n += dlen
-	if single {
-		h.window = 0
-	}
-	if flen > 0 {
-		h.hasSize = true
-		for i := 0; i < flen; i++ {
-			h.size |= uint64(b[n+i]) << (8 * i)
-		}
-		if flen == 2 {
-			h.size += 256
-		}
-	}
-	if single {
-		h.window = h.size
-	}
-	return h, n + flen, nil
-}
-
-// DecodeAll appends the decompressed content of all frames in src to dst (skippable frames are ignored).
-func (d *Decoder) DecodeAll(src, dst []byte) ([]byte, error) {
-	st := d.get()
-	defer d.pool.Put(st)
-	st.maxEnd = len(dst) + d.MaxSize
-	for len(src) > 0 {
-		if len(src) >= 8 && binary.LittleEndian.Uint32(src)&0xFFFFFFF0 == 0x184D2A50 {
-			n := int(binary.LittleEndian.Uint32(src[4:]))
-			if len(src) < 8+n {
-				return dst, errCorrupt
-			}
-			src = src[8+n:]
-			continue
-		}
-		var err error
-		if dst, src, err = d.frame(st, src, dst); err != nil {
-			return dst, err
-		}
-	}
-	return dst, nil
-}
-
-func (d *Decoder) frame(st *decState, src, dst []byte) ([]byte, []byte, error) {
-	h, n, err := parseHeader(src)
-	if err != nil {
-		return dst, src, err
-	}
-	src = src[n:]
-	var dict *Dict
-	if h.dictID != 0 || len(d.dicts) > 0 {
-		if dict = d.dicts[h.dictID]; dict == nil && h.dictID != 0 {
-			return dst, src, errors.New("zstd: unknown dictionary id")
-		}
-	}
-	base := len(dst)
-	if h.hasSize {
-		if h.size > 1<<31 || (d.MaxSize > 0 && h.size > uint64(d.MaxSize)) {
-			if h.size <= 1<<31 {
-				return dst, src, ErrTooLarge
-			}
-			return dst, src, errors.New("zstd: frame too large")
-		}
-		if h.size <= 64<<20 && cap(dst)-len(dst) < int(h.size)+wildPad { // larger claims grow on demand, a header must not force a big allocation
-			nd := make([]byte, len(dst), len(dst)+int(h.size)+wildPad) // slack for 8-byte copies
-			copy(nd, dst)
-			dst = nd
-		}
-	}
-	st.bm = int(min(h.window, blockMax)) // libzstd: blocks are at most min(window size, 128 KiB)
-	st.reps = [3]uint32{1, 4, 8}
-	var dc []byte
-	st.hdecValid = false
-	st.pll, st.pof, st.pml = nil, nil, nil
-	if dict != nil {
-		dc = dict.content
-		st.reps = dict.reps
-		if dict.huffDecOK {
-			st.hdec, st.hdecValid = dict.huffDecT, true
-		}
-		st.pll, st.pof, st.pml = dict.dll, dict.dof, dict.dml
-	}
-	for last := false; !last; {
-		if len(src) < 3 {
-			return dst, src, errCorrupt
-		}
-		bh := uint32(src[0]) | uint32(src[1])<<8 | uint32(src[2])<<16
-		last = bh&1 != 0
-		typ, size := (bh>>1)&3, int(bh>>3)
-		src = src[3:]
-		if size > st.bm {
-			return dst, src, errCorrupt
-		}
-		switch typ {
-		case 0:
-			if len(src) < size {
-				return dst, src, errCorrupt
-			}
-			dst = append(dst, src[:size]...)
-			src = src[size:]
-		case 1:
-			if len(src) < 1 {
-				return dst, src, errCorrupt
-			}
-			for i := 0; i < size; i++ {
-				dst = append(dst, src[0])
-			}
-			src = src[1:]
-		case 2:
-			if len(src) < size {
-				return dst, src, errCorrupt
-			}
-			if dst, err = st.block(src[:size], dst, base, dc); err != nil {
-				return dst, src, err
-			}
-			src = src[size:]
-		default:
-			return dst, src, errCorrupt
-		}
-		if d.MaxSize > 0 && len(dst) > st.maxEnd {
-			return dst, src, ErrTooLarge
-		}
-		if h.hasSize && uint64(len(dst)-base) > h.size {
-			return dst, src, errCorrupt
-		}
-	}
-	if h.hasSize && uint64(len(dst)-base) != h.size {
-		return dst, src, errors.New("zstd: content size mismatch")
-	}
-	if h.checksum {
-		if len(src) < 4 {
-			return dst, src, errCorrupt
-		}
-		if binary.LittleEndian.Uint32(src) != uint32(xxhash.Sum64(dst[base:])) {
-			return dst, src, errors.New("zstd: checksum mismatch")
-		}
-		src = src[4:]
-	}
-	return dst, src, nil
-}
-
 // block decodes one compressed block, appending to out; base is where the frame's output starts, dc the dictionary content.
 func (st *decState) block(in, out []byte, base int, dc []byte) ([]byte, error) {
 	st.blockStart = len(out)
@@ -333,8 +131,16 @@ func (st *decState) block(in, out []byte, base int, dc []byte) ([]byte, error) {
 	if err != nil {
 		return out, err
 	}
+	if st.oneShot {
+		// ZSTD_allocateLiteralsBuffer: with room to spare the literals sit behind blockSizeMax+WILDCOPY_OVERLENGTH bytes of
+		// the destination and the block's output may not reach them; otherwise only the destination capacity bounds it.
+		st.outLim = int(^uint(0) >> 1)
+		if !st.litDirect && (!st.limited || st.maxEnd-len(out) > st.bm+wildOverlength+len(lits)+wildOverlength) {
+			st.outLim = st.bm + wildOverlength
+		}
+	}
 	if len(in) < 1 {
-		return out, errCorrupt
+		return out, errSrcSize
 	}
 	// number of sequences
 	var nb int
@@ -343,28 +149,28 @@ func (st *decState) block(in, out []byte, base int, dc []byte) ([]byte, error) {
 		nb, in = b0, in[1:]
 	case b0 < 255:
 		if len(in) < 2 {
-			return out, errCorrupt
+			return out, errSrcSize
 		}
 		nb, in = (b0-128)<<8+int(in[1]), in[2:]
 	default:
 		if len(in) < 3 {
-			return out, errCorrupt
+			return out, errSrcSize
 		}
 		nb, in = int(in[1])+int(in[2])<<8+0x7F00, in[3:]
 	}
 	if nb == 0 {
 		if len(in) != 0 {
-			return out, errCorrupt // bytes after an empty sequences section
+			return out, corrupt() // bytes after an empty sequences section
 		}
 		return append(out, lits...), nil
 	}
 	if len(in) < 1 {
-		return out, errCorrupt
+		return out, errSrcSize
 	}
 	modes := in[0]
 	in = in[1:]
 	if modes&3 != 0 {
-		return out, errCorrupt
+		return out, corrupt()
 	}
 	if in, err = st.table(&st.ll, &st.pll, llPredefD, kindLL, int(modes>>6), 35, 9, in); err != nil {
 		return out, err
@@ -385,33 +191,47 @@ func (st *decState) table(own *dTable, active **dTable, predef *dTable, kind, mo
 		*active = predef
 	case 1:
 		if len(in) < 1 || int(in[0]) > maxSym {
-			return in, errCorrupt
+			return in, corrupt()
 		}
 		own.rle(in[0], kind)
 		*active = own
 		return in[1:], nil
 	case 2:
-		norm, lg, n, err := readNCount(in, maxSym)
-		if err != nil || lg > maxLog {
-			return in, errCorrupt
+		norm, lg, n, err := fseReadNCount(in, maxSym)
+		if err != nil || lg > int(maxLog) {
+			return in, corrupt()
 		}
-		own.build(norm, lg, kind)
+		own.build(norm, uint8(lg), kind)
 		*active = own
 		return in[n:], nil
 	default:
 		if *active == nil {
-			return in, errCorrupt
+			return in, corrupt()
 		}
 	}
 	return in, nil
 }
 
+// tooBig is the error for a block generating more than it may: libzstd's dstSize_tooSmall when decoding into a
+// destination (the bound is its capacity), corruption when a streamed block exceeds blockSizeMax.
+func (st *decState) tooBig() error {
+	if st.oneShot {
+		return ErrTooLarge
+	}
+	return corrupt()
+}
+
 func (st *decState) literals(in []byte) (lits, rest []byte, err error) {
-	if len(in) < 1 {
-		return nil, in, errCorrupt
+	if len(in) < 2 { // MIN_CBLOCK_SIZE
+		return nil, in, corrupt()
 	}
 	b := uint32(in[0])
 	typ, sf := b&3, (b>>2)&3
+	if typ == 3 && !st.hdecValid {
+		return nil, in, errDictBad // set_repeat without a table (libzstd: litEntropy == 0)
+	}
+	st.litDirect = false
+	srcSize := len(in)
 	if typ < 2 { // raw / RLE
 		var n, hl int
 		switch sf {
@@ -419,24 +239,26 @@ func (st *decState) literals(in []byte) (lits, rest []byte, err error) {
 			n, hl = int(b>>3), 1
 		case 1:
 			if len(in) < 2 {
-				return nil, in, errCorrupt
+				return nil, in, corrupt()
 			}
 			n, hl = int(b>>4)|int(in[1])<<4, 2
 		default:
 			if len(in) < 3 {
-				return nil, in, errCorrupt
+				return nil, in, corrupt()
 			}
 			n, hl = int(b>>4)|int(in[1])<<4|int(in[2])<<12, 3
 		}
 		in = in[hl:]
 		if typ == 0 {
 			if len(in) < n || n > st.bm {
-				return nil, in, errCorrupt
+				return nil, in, corrupt()
 			}
+			// raw literals with 32 spare bytes behind them are read in place (ZSTD_not_in_dst)
+			st.litDirect = hl+n+wildOverlength <= srcSize
 			return in[:n], in[n:], nil
 		}
 		if len(in) < 1 || n > st.bm {
-			return nil, in, errCorrupt
+			return nil, in, corrupt()
 		}
 		st.lits = growB(st.lits, n)
 		for i := range st.lits {
@@ -444,59 +266,76 @@ func (st *decState) literals(in []byte) (lits, rest []byte, err error) {
 		}
 		return st.lits, in[1:], nil
 	}
+	if len(in) < 5 {
+		return nil, in, corrupt()
+	}
 	var regen, comp, hl int
 	four := sf != 0
 	switch sf {
 	case 0, 1:
-		if len(in) < 3 {
-			return nil, in, errCorrupt
-		}
 		v := b | uint32(in[1])<<8 | uint32(in[2])<<16
 		regen, comp, hl = int(v>>4&1023), int(v>>14&1023), 3
 	case 2:
-		if len(in) < 4 {
-			return nil, in, errCorrupt
-		}
 		v := b | uint32(in[1])<<8 | uint32(in[2])<<16 | uint32(in[3])<<24
 		regen, comp, hl = int(v>>4&16383), int(v>>18&16383), 4
 	default:
-		if len(in) < 5 {
-			return nil, in, errCorrupt
-		}
 		v := uint64(b) | uint64(in[1])<<8 | uint64(in[2])<<16 | uint64(in[3])<<24 | uint64(in[4])<<32
 		regen, comp, hl = int(v>>4&0x3FFFF), int(v>>22&0x3FFFF), 5
 	}
-	if len(in) < hl+comp || regen > st.bm {
-		return nil, in, errCorrupt
+	if regen > st.bm {
+		return nil, in, corrupt()
+	}
+	if four && regen < 6 {
+		return nil, in, newErr(ErrLiteralsHeaderWrong, "not enough literals for 4 streams")
+	}
+	if len(in) < hl+comp {
+		return nil, in, corrupt()
 	}
 	data, rest := in[hl:hl+comp], in[hl+comp:]
-	if typ == 2 {
-		tab, sz, _, ok := hufReadCTable(data)
-		if !ok {
-			return nil, rest, errCorrupt
+	lits, herr := st.hufLits(data, regen, four, typ == 2)
+	if herr != nil {
+		return nil, rest, herr
+	}
+	return lits, rest, nil
+}
+
+// hufLits decodes Huffman-compressed literals: a new table followed by the streams, or (!newTable) the streams only, using
+// the previous table (ZSTD_decodeLiteralsBlock, set_compressed and set_repeat).
+func (st *decState) hufLits(data []byte, regen int, four, newTable bool) ([]byte, *Error) {
+	st.lits = growB(st.lits, regen)
+	dst := st.lits[:cap(st.lits)]
+	if newTable {
+		// one stream always uses the single-symbol decoder, four streams the likely faster one
+		kind := uint8(hufX1)
+		if four {
+			if regen == 0 || len(data) == 0 {
+				return nil, corrupt()
+			}
+			kind = hufSelectDecoder(regen, len(data))
 		}
-		st.huffTab = tab
-		st.hdec.build(&st.huffTab)
-		st.hdecValid = true
+		sz, _, err := st.hown.read(data, kind)
+		if err != nil || sz >= len(data) {
+			return nil, corrupt()
+		}
+		st.hdec, st.hdecValid = &st.hown, true
 		data = data[sz:]
 	} else if !st.hdecValid {
-		return nil, rest, errCorrupt
+		return nil, errDictBad
 	}
-	st.lits = growB(st.lits, regen)
 	var ok bool
 	if four {
-		ok = st.hdec.decode4X(st.lits[:regen], data)
+		ok = st.hdec.decode4X(dst, regen, data)
 	} else {
-		ok = st.hdec.decode1X(st.lits[:regen], data)
+		ok = st.hdec.decode1X(dst, regen, data)
 	}
 	if !ok {
-		return nil, rest, errCorrupt
+		return nil, corrupt()
 	}
-	return st.lits[:regen], rest, nil // full capacity again: the 16-byte copies read past the end
+	return st.lits[:regen], nil // full capacity again: the 16-byte copies read past the end
 }
 
 func growB(b []byte, n int) []byte {
-	if cap(b) < n {
+	if cap(b) < n+16 {
 		return make([]byte, n, max(n, 4096)+16)
 	}
 	return b[:n]
@@ -504,6 +343,9 @@ func growB(b []byte, n int) []byte {
 
 // seqTrace, when set (tests only), receives every decoded sequence as (literal length, match length, offBase).
 var seqTrace func(ll, ml, offBase int)
+
+// offTrace, when set (tests only), receives every match offset with the bytes produced so far in the frame.
+var offTrace func(off, produced int)
 
 // rbits reads a bitstream backwards through a 64-bit window that is refilled 32 bits at a time.
 // buf has rbitsPad zero bytes in front of the stream, so a refill past the start reads zeros (caught by the final check).
@@ -546,7 +388,7 @@ func (r *rbits) get(k uint8) uint32 {
 // sequences decodes the bitstream (read backwards) and executes the sequences against lits, out and the dictionary.
 func (st *decState) sequences(in []byte, nb int, lits, out []byte, base int, dc []byte) ([]byte, error) {
 	if len(in) < 1 || in[len(in)-1] == 0 {
-		return out, errCorrupt
+		return out, corrupt()
 	}
 	st.buf = append(append(st.buf[:0], make([]byte, rbitsPad)...), in...)
 	last := in[len(in)-1]
@@ -571,8 +413,11 @@ func (st *decState) sequences(in []byte, nb int, lits, out []byte, base int, dc 
 			sm = uint32(me.ns) + r.get(me.nb)
 			so = uint32(oe.ns) + r.get(oe.nb)
 		}
-		if r.bad || li+llen > len(lits) || len(out)-st.blockStart+llen+mlen > st.bm {
-			return out, errCorrupt
+		if len(out)-st.blockStart+llen+mlen > st.outLim {
+			return out, st.tooBig()
+		}
+		if r.bad || li+llen > len(lits) {
+			return out, corrupt()
 		}
 		var off uint32
 		ll0 := llen == 0
@@ -593,9 +438,12 @@ func (st *decState) sequences(in []byte, nb int, lits, out []byte, base int, dc 
 			}
 		}
 		if off == 0 {
-			return out, errCorrupt
+			return out, corrupt()
 		}
 		updateRep(&st.reps, offBase, ll0)
+		if offTrace != nil {
+			offTrace(int(off), len(out)-base)
+		}
 		if seqTrace != nil {
 			seqTrace(llen, mlen, int(offBase))
 		}
@@ -628,16 +476,19 @@ func (st *decState) sequences(in []byte, nb int, lits, out []byte, base int, dc 
 		}
 	}
 	if r.bad || 8*(off0-r.off)+int(r.br)-int(br0) != total {
-		return out, errCorrupt
+		return out, corrupt()
 	}
-	if len(out)-st.blockStart+len(lits)-li > st.bm {
-		return out, errCorrupt
+	if len(out)-st.blockStart+len(lits)-li > st.outLim {
+		return out, st.tooBig()
 	}
 	return append(out, lits[li:]...), nil
 }
 
 // wildPad is the slack that wildCopy may write past the end (and read past the end of src).
 const wildPad = 32
+
+// wildOverlength is WILDCOPY_OVERLENGTH.
+const wildOverlength = 32
 
 // wildCopy copies mlen bytes from src[s:] to dst[n:] in 32-byte steps, overshooting by up to 31 bytes.
 // The distance n-s must be at least 32 when src is dst, or src must be another slice.
@@ -665,7 +516,7 @@ func copyMatch(out []byte, base, off, ml int, dc []byte) ([]byte, error) {
 	}
 	dd := off - produced
 	if dd > len(dc) {
-		return out, errCorrupt
+		return out, corrupt()
 	}
 	ds := len(dc) - dd
 	n := min(ml, dd)
