@@ -3,6 +3,7 @@ package zstd
 import (
 	"encoding/binary"
 	"math/bits"
+	"slices"
 )
 
 type hufState struct {
@@ -169,6 +170,54 @@ func (w *bitWriter) flush() {
 	w.buf = w.buf[:len(w.buf)-8+int(w.n>>3)]
 	w.acc >>= w.n &^ 7
 	w.n &= 7
+}
+
+// posWriter is bitWriter writing at an index of a buffer that is already large enough (no append, one bounds check
+// per flush).
+type posWriter struct {
+	acc uint64
+	n   uint
+	pos int
+	buf []byte
+}
+
+func (w *posWriter) add(v uint32, k uint8) {
+	w.acc |= uint64(v) & (1<<(k&63) - 1) << (w.n & 63)
+	w.n += uint(k)
+}
+
+// addFit is add for a value already known to fit in k bits.
+func (w *posWriter) addFit(v uint32, k uint8) {
+	w.acc |= uint64(v) << (w.n & 63)
+	w.n += uint(k)
+}
+
+func (w *posWriter) flush() {
+	binary.LittleEndian.PutUint64(w.buf[w.pos:w.pos+8], w.acc)
+	w.pos += int(w.n >> 3)
+	w.acc >>= w.n &^ 7
+	w.n &= 7
+}
+
+func (w *posWriter) encode(st *fseState, sym uint8) {
+	if st.ct == nil {
+		return
+	}
+	t := st.ct.tt[sym]
+	nb := (st.val + t.deltaNbBits) >> 16
+	w.add(st.val, uint8(nb))
+	st.val = uint32(st.ct.stateTable[int32(st.val>>nb)+t.deltaFindState])
+}
+
+// 64-entry copies of the code tables so that indexing with code&63 needs no bounds check.
+var llBase64, mlBase64 [64]uint32
+var llBits64, mlBits64 [64]uint8
+
+func init() {
+	copy(llBase64[:], llBase[:])
+	copy(mlBase64[:], mlBase[:])
+	copy(llBits64[:], llBits[:])
+	copy(mlBits64[:], mlBits[:])
 }
 
 func (w *bitWriter) encode(st *fseState, sym uint8) {
@@ -445,41 +494,50 @@ func (e *Encoder) writeSequences() bool {
 	e.body[modeAt] = byte(st.llMode<<6 | st.ofMode<<4 | st.mlMode<<2)
 
 	bitStart := len(e.body)
-	var w bitWriter
-	w.buf = e.body
+	e.body = slices.Grow(e.body, 16*n+32) // every sequence codes at most 12 bytes
+	var w posWriter
+	w.buf = e.body[:bitStart+16*n+32]
+	w.pos = bitStart
 	var sl, so, sm fseState
-	sl.init(lt, e.llc[n-1])
-	so.init(ot, e.ofc[n-1])
-	sm.init(mt, e.mlc[n-1])
+	seqs, llc, ofc, mlc := e.seqs[:n], e.llc[:n], e.ofc[:n], e.mlc[:n]
+	sl.init(lt, llc[n-1])
+	so.init(ot, ofc[n-1])
+	sm.init(mt, mlc[n-1])
 	var fseMax uint
 	for _, st := range [...]*fseState{&sl, &so, &sm} {
 		if st.ct != nil {
 			fseMax += uint(st.ct.log)
 		}
 	}
-	q := e.seqs[n-1]
-	w.add(q.ll-llBase[e.llc[n-1]], llBits[e.llc[n-1]])
-	w.add(q.ml-3-mlBase[e.mlc[n-1]], mlBits[e.mlc[n-1]])
+	q := seqs[n-1]
+	w.addFit(q.ll-llBase64[llc[n-1]&63], llBits64[llc[n-1]&63])
+	w.addFit(q.ml-3-mlBase64[mlc[n-1]&63], mlBits64[mlc[n-1]&63])
 	w.flush()
-	w.add(q.off, e.ofc[n-1])
+	w.add(q.off, ofc[n-1])
 	w.flush()
-	for i := n - 2; i >= 0; i-- {
-		q := e.seqs[i]
-		lc, oc, mc := e.llc[i], e.ofc[i], e.mlc[i]
+	i := n - 2
+	if lt != nil && ot != nil && mt != nil {
+		w.seqLoop(seqs[:n-1], llc, ofc, mlc, &sl, &so, &sm, fseMax)
+		i = -1
+	}
+	for ; i >= 0; i-- {
+		q := seqs[i]
+		lc, oc, mc := llc[i]&63, ofc[i], mlc[i]&63
 		w.encode(&so, oc)
 		w.encode(&sm, mc)
 		w.encode(&sl, lc)
-		xb := uint(llBits[lc]) + uint(mlBits[mc]) + uint(oc)
+		lb, mb := llBits64[lc], mlBits64[mc]
+		xb := uint(lb) + uint(mb) + uint(oc)
 		if 7+fseMax+xb <= 64 {
-			w.add(q.ll-llBase[lc], llBits[lc])
-			w.add(q.ml-3-mlBase[mc], mlBits[mc])
+			w.addFit(q.ll-llBase64[lc], lb)
+			w.addFit(q.ml-3-mlBase64[mc], mb)
 			w.add(q.off, oc)
 			w.flush()
 			continue
 		}
 		w.flush()
-		w.add(q.ll-llBase[lc], llBits[lc])
-		w.add(q.ml-3-mlBase[mc], mlBits[mc])
+		w.addFit(q.ll-llBase64[lc], lb)
+		w.addFit(q.ml-3-mlBase64[mc], mb)
 		w.flush()
 		w.add(q.off, oc)
 		w.flush()
@@ -493,9 +551,65 @@ func (e *Encoder) writeSequences() bool {
 	w.add(1, 1)
 	w.flush()
 	if w.n > 0 {
-		w.buf = append(w.buf, byte(w.acc))
+		w.buf[w.pos] = byte(w.acc)
+		w.pos++
 	}
-	e.body = w.buf
+	e.body = w.buf[:w.pos]
 	// zstd <= 1.3.4 misreads a last table of 3 bytes followed by a 1-byte stream: libzstd emits a raw block then
 	return !(lastCount != 0 && lastCount+len(e.body)-bitStart < 4)
+}
+
+// seqLoop is the main loop of writeSequences for three FSE-coded streams (no RLE): sequences len(seqs)-1 .. 0, with the
+// writer and the three states kept in locals.
+func (w *posWriter) seqLoop(seqs []seq, llc, ofc, mlc []uint8, sl, so, sm *fseState, fseMax uint) {
+	llc, ofc, mlc = llc[:len(seqs)], ofc[:len(seqs)], mlc[:len(seqs)]
+	ltt, lst := sl.ct.tt, sl.ct.stateTable
+	ott, ost := so.ct.tt, so.ct.stateTable
+	mtt, mst := sm.ct.tt, sm.ct.stateTable
+	lv, ov, mv := sl.val, so.val, sm.val
+	acc, bn, pos, buf := w.acc, w.n, w.pos, w.buf
+	for i := len(seqs) - 1; i >= 0; i-- {
+		q := seqs[i]
+		lc, oc, mc := llc[i]&63, ofc[i], mlc[i]&63
+		t := ott[oc]
+		nb := (ov + t.deltaNbBits) >> 16
+		acc |= uint64(ov) & (1<<(nb&63) - 1) << (bn & 63)
+		bn += uint(nb)
+		ov = uint32(ost[int32(ov>>nb)+t.deltaFindState])
+		t = mtt[mc]
+		nb = (mv + t.deltaNbBits) >> 16
+		acc |= uint64(mv) & (1<<(nb&63) - 1) << (bn & 63)
+		bn += uint(nb)
+		mv = uint32(mst[int32(mv>>nb)+t.deltaFindState])
+		t = ltt[lc]
+		nb = (lv + t.deltaNbBits) >> 16
+		acc |= uint64(lv) & (1<<(nb&63) - 1) << (bn & 63)
+		bn += uint(nb)
+		lv = uint32(lst[int32(lv>>nb)+t.deltaFindState])
+		lb, mb := llBits64[lc], mlBits64[mc]
+		if 7+fseMax+uint(lb)+uint(mb)+uint(oc) > 64 {
+			binary.LittleEndian.PutUint64(buf[pos:pos+8], acc)
+			pos += int(bn >> 3)
+			acc >>= bn &^ 7
+			bn &= 7
+		}
+		acc |= uint64(q.ll-llBase64[lc]) << (bn & 63)
+		bn += uint(lb)
+		acc |= uint64(q.ml-3-mlBase64[mc]) << (bn & 63)
+		bn += uint(mb)
+		if 7+fseMax+uint(lb)+uint(mb)+uint(oc) > 64 {
+			binary.LittleEndian.PutUint64(buf[pos:pos+8], acc)
+			pos += int(bn >> 3)
+			acc >>= bn &^ 7
+			bn &= 7
+		}
+		acc |= uint64(q.off) & (1<<(oc&63) - 1) << (bn & 63)
+		bn += uint(oc)
+		binary.LittleEndian.PutUint64(buf[pos:pos+8], acc)
+		pos += int(bn >> 3)
+		acc >>= bn &^ 7
+		bn &= 7
+	}
+	sl.val, so.val, sm.val = lv, ov, mv
+	w.acc, w.n, w.pos = acc, bn, pos
 }
