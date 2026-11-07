@@ -68,6 +68,9 @@ type DStream struct {
 	hist       []byte
 	outStart   int
 	outEnd     int
+	ringSize   int // libzstd's outBuffSize: the capacity its ring buffer would have
+	ringPos    int // where libzstd would decode the next block in that ring buffer
+	lastN      int
 	hostage    bool
 	noProgress int
 }
@@ -105,6 +108,14 @@ func (s *DStream) takeDict() dictSel {
 		return dictSel{true, nil}
 	}
 	return dictSel{}
+}
+
+// ringBufferSize is ZSTD_decodingBufferSize_internal: the size of libzstd's output ring buffer for a frame. Decoding more
+// than that into it fails with dstSize_tooSmall, which the stream reproduces.
+func ringBufferSize(window, contentSize uint64, blockSizeMax int) int {
+	bs := min(int(min(window, blockMax)), blockSizeMax)
+	needed := window + uint64(bs)*2 + 64
+	return int(min(contentSize, needed))
 }
 
 // midFrame reports whether a frame has been started and not completed.
@@ -241,6 +252,7 @@ func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) {
 				s.inBuf = make([]byte, need)
 			}
 			s.inBuf = s.inBuf[:max(int(s.fp.blockMax), 4)]
+			s.ringSize, s.ringPos = ringBufferSize(s.fp.window, s.fp.size, int(s.fp.blockMax)), 0
 			s.stage = dsRead
 			fallthrough
 		case dsRead:
@@ -296,6 +308,11 @@ func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) {
 			s.outStart += n
 			if s.outStart == s.outEnd {
 				s.stage = dsRead
+				s.ringPos += s.lastN
+				s.lastN = 0
+				if uint64(s.ringSize) < s.fp.size && s.ringPos+int(s.fp.blockMax) > s.ringSize {
+					s.ringPos = 0
+				}
 				break
 			}
 			more = false
@@ -346,6 +363,7 @@ func (s *DStream) continueStream(src []byte) error {
 	if err != nil {
 		return err
 	}
+	s.lastN = n
 	if n == 0 && !skip {
 		s.stage = dsRead
 	} else {
@@ -401,6 +419,7 @@ func (s *DStream) cont(src []byte) (int, error) {
 	case dcBlock, dcLastBlock:
 		s.trim()
 		start := len(s.hist)
+		capacity := s.ringSize - s.ringPos // ZSTD_decompressContinue's dstCapacity in libzstd's ring buffer
 		switch s.bType {
 		case 2:
 			var err error
@@ -408,11 +427,20 @@ func (s *DStream) cont(src []byte) (int, error) {
 				s.hist = s.hist[:start]
 				return 0, err
 			}
+			if len(s.hist)-start > capacity {
+				return 0, ErrTooLarge
+			}
 			s.expected = 0
 		case 0:
+			if len(src) > capacity {
+				return 0, ErrTooLarge
+			}
 			s.hist = append(s.hist, src...)
 			s.expected -= len(src)
 		case 1:
+			if s.rleSize > capacity {
+				return 0, ErrTooLarge
+			}
 			if s.rleSize > int(s.fp.blockMax) {
 				return 0, errCorrupt
 			}
