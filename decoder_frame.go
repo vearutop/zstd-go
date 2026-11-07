@@ -92,7 +92,8 @@ func checkDictEntropy(b []byte) (*Error, *hufDec) {
 	}
 	rem = rem[n:]
 	for _, t := range [...]struct{ max, maxLog int }{{31, 8}, {52, 9}, {35, 9}} {
-		_, lg, n, err := fseReadNCount(rem, t.max)
+		var nbuf [64]int16
+		_, lg, n, err := fseReadNCount(rem, t.max, nbuf[:])
 		if err != nil || lg > t.maxLog {
 			return errDictBad, nil
 		}

@@ -83,7 +83,7 @@ func entropyBlobs(t testing.TB, r *rand.Rand) (huf, fse [][]byte) {
 								p++
 							} else if m == 2 {
 								fse = append(fse, rest[p:])
-								_, _, k, e := fseReadNCount(rest[p:], 52)
+								_, _, k, e := fseReadNCount(rest[p:], 52, make([]int16, 53))
 								if e != nil {
 									break
 								}
@@ -213,7 +213,7 @@ func TestEntropyReadersVsLibzstd(t *testing.T) {
 	checkFse := func(b []byte, maxSym int) {
 		nf++
 		ln, ltl, lsz, lerr := ref.FSEReadNCount(b, maxSym)
-		n, tl, sz, err := fseReadNCount(b, maxSym)
+		n, tl, sz, err := fseReadNCount(b, maxSym, make([]int16, maxSym+1))
 		if (lerr != 0) != (err != nil) {
 			bad++
 			t.Errorf("ncount % x max=%d: libzstd err %d, ours %v", b[:min(len(b), 24)], maxSym, lerr, err)

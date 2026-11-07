@@ -197,7 +197,8 @@ func (st *decState) table(own *dTable, active **dTable, predef *dTable, kind, mo
 		*active = own
 		return in[1:], nil
 	case 2:
-		norm, lg, n, err := fseReadNCount(in, maxSym)
+		var nbuf [64]int16
+		norm, lg, n, err := fseReadNCount(in, maxSym, nbuf[:])
 		if err != nil || lg > int(maxLog) {
 			return in, corrupt()
 		}

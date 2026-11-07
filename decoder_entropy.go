@@ -100,11 +100,11 @@ func (b *bitD) end() bool { return b.ptr == 0 && b.consumed == 64 }
 
 // fseReadNCount is FSE_readNCount: the normalized counts (one entry per symbol up to the last one coded), the table log
 // and the number of header bytes.
-func fseReadNCount(src []byte, maxSym int) (norm []int16, tableLog int, n int, err *Error) {
+func fseReadNCount(src []byte, maxSym int, buf []int16) (norm []int16, tableLog int, n int, err *Error) {
 	if len(src) < 8 {
-		var buf [8]byte
-		copy(buf[:], src)
-		norm, tableLog, n, err = fseReadNCount(buf[:], maxSym)
+		var b8 [8]byte
+		copy(b8[:], src)
+		norm, tableLog, n, err = fseReadNCount(b8[:], maxSym, buf)
 		if err != nil {
 			return
 		}
@@ -114,7 +114,8 @@ func fseReadNCount(src []byte, maxSym int) (norm []int16, tableLog int, n int, e
 		return
 	}
 	maxSV1 := maxSym + 1
-	norm = make([]int16, maxSV1)
+	norm = buf[:maxSV1]
+	clear(norm)
 	iend := len(src)
 	ip := 0
 	rd := func(i int) uint32 { return binary.LittleEndian.Uint32(src[i:]) }
@@ -220,7 +221,8 @@ func fseReadNCount(src []byte, maxSym int) (norm []int16, tableLog int, n int, e
 
 // fseWeightsD is FSE_decompress_wksp (maxLog 6) writing at most max symbols into the Huffman weights.
 func fseWeightsD(src []byte, w []byte) (int, *Error) {
-	norm, tableLog, n, err := fseReadNCount(src, hufSymbolValueMax)
+	var nbuf [hufSymbolValueMax + 1]int16
+	norm, tableLog, n, err := fseReadNCount(src, hufSymbolValueMax, nbuf[:])
 	if err != nil {
 		return 0, err
 	}
