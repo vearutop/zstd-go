@@ -30,8 +30,9 @@ All three branches had `go vet .` passing at pause time, but each last commit is
    WIP only (one checkpoint commit): zdict.go, zdict_cover.go, zdict_fastcover.go, legacy trainer, suffix array, ref_zdict.go,
    `zdict_exact_test.go`; an edit of dfast.go (a hook to get the sequence store). Next: finish and verify each entry point
    byte-exact (fastCover default, cover, legacy, optimize variants, finalizeDictionary).
-3. `worktree-agent-a85806bade3027ca1` - **decoder parity** (agent a85806bade3027ca1), last commit f6d0732, tree builds, `go vet` and
-   `go test .` passed (`go test -race .` not run yet).
+3. `worktree-agent-a85806bade3027ca1` - **decoder parity** (agent a85806bade3027ca1), last commit 8760d20, `go vet` and
+   `go test -race .` pass. **Decoder work stopped here by the user's decision (2026-11-07); known limitations are documented in
+   PARITY.md. The branch is not merged into master yet.** Remaining backlog below is optional.
    Done and verified differentially against libzstd (millions of valid and mutated frames): one-shot DecodeAll follows
    ZSTD_decompress (window/offset/block-size/dictionary/checksum rules, magicless, multi-dictionary selection), own X1/X2
    Huffman decoders, streaming `DStream`/`Reader` following ZSTD_decompressStream with a sliding window, frame utility API
