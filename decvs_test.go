@@ -82,12 +82,16 @@ func trunc(b []byte) []byte {
 
 // divergences collects mismatches by category, keeping the first example of each.
 type divergences struct {
-	n     map[string]int
-	first map[string][]byte
-	total int
+	n       map[string]int
+	first   map[string][]byte
+	total   int
+	class   map[string]int // (libzstd code, our code) of frames both reject, when they differ
+	classEx map[string][]byte
 }
 
-func newDiv() *divergences { return &divergences{n: map[string]int{}, first: map[string][]byte{}} }
+func newDiv() *divergences {
+	return &divergences{n: map[string]int{}, first: map[string][]byte{}, class: map[string]int{}, classEx: map[string][]byte{}}
+}
 
 func (d *divergences) check(t testing.TB, c *decCfg, frame []byte, capacity int) {
 	d.total++
@@ -102,6 +106,20 @@ func (d *divergences) check(t testing.TB, c *decCfg, frame []byte, capacity int)
 	case code == 0 && !bytes.Equal(want, got):
 		key = fmt.Sprintf("%s: output differs (lib %d bytes, ours %d bytes)", c.name, len(want), len(got))
 	default:
+		if code != 0 {
+			var oc ref.ErrCode
+			if e, ok := err.(*zstd.Error); ok {
+				oc = ref.ErrCode(e.Code)
+			} else if err == zstd.ErrTooLarge {
+				oc = ref.ErrDstSizeTooSmall
+			}
+			if oc != code {
+				k := fmt.Sprintf("lib %d ours %d", code, oc)
+				if d.class[k]++; d.class[k] == 1 {
+					d.classEx[k] = append([]byte(nil), frame...)
+				}
+			}
+		}
 		return
 	}
 	if d.n[key]++; d.n[key] == 1 {
@@ -111,6 +129,12 @@ func (d *divergences) check(t testing.TB, c *decCfg, frame []byte, capacity int)
 
 func (d *divergences) report(t *testing.T) {
 	t.Logf("%d comparisons", d.total)
+	for k, v := range d.class {
+		if dir := os.Getenv("DECODE_DUMP"); dir != "" {
+			os.WriteFile(fmt.Sprintf("%s/class-%s.hex", dir, strings.ReplaceAll(k, " ", "_")), []byte(fmt.Sprintf("%x", d.classEx[k])), 0o644)
+		}
+		t.Logf("error class differs: %s: %d (e.g. %x)", k, v, trunc(d.classEx[k])[:min(40, len(trunc(d.classEx[k])))])
+	}
 	var keys []string
 	for k := range d.n {
 		keys = append(keys, k)

@@ -139,7 +139,7 @@ func (st *decState) block(in, out []byte, base int, dc []byte) ([]byte, error) {
 		}
 	}
 	if len(in) < 1 {
-		return out, corrupt()
+		return out, errSrcSize
 	}
 	// number of sequences
 	var nb int
@@ -148,12 +148,12 @@ func (st *decState) block(in, out []byte, base int, dc []byte) ([]byte, error) {
 		nb, in = b0, in[1:]
 	case b0 < 255:
 		if len(in) < 2 {
-			return out, corrupt()
+			return out, errSrcSize
 		}
 		nb, in = (b0-128)<<8+int(in[1]), in[2:]
 	default:
 		if len(in) < 3 {
-			return out, corrupt()
+			return out, errSrcSize
 		}
 		nb, in = int(in[1])+int(in[2])<<8+0x7F00, in[3:]
 	}
@@ -164,7 +164,7 @@ func (st *decState) block(in, out []byte, base int, dc []byte) ([]byte, error) {
 		return append(out, lits...), nil
 	}
 	if len(in) < 1 {
-		return out, corrupt()
+		return out, errSrcSize
 	}
 	modes := in[0]
 	in = in[1:]
@@ -196,11 +196,11 @@ func (st *decState) table(own *dTable, active **dTable, predef *dTable, kind, mo
 		*active = own
 		return in[1:], nil
 	case 2:
-		norm, lg, n, err := readNCount(in, maxSym)
-		if err != nil || lg > maxLog {
+		norm, lg, n, err := fseReadNCount(in, maxSym)
+		if err != nil || lg > int(maxLog) {
 			return in, corrupt()
 		}
-		own.build(norm, lg, kind)
+		own.build(norm, uint8(lg), kind)
 		*active = own
 		return in[n:], nil
 	default:
@@ -211,12 +211,24 @@ func (st *decState) table(own *dTable, active **dTable, predef *dTable, kind, mo
 	return in, nil
 }
 
+// tooBig is the error for a block generating more than it may: libzstd's dstSize_tooSmall when decoding into a
+// destination (the bound is its capacity), corruption when a streamed block exceeds blockSizeMax.
+func (st *decState) tooBig() error {
+	if st.oneShot {
+		return ErrTooLarge
+	}
+	return corrupt()
+}
+
 func (st *decState) literals(in []byte) (lits, rest []byte, err error) {
-	if len(in) < 1 {
+	if len(in) < 2 { // MIN_CBLOCK_SIZE
 		return nil, in, corrupt()
 	}
 	b := uint32(in[0])
 	typ, sf := b&3, (b>>2)&3
+	if typ == 3 && !st.hdecValid {
+		return nil, in, errDictBad // set_repeat without a table (libzstd: litEntropy == 0)
+	}
 	st.litDirect = false
 	srcSize := len(in)
 	if typ < 2 { // raw / RLE
@@ -397,7 +409,10 @@ func (st *decState) sequences(in []byte, nb int, lits, out []byte, base int, dc 
 			sm = uint32(me.ns) + r.get(me.nb)
 			so = uint32(oe.ns) + r.get(oe.nb)
 		}
-		if r.bad || li+llen > len(lits) || len(out)-st.blockStart+llen+mlen > st.outLim {
+		if len(out)-st.blockStart+llen+mlen > st.outLim {
+			return out, st.tooBig()
+		}
+		if r.bad || li+llen > len(lits) {
 			return out, corrupt()
 		}
 		var off uint32
@@ -457,7 +472,7 @@ func (st *decState) sequences(in []byte, nb int, lits, out []byte, base int, dc 
 		return out, corrupt()
 	}
 	if len(out)-st.blockStart+len(lits)-li > st.outLim {
-		return out, corrupt()
+		return out, st.tooBig()
 	}
 	return append(out, lits[li:]...), nil
 }

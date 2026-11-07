@@ -379,10 +379,7 @@ func (d *Decoder) frame(st *decState, src, dst []byte) ([]byte, []byte, error) {
 	}
 	base := len(dst)
 	if h.hasSize {
-		if st.limited && h.size > uint64(st.maxEnd-len(dst)) {
-			return dst, src, ErrTooLarge
-		}
-		if h.size <= 64<<20 && cap(dst)-len(dst) < int(h.size)+wildPad { // larger claims grow on demand, a header must not force a big allocation
+		if h.size <= 64<<20 && (!st.limited || h.size <= uint64(st.maxEnd-len(dst))) && cap(dst)-len(dst) < int(h.size)+wildPad { // larger claims grow on demand, a header must not force a big allocation
 			nd := make([]byte, len(dst), len(dst)+int(h.size)+wildPad) // slack for 8-byte copies
 			copy(nd, dst)
 			dst = nd
@@ -430,9 +427,6 @@ func (d *Decoder) frame(st *decState, src, dst []byte) ([]byte, []byte, error) {
 		src = src[csize:]
 		if st.limited && len(dst) > st.maxEnd {
 			return dst, src, ErrTooLarge
-		}
-		if h.hasSize && uint64(len(dst)-base) > h.size {
-			return dst, src, errCorrupt
 		}
 	}
 	if h.hasSize && uint64(len(dst)-base) != h.size {
