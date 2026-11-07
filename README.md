@@ -45,7 +45,9 @@ function-by-function port of the C sources (match finders, Huffman, FSE selectio
   the suffix), the dedicated dictionary search, the "loaded dictionary" API path (`ZSTD_CCtx_loadDictionary`), streaming compression
   semantics, multithreading, the dictionary trainer. The row match finder's hash salt (`ms->hashSalt`, history of the CCtx) is not
   modelled: it permutes rows and tags bijectively and does not change the output.
-- Decoder: own FSE/sequence/dictionary/Huffman code with libzstd's validation (block size, empty sequences); Huffman literals (own implementation, accepts the 12-bit tables libzstd accepts). Window size is not enforced.
+- Decoder: own FSE / sequence / Huffman code (12-bit tables included). `DecodeAll` follows `ZSTD_decompress`: window, offset, block-size,
+  dictionary and checksum rules, magicless format, multi-dictionary selection, destination-capacity rules; verified against libzstd on
+  millions of valid and mutated frames (PARITY.md has the numbers and the limitations).
 - Streaming: `Writer` writes independent frames (not libzstd's streaming compression mode). `DStream`/`Reader` follow
   `ZSTD_decompressStream` with a sliding window (hints, ring-buffer capacity errors, `RefPrefix`); frame utility API
   (`GetFrameHeader`, `FindFrameCompressedSize`, `DecompressBound`, ...). Verified in lockstep against libzstd. See PARITY.md for
