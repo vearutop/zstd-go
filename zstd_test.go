@@ -425,3 +425,15 @@ func TestStreaming(t *testing.T) {
 		}
 	}
 }
+
+func TestNewDecoderNilDict(t *testing.T) {
+	var d *zstd.Dict
+	dec, err := zstd.NewDecoder(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := zstd.NewEncoder(nil).EncodeAll([]byte("hello hello hello"), nil)
+	if got, err := dec.DecodeAll(f, nil); err != nil || string(got) != "hello hello hello" {
+		t.Fatalf("%q %v", got, err)
+	}
+}

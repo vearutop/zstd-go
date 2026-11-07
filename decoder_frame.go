@@ -46,6 +46,9 @@ type Decoder struct {
 func NewDecoder(dicts ...*Dict) (*Decoder, error) {
 	d := &Decoder{dicts: map[uint32]*Dict{}}
 	for _, dc := range dicts {
+		if dc == nil { // no dictionary
+			continue
+		}
 		d.dicts[dc.id] = dc
 		d.last = dc
 	}
