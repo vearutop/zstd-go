@@ -4,6 +4,7 @@ package zstd_test
 
 import (
 	"bytes"
+	"fmt"
 	"math"
 	"math/rand"
 	"os"
@@ -117,6 +118,15 @@ func TestExactStream(t *testing.T) {
 					if bad <= 8 {
 						t.Errorf("case %d frame %d step %d/%d (op %d, %d B; frame at %d, total %d; pledge mode %d; %s): ours %d B, libzstd %d B\n    params %v", i, f, si, len(steps), s.op, s.n, start, len(in), pledge, desc, len(ours), len(theirs), ps)
 						dumpMismatch(t, in[start:pos], ours, theirs, i)
+						if dir := os.Getenv("EXACT_DUMP"); dir != "" {
+							var sb bytes.Buffer
+							fmt.Fprintf(&sb, "%#v\npledge %d frameLen %d\n", ps.Params, pledge, frameLen)
+							for _, st := range steps {
+								fmt.Fprintf(&sb, "%d %d\n", st.n, st.op)
+							}
+							os.WriteFile(fmt.Sprintf("%s/p%d-steps.txt", dir, i), sb.Bytes(), 0o644)
+							os.WriteFile(fmt.Sprintf("%s/p%d-full.bin", dir, i), in[start:], 0o644)
+						}
 					}
 					failed = true
 					break

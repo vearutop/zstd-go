@@ -45,8 +45,8 @@ type streamState struct {
 	first      bool // no chunk compressed yet
 	pos        int  // bytes of the frame already moved into e.buf (after the dictionary)
 	dictL      int  // dictionary length in e.buf
-	ringLap0   uint32
-	extLap0    uint32
+	ringLap0   int  // buffer position (e.buf) of ring buffer address 0 in the current lap
+	extLap0    int  // the same for the extDict lap
 	extRing    bool // the extDict is a previous lap of the ring buffer (and not dictionary memory)
 }
 
@@ -95,7 +95,7 @@ func (e *Encoder) initStream(op Directive, inSize uint64) error {
 	if uint64(bs) == pledged {
 		s.inBuffTgt++ // for small input: avoid an automatic flush on reaching the end of a block
 	}
-	s.ringLap0 = e.ix(L)
+	s.ringLap0 = L
 	return nil
 }
 
@@ -181,13 +181,14 @@ func (e *Encoder) streamChunk(dst, data []byte, inRing, last bool) ([]byte, erro
 				}
 				e.nextToUpdate = e.dictLimit
 				s.extRing, s.extLap0 = true, s.ringLap0
-				s.ringLap0 = curr
+				s.ringLap0 = p0
 				s.wrapped = false
 			}
 			if inRing && s.extRing { // input and the (ring buffer) extDict overlap: the overwritten part of the extDict is gone
-				a := curr - s.ringLap0
-				if a+uint32(len(data)) > e.lowLimit-s.extLap0 && a < e.dictLimit-s.extLap0 {
-					e.lowLimit = min(e.dictLimit, s.extLap0+a+uint32(len(data)))
+				a := uint32(p0 - s.ringLap0)
+				ext0 := e.ix(s.extLap0)
+				if a+uint32(len(data)) > e.lowLimit-ext0 && a < e.dictLimit-ext0 {
+					e.lowLimit = min(e.dictLimit, ext0+a+uint32(len(data)))
 				}
 			}
 		}

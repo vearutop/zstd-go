@@ -5,10 +5,12 @@ import "math"
 // Port of FSE_optimalTableLog, FSE_normalizeCount and FSE_writeNCount (libzstd).
 
 func optimalTableLog(maxLog uint8, n int, maxSym int) uint8 {
-	maxBitsSrc := bitsLen(uint32(n-1)) - 1 - 2
+	maxBitsSrc := uint32(bitsLen(uint32(n-1))-1) - 2 // U32 arithmetic like FSE_optimalTableLog: wraps for n <= 4
 	minBits := min(bitsLen(uint32(n)), bitsLen(uint32(maxSym))+1)
 	tl := int(maxLog)
-	tl = min(tl, maxBitsSrc)
+	if maxBitsSrc < uint32(tl) {
+		tl = int(maxBitsSrc)
+	}
 	tl = max(tl, minBits)
 	return uint8(min(max(tl, 5), 12))
 }

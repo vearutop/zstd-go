@@ -314,7 +314,7 @@ func (e *Encoder) matchFind(L, base, n int) {
 	switch e.cp.strategy {
 	case stratFast:
 		switch {
-		case e.copyMode:
+		case e.lowLimit < e.dictLimit: // ZSTD_window_hasExtDict
 			e.fastExtDict(e.cp, start, end, e.lowMatchIndex(end, maxDist), e.dictLimit)
 		case attached:
 			e.fastDict(e.cd, e.cp, L, start, end)
@@ -323,7 +323,7 @@ func (e *Encoder) matchFind(L, base, n int) {
 		}
 	case stratDFast:
 		switch {
-		case e.copyMode:
+		case e.lowLimit < e.dictLimit: // ZSTD_window_hasExtDict
 			e.dfastExtDict(e.cp, start, end, e.lowMatchIndex(end, maxDist), e.dictLimit)
 		case attached:
 			e.dfastDict(e.cd, e.cp, L, start, end)
