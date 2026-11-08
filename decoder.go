@@ -439,7 +439,7 @@ func (st *decState) sequences(in []byte, nb int, lits, out []byte, base int, dc 
 			sl, so, sm, st.reps, li, out = uint32(c.sl), uint32(c.so), uint32(c.sm), c.reps, c.li, out[:c.n]
 			k := nb - 1 - i - c.rem
 			if i += k; k == 0 {
-				asmAt = i + 16 // ponytail: fixed back-off after a non-simple sequence, so runs of them don't pay the call
+				asmAt = i + seqAsmBackoff // ponytail: fixed back-off after a non-simple sequence, so runs of them don't pay the call
 			}
 		}
 		le, oe, me := &ll.e[sl], &of.e[so], &ml.e[sm]

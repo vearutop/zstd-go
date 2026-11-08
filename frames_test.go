@@ -130,3 +130,27 @@ func BenchmarkTrimFloor(b *testing.B) {
 	}
 	zstd.SetTrimFloorForTest(2 << 20)
 }
+
+// BenchmarkSeqBackoff sweeps the sequence-assembly back-off on log-like data (amd64 only matters).
+func BenchmarkSeqBackoff(b *testing.B) {
+	data := repetitiveLogs(120000)
+	e := zstd.NewEncoder(nil)
+	e.Level = 1
+	frame := e.EncodeAll(data, nil)
+	for _, n := range []int{1, 2, 4, 8, 16} {
+		b.Run(fmt.Sprintf("n%d", n), func(b *testing.B) {
+			zstd.SetSeqAsmBackoffForTest(n)
+			b.SetBytes(int64(len(data)))
+			buf := make([]byte, 64<<10)
+			for i := 0; i < b.N; i++ {
+				r := zstd.NewReader(bytes.NewReader(frame), nil)
+				for {
+					if _, err := r.Read(buf); err != nil {
+						break
+					}
+				}
+			}
+		})
+	}
+	zstd.SetSeqAsmBackoffForTest(4)
+}

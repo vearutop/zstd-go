@@ -27,3 +27,6 @@ type seqCtx struct {
 
 // The assembly indexes the tables as 12-byte entries.
 const _ = -uint(unsafe.Sizeof(dEntry{}) ^ 12)
+
+// seqAsmBackoff is how many sequences the Go loop runs after the assembly stopped at a non-simple one.
+var seqAsmBackoff = 4
