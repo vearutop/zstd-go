@@ -43,3 +43,28 @@ matching libzstd in the differential decoder tests.
 - Not worth it: moving rowFind's matchBuffer into the Encoder (no change; the profile line was sampling skid).
 - Remaining hot spots: dfast/fast match-finder inner loops (about 40 bounds checks), bitWriter.encode/add in writeSequences,
   rowFind cache misses (libzstd prefetches rows; Go has no prefetch), decoder `sequences` bit-reader dependency chain.
+
+## Xeon Gold 5118 (48 threads), port vs klauspost, MB/s, `-test.benchtime 1s`, pure-Go binary (no libzstd)
+
+Port numbers from the GOAMD64=v3 build (v3 is +10-16% on decompression, +0-9% on compression, versus the default v1).
+serial = 1 goroutine, parallel = all 48 threads.
+
+| case | serial port / klauspost | parallel port / klauspost |
+|---|---|---|
+| compress records (dict) L1 | 68 / 15 | 1227 / 371 |
+| compress records (dict) L3 | 68 / 4.7 | 1253 / 71 |
+| compress records (dict) L12 | 11 / 0.01 | 330 / 0.2 |
+| compress blob L1 | 92 / 100 | 2507 / 3871 |
+| compress blob L3 | 95 / 70 | 2420 / 2715 |
+| compress blob L9 | 11 / 31 | 288 / 1605 |
+| compress text L1 | 101 / 99 | 2733 / 3757 |
+| compress text L3 | 96 / 77 | 1895 / 2253 |
+| compress text L9 | 13 / 59 | 270 / 1394 |
+| decompress records L3 | 211 / 152 | 6268 / 442 |
+| decompress blob L3 | 251 / 344 | 6718 / 10350 |
+| decompress text L3 | 266 / 414 | 6854 / 10790 |
+
+Reading: small values with a dictionary are where the port wins big (compression 4-15x serial, decompression 1.4x serial and
+14x on 48 threads; klauspost's per-call dictionary table setup does not scale). On large inputs the port matches klauspost at
+L1/L3 serially but scales worse in parallel (about 0.65-0.85x), is 3-5x slower from L6 up (klauspost's levels are different
+algorithms with larger output), and decodes at about 0.65-0.75x (klauspost uses amd64 assembly for Huffman and sequences).
