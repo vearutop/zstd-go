@@ -396,9 +396,20 @@ func buildSeqTable(slot *cTable, hdr []byte, mode int, count []uint32, max int, 
 const maxSeqSymbols = 53
 
 func histCodes(codes []uint8, count *[maxSeqSymbols + 1]uint32, maxInit int) (max, mostFrequent int) {
-	*count = [maxSeqSymbols + 1]uint32{}
+	// four interleaved histograms avoid store-to-load stalls on repeated codes; &63 removes the bounds checks
+	var h [4][64]uint32
+	for len(codes) >= 4 {
+		h[0][codes[0]&63]++
+		h[1][codes[1]&63]++
+		h[2][codes[2]&63]++
+		h[3][codes[3]&63]++
+		codes = codes[4:]
+	}
 	for _, c := range codes {
-		count[c]++
+		h[0][c&63]++
+	}
+	for i := range count {
+		count[i] = h[0][i] + h[1][i] + h[2][i] + h[3][i]
 	}
 	for max = maxInit; max > 0 && count[max] == 0; max-- {
 	}

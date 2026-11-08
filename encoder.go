@@ -275,13 +275,17 @@ func le32(b []byte, i int) uint32 { return binary.LittleEndian.Uint32(b[i : i+4]
 // count returns the common prefix length of a and b (b no longer than a is not required).
 func count(a, b []byte) int {
 	n := min(len(a), len(b))
+	a, b = a[:n], b[:n]
 	i := 0
-	for ; i+8 <= n; i += 8 {
-		if x := le64(a, i) ^ le64(b, i); x != 0 {
+	for len(a) >= 8 && len(b) >= 8 {
+		if x := binary.LittleEndian.Uint64(a) ^ binary.LittleEndian.Uint64(b); x != 0 {
 			return i + bits.TrailingZeros64(x)>>3
 		}
+		a, b = a[8:], b[8:]
+		i += 8
 	}
-	for ; i < n && a[i] == b[i]; i++ {
+	for j := 0; j < len(a) && j < len(b) && a[j] == b[j]; j++ {
+		i++
 	}
 	return i
 }

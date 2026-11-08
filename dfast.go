@@ -354,16 +354,18 @@ func (e *Encoder) dfastNoDict(cp cParams, start, iend int, lowestValid uint32, i
 		if ip1 > ilimit {
 			break
 		}
-		hl0 := hashPtr(rd64(buf, ip), hBitsL, 8)
+		v0 := rd64(buf, ip)
+		hl0 := hashPtr(v0, hBitsL, 8)
 		idxl0 := hashLong[hl0]
 		var curr uint32
 		var mLength int
 		var offset uint32
 		matched, stored := false, false
 		var hl1 uint32
+		var v1 uint64
 
 		for {
-			hs0 := hashPtr(rd64(buf, ip), hBitsS, mls)
+			hs0 := hashPtr(v0, hBitsS, mls)
 			idxs0 := hashSmall[hs0]
 			curr = idx(ip)
 			hashLong[hl0], hashSmall[hs0] = curr, curr
@@ -376,10 +378,11 @@ func (e *Encoder) dfastNoDict(cp cParams, start, iend int, lowestValid uint32, i
 				stored = true
 				break
 			}
-			hl1 = hashPtr(rd64(buf, ip1), hBitsL, 8)
+			v1 = rd64(buf, ip1)
+			hl1 = hashPtr(v1, hBitsL, 8)
 
 			matchl0 := int(idxl0) - windowStartIndex
-			if idxl0 >= prefixLowestIndex && rd64(buf, matchl0) == rd64(buf, ip) {
+			if idxl0 >= prefixLowestIndex && rd64(buf, matchl0) == v0 {
 				mLength = cnt(buf, ip+8, matchl0+8, iend) + 8
 				offset = uint32(ip - matchl0)
 				for ip > anchor && matchl0 > prefixLowest && buf[ip-1] == buf[matchl0-1] {
@@ -392,11 +395,11 @@ func (e *Encoder) dfastNoDict(cp cParams, start, iend int, lowestValid uint32, i
 			}
 			idxl1 := hashLong[hl1]
 			matchs0 := int(idxs0) - windowStartIndex
-			if idxs0 >= prefixLowestIndex && rd32(buf, matchs0) == rd32(buf, ip) {
+			if idxs0 >= prefixLowestIndex && rd32(buf, matchs0) == uint32(v0) {
 				// _search_next_long
 				mLength = cnt(buf, ip+4, matchs0+4, iend) + 4
 				offset = uint32(ip - matchs0)
-				if idxl1 > prefixLowestIndex && rd64(buf, int(idxl1)-windowStartIndex) == rd64(buf, ip1) {
+				if idxl1 > prefixLowestIndex && rd64(buf, int(idxl1)-windowStartIndex) == v1 {
 					ml1 := int(idxl1) - windowStartIndex
 					if l1len := cnt(buf, ip1+8, ml1+8, iend) + 8; l1len > mLength {
 						ip = ip1
@@ -418,6 +421,7 @@ func (e *Encoder) dfastNoDict(cp cParams, start, iend int, lowestValid uint32, i
 				nextStep += kStepIncr
 			}
 			ip = ip1
+			v0 = v1
 			ip1 += step
 			hl0 = hl1
 			idxl0 = idxl1
