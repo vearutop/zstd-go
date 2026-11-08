@@ -390,35 +390,112 @@ func (d *hufDec) fast4(dst []byte, n int, src []byte) (handled, ok bool) {
 }
 
 func (d *hufDec) fastLoopX1(dst []byte, n int, src []byte, bits *[4]uint64, ip, op *[4]int) {
+	// the four streams live in locals (registers) instead of arrays behind pointers
+	b0, b1, b2, b3 := bits[0], bits[1], bits[2], bits[3]
+	i0, i1, i2, i3 := ip[0], ip[1], ip[2], ip[3]
+	o0, o1, o2, o3 := op[0], op[1], op[2], op[3]
+	defer func() {
+		bits[0], bits[1], bits[2], bits[3] = b0, b1, b2, b3
+		ip[0], ip[1], ip[2], ip[3] = i0, i1, i2, i3
+		op[0], op[1], op[2], op[3] = o0, o1, o2, o3
+	}()
 	sh := 64 - uint(d.tl)
+	const mask = 1<<hufTableLogMax - 1
+	nbT, symT := &d.nb, &d.sym
 	for {
-		oiters := (n - op[3]) / 5
-		iiters := ip[0] / 7
+		oiters := (n - o3) / 5
+		iiters := i0 / 7
 		iters := min(oiters, iiters)
-		olimit := op[3] + iters*5
-		if op[3] == olimit {
+		olimit := o3 + iters*5
+		if o3 == olimit {
 			return
 		}
-		for s := 1; s < 4; s++ {
-			if ip[s] < ip[s-1] {
-				return
-			}
+		if i1 < i0 || i2 < i1 || i3 < i2 {
+			return
 		}
+		var x0, x1, x2, x3 uint64
 		for {
-			for sym := 0; sym < 5; sym++ {
-				for s := 0; s < 4; s++ {
-					idx := bits[s] >> sh
-					bits[s] <<= uint(d.nb[idx])
-					dst[op[s]+sym] = d.sym[idx]
-				}
-			}
-			for s := 0; s < 4; s++ {
-				ctz := bitsCtz64(bits[s])
-				op[s] += 5
-				ip[s] -= ctz >> 3
-				bits[s] = (leU64(src[ip[s]:]) | 1) << uint(ctz&7)
-			}
-			if op[3] >= olimit {
+			d0 := dst[o0 : o0+5 : o0+5]
+			d1 := dst[o1 : o1+5 : o1+5]
+			d2 := dst[o2 : o2+5 : o2+5]
+			d3 := dst[o3 : o3+5 : o3+5]
+			x0 = (b0 >> sh) & mask
+			b0 <<= uint(nbT[x0])
+			d0[0] = symT[x0]
+			x1 = (b1 >> sh) & mask
+			b1 <<= uint(nbT[x1])
+			d1[0] = symT[x1]
+			x2 = (b2 >> sh) & mask
+			b2 <<= uint(nbT[x2])
+			d2[0] = symT[x2]
+			x3 = (b3 >> sh) & mask
+			b3 <<= uint(nbT[x3])
+			d3[0] = symT[x3]
+			x0 = (b0 >> sh) & mask
+			b0 <<= uint(nbT[x0])
+			d0[1] = symT[x0]
+			x1 = (b1 >> sh) & mask
+			b1 <<= uint(nbT[x1])
+			d1[1] = symT[x1]
+			x2 = (b2 >> sh) & mask
+			b2 <<= uint(nbT[x2])
+			d2[1] = symT[x2]
+			x3 = (b3 >> sh) & mask
+			b3 <<= uint(nbT[x3])
+			d3[1] = symT[x3]
+			x0 = (b0 >> sh) & mask
+			b0 <<= uint(nbT[x0])
+			d0[2] = symT[x0]
+			x1 = (b1 >> sh) & mask
+			b1 <<= uint(nbT[x1])
+			d1[2] = symT[x1]
+			x2 = (b2 >> sh) & mask
+			b2 <<= uint(nbT[x2])
+			d2[2] = symT[x2]
+			x3 = (b3 >> sh) & mask
+			b3 <<= uint(nbT[x3])
+			d3[2] = symT[x3]
+			x0 = (b0 >> sh) & mask
+			b0 <<= uint(nbT[x0])
+			d0[3] = symT[x0]
+			x1 = (b1 >> sh) & mask
+			b1 <<= uint(nbT[x1])
+			d1[3] = symT[x1]
+			x2 = (b2 >> sh) & mask
+			b2 <<= uint(nbT[x2])
+			d2[3] = symT[x2]
+			x3 = (b3 >> sh) & mask
+			b3 <<= uint(nbT[x3])
+			d3[3] = symT[x3]
+			x0 = (b0 >> sh) & mask
+			b0 <<= uint(nbT[x0])
+			d0[4] = symT[x0]
+			x1 = (b1 >> sh) & mask
+			b1 <<= uint(nbT[x1])
+			d1[4] = symT[x1]
+			x2 = (b2 >> sh) & mask
+			b2 <<= uint(nbT[x2])
+			d2[4] = symT[x2]
+			x3 = (b3 >> sh) & mask
+			b3 <<= uint(nbT[x3])
+			d3[4] = symT[x3]
+			c0 := bitsCtz64(b0)
+			o0 += 5
+			i0 -= c0 >> 3
+			b0 = (leU64(src[i0:]) | 1) << uint(c0&7)
+			c1 := bitsCtz64(b1)
+			o1 += 5
+			i1 -= c1 >> 3
+			b1 = (leU64(src[i1:]) | 1) << uint(c1&7)
+			c2 := bitsCtz64(b2)
+			o2 += 5
+			i2 -= c2 >> 3
+			b2 = (leU64(src[i2:]) | 1) << uint(c2&7)
+			c3 := bitsCtz64(b3)
+			o3 += 5
+			i3 -= c3 >> 3
+			b3 = (leU64(src[i3:]) | 1) << uint(c3&7)
+			if o3 >= olimit {
 				break
 			}
 		}
@@ -426,40 +503,120 @@ func (d *hufDec) fastLoopX1(dst []byte, n int, src []byte, bits *[4]uint64, ip, 
 }
 
 func (d *hufDec) fastLoopX2(dst []byte, src []byte, bits *[4]uint64, ip, op, oend *[4]int) {
-	dec := func(s int) {
-		e := d.x2[bits[s]>>53]
-		dst[op[s]], dst[op[s]+1] = byte(e.seq), byte(e.seq>>8)
-		bits[s] <<= uint(e.nb) & 0x3F
-		op[s] += int(e.length)
-	}
+	b0, b1, b2, b3 := bits[0], bits[1], bits[2], bits[3]
+	i0, i1, i2, i3 := ip[0], ip[1], ip[2], ip[3]
+	o0, o1, o2, o3 := op[0], op[1], op[2], op[3]
+	defer func() {
+		bits[0], bits[1], bits[2], bits[3] = b0, b1, b2, b3
+		ip[0], ip[1], ip[2], ip[3] = i0, i1, i2, i3
+		op[0], op[1], op[2], op[3] = o0, o1, o2, o3
+	}()
+	tab := &d.x2
 	for {
-		iters := ip[0] / 7
-		for s := 0; s < 4; s++ {
-			iters = min(iters, (oend[s]-op[s])/10)
-		}
-		olimit := op[3] + iters*5
-		if op[3] == olimit {
+		iters := i0 / 7
+		iters = min(iters, (oend[0]-o0)/10, (oend[1]-o1)/10, (oend[2]-o2)/10, (oend[3]-o3)/10)
+		olimit := o3 + iters*5
+		if o3 == olimit {
 			return
 		}
-		for s := 1; s < 4; s++ {
-			if ip[s] < ip[s-1] {
-				return
-			}
+		if i1 < i0 || i2 < i1 || i3 < i2 {
+			return
 		}
+		var e0, e1, e2, e3 x2Elt
 		for {
-			for r := 0; r < 5; r++ {
-				for s := 0; s < 3; s++ {
-					dec(s)
-				}
-			}
-			dec(3)
-			for s := 0; s < 4; s++ {
-				dec(3)
-				ctz := bitsCtz64(bits[s])
-				ip[s] -= ctz >> 3
-				bits[s] = (leU64(src[ip[s]:]) | 1) << uint(ctz&7)
-			}
-			if op[3] >= olimit {
+			e0 = tab[(b0>>53)&2047]
+			dst[o0], dst[o0+1] = byte(e0.seq), byte(e0.seq>>8)
+			b0 <<= uint(e0.nb) & 0x3F
+			o0 += int(e0.length)
+			e1 = tab[(b1>>53)&2047]
+			dst[o1], dst[o1+1] = byte(e1.seq), byte(e1.seq>>8)
+			b1 <<= uint(e1.nb) & 0x3F
+			o1 += int(e1.length)
+			e2 = tab[(b2>>53)&2047]
+			dst[o2], dst[o2+1] = byte(e2.seq), byte(e2.seq>>8)
+			b2 <<= uint(e2.nb) & 0x3F
+			o2 += int(e2.length)
+			e3 = tab[(b3>>53)&2047]
+			dst[o3], dst[o3+1] = byte(e3.seq), byte(e3.seq>>8)
+			b3 <<= uint(e3.nb) & 0x3F
+			o3 += int(e3.length)
+			e0 = tab[(b0>>53)&2047]
+			dst[o0], dst[o0+1] = byte(e0.seq), byte(e0.seq>>8)
+			b0 <<= uint(e0.nb) & 0x3F
+			o0 += int(e0.length)
+			e1 = tab[(b1>>53)&2047]
+			dst[o1], dst[o1+1] = byte(e1.seq), byte(e1.seq>>8)
+			b1 <<= uint(e1.nb) & 0x3F
+			o1 += int(e1.length)
+			e2 = tab[(b2>>53)&2047]
+			dst[o2], dst[o2+1] = byte(e2.seq), byte(e2.seq>>8)
+			b2 <<= uint(e2.nb) & 0x3F
+			o2 += int(e2.length)
+			e3 = tab[(b3>>53)&2047]
+			dst[o3], dst[o3+1] = byte(e3.seq), byte(e3.seq>>8)
+			b3 <<= uint(e3.nb) & 0x3F
+			o3 += int(e3.length)
+			e0 = tab[(b0>>53)&2047]
+			dst[o0], dst[o0+1] = byte(e0.seq), byte(e0.seq>>8)
+			b0 <<= uint(e0.nb) & 0x3F
+			o0 += int(e0.length)
+			e1 = tab[(b1>>53)&2047]
+			dst[o1], dst[o1+1] = byte(e1.seq), byte(e1.seq>>8)
+			b1 <<= uint(e1.nb) & 0x3F
+			o1 += int(e1.length)
+			e2 = tab[(b2>>53)&2047]
+			dst[o2], dst[o2+1] = byte(e2.seq), byte(e2.seq>>8)
+			b2 <<= uint(e2.nb) & 0x3F
+			o2 += int(e2.length)
+			e3 = tab[(b3>>53)&2047]
+			dst[o3], dst[o3+1] = byte(e3.seq), byte(e3.seq>>8)
+			b3 <<= uint(e3.nb) & 0x3F
+			o3 += int(e3.length)
+			e0 = tab[(b0>>53)&2047]
+			dst[o0], dst[o0+1] = byte(e0.seq), byte(e0.seq>>8)
+			b0 <<= uint(e0.nb) & 0x3F
+			o0 += int(e0.length)
+			e1 = tab[(b1>>53)&2047]
+			dst[o1], dst[o1+1] = byte(e1.seq), byte(e1.seq>>8)
+			b1 <<= uint(e1.nb) & 0x3F
+			o1 += int(e1.length)
+			e2 = tab[(b2>>53)&2047]
+			dst[o2], dst[o2+1] = byte(e2.seq), byte(e2.seq>>8)
+			b2 <<= uint(e2.nb) & 0x3F
+			o2 += int(e2.length)
+			e3 = tab[(b3>>53)&2047]
+			dst[o3], dst[o3+1] = byte(e3.seq), byte(e3.seq>>8)
+			b3 <<= uint(e3.nb) & 0x3F
+			o3 += int(e3.length)
+			e0 = tab[(b0>>53)&2047]
+			dst[o0], dst[o0+1] = byte(e0.seq), byte(e0.seq>>8)
+			b0 <<= uint(e0.nb) & 0x3F
+			o0 += int(e0.length)
+			e1 = tab[(b1>>53)&2047]
+			dst[o1], dst[o1+1] = byte(e1.seq), byte(e1.seq>>8)
+			b1 <<= uint(e1.nb) & 0x3F
+			o1 += int(e1.length)
+			e2 = tab[(b2>>53)&2047]
+			dst[o2], dst[o2+1] = byte(e2.seq), byte(e2.seq>>8)
+			b2 <<= uint(e2.nb) & 0x3F
+			o2 += int(e2.length)
+			e3 = tab[(b3>>53)&2047]
+			dst[o3], dst[o3+1] = byte(e3.seq), byte(e3.seq>>8)
+			b3 <<= uint(e3.nb) & 0x3F
+			o3 += int(e3.length)
+			c0 := bitsCtz64(b0)
+			i0 -= c0 >> 3
+			b0 = (leU64(src[i0:]) | 1) << uint(c0&7)
+			c1 := bitsCtz64(b1)
+			i1 -= c1 >> 3
+			b1 = (leU64(src[i1:]) | 1) << uint(c1&7)
+			c2 := bitsCtz64(b2)
+			i2 -= c2 >> 3
+			b2 = (leU64(src[i2:]) | 1) << uint(c2&7)
+			c3 := bitsCtz64(b3)
+			i3 -= c3 >> 3
+			b3 = (leU64(src[i3:]) | 1) << uint(c3&7)
+			if o3 >= olimit {
 				break
 			}
 		}

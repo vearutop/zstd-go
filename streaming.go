@@ -13,6 +13,8 @@ import (
 type Writer struct {
 	// FrameSize is the input bytes per frame; 0 means 128 KiB. Set before the first Write.
 	FrameSize int
+	// Level is the compression level (see Encoder.Level); 0 keeps the Encoder default. Set before the first Write.
+	Level int
 	// Seekable makes Close append a seek table (see OpenSeekable). Set before the first Write.
 	Seekable bool
 
@@ -60,6 +62,9 @@ func (z *Writer) Write(p []byte) (n int, err error) {
 func (z *Writer) Flush() error {
 	if z.err != nil || len(z.buf) == 0 {
 		return z.err
+	}
+	if z.Level != 0 {
+		z.e.Level = z.Level
 	}
 	z.out = z.e.EncodeAll(z.buf, z.out[:0])
 	if z.Seekable {
