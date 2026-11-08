@@ -311,7 +311,8 @@ func ncountCost(count []uint32, max, nbSeq int, fseLog uint8) uint64 {
 	if !normalize(norm[:max+1], tableLog, count[:max+1], nbSeq, max, nbSeq >= 2048) { // ZSTD_useLowProbCount
 		return costError
 	}
-	return uint64(len(writeNCount(nil, norm[:max+1], tableLog)))
+	var scratch [256]byte // only the length is needed
+	return uint64(len(writeNCount(scratch[:0], norm[:max+1], tableLog)))
 }
 
 // entropyCost is ZSTD_entropyCost: the cost in bits of coding count with the entropy bound.

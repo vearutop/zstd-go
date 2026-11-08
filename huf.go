@@ -603,12 +603,11 @@ func hufCompress(dst, src []byte, single bool, preferRepeat, optimalDepth, suspe
 		return nil, false
 	}
 	_ = maxBits
-	var hdrBuf [256]byte
-	hdr, ok := nt.write(hdrBuf[:0])
+	withHdr, ok := nt.write(dst) // the header goes right after dst, in its spare capacity
 	if !ok {
 		return nil, false
 	}
-	hSize := len(hdr)
+	hSize := len(withHdr) - len(dst)
 	if *repeat != hufRepeatNone {
 		oldSize := old.estimate(count[:], maxSym)
 		newSize := nt.estimate(count[:], maxSym)
@@ -622,7 +621,7 @@ func hufCompress(dst, src []byte, single bool, preferRepeat, optimalDepth, suspe
 	}
 	*repeat = hufRepeatNone
 	*old = nt
-	o, ok := compressWith(append(dst, hdr...), &nt)
+	o, ok := compressWith(withHdr, &nt)
 	return o, false
 }
 
