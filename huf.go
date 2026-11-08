@@ -1,6 +1,9 @@
 package zstd
 
-import "math/bits"
+import (
+	"math/bits"
+	"sync"
+)
 
 // Port of libzstd's Huffman compressor (huf_compress.c) for the paths zstd uses for literals.
 
@@ -325,6 +328,8 @@ func histCount(count *[256]uint32, src []byte) (largest uint32, maxSym int) {
 	return
 }
 
+var wtPool = sync.Pool{New: func() any { return new(cTable) }}
+
 // hufCompressWeights is HUF_compressWeights: FSE-compress the weight table; 0 = not compressible, 1 = rle.
 func hufCompressWeights(dst []byte, weights []byte) ([]byte, int) {
 	wt := len(weights)
@@ -356,11 +361,12 @@ func hufCompressWeights(dst []byte, weights []byte) ([]byte, int) {
 	}
 	start := len(dst)
 	dst = writeNCount(dst, norm[:maxSym+1], log)
-	var ct cTable
+	ct := wtPool.Get().(*cTable) // reused storage: ct escapes through fseCompressUsingCTable
+	defer wtPool.Put(ct)
 	ct.build(norm[:maxSym+1], log)
 	var w bitWriter
 	w.buf = dst
-	fseCompressUsingCTable(&w, weights, &ct)
+	fseCompressUsingCTable(&w, weights, ct)
 	return w.buf, len(w.buf) - start
 }
 
@@ -597,7 +603,8 @@ func hufCompress(dst, src []byte, single bool, preferRepeat, optimalDepth, suspe
 		return nil, false
 	}
 	_ = maxBits
-	hdr, ok := nt.write(nil)
+	var hdrBuf [256]byte
+	hdr, ok := nt.write(hdrBuf[:0])
 	if !ok {
 		return nil, false
 	}

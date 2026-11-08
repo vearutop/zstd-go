@@ -51,8 +51,9 @@ func (e *Encoder) writeLiterals() {
 	preferRepeat := strategy < int(stratLazy) && n <= 1024
 	optimalDepth := e.cp.strategy >= stratBtUltra // HUF_OPTIMAL_DEPTH_THRESHOLD
 	nbSeq := len(e.seqs)
-	suspect := nbSeq == 0 || n/nbSeq >= 20 // SUSPECT_UNCOMPRESSIBLE_LITERAL_RATIO
-	out, rle := hufCompress(nil, lits, single, preferRepeat, optimalDepth, suspect, &e.nextHuf.t, &repeat)
+	suspect := nbSeq == 0 || n/nbSeq >= 20      // SUSPECT_UNCOMPRESSIBLE_LITERAL_RATIO
+	e.hufOut = slices.Grow(e.hufOut[:0], n+512) // the output buffer is reused across blocks and calls
+	out, rle := hufCompress(e.hufOut, lits, single, preferRepeat, optimalDepth, suspect, &e.nextHuf.t, &repeat)
 	cLit := len(out)
 	if out == nil {
 		cLit = 0

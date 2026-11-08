@@ -11,7 +11,8 @@ const blockMax = 128 << 10
 
 // Encoder is a reusable single-shot encoder, not safe for concurrent use.
 type Encoder struct {
-	dict *Dict
+	hufOut []byte // scratch for the Huffman-compressed literals of one block
+	dict   *Dict
 	// NoChecksum drops the content checksum from frames.
 	NoChecksum bool
 	// Level is the compression level; 0 means 3 (libzstd's default). Byte-exact with libzstd for every level.
