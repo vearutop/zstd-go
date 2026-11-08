@@ -3,6 +3,7 @@ package zstd
 import (
 	"encoding/binary"
 	"math/bits"
+	"unsafe"
 )
 
 // FSE decoding table (libzstd FSE_DTable): sym, nbBits and the next-state base per state.
@@ -415,7 +416,26 @@ func (st *decState) sequences(in []byte, nb int, lits, out []byte, base int, dc 
 	li := 0
 	litFull := lits[:cap(lits)] // reading past len is safe and lets us copy 16 bytes at a time
 	offT, seqT := offTrace, seqTrace
+	asmAt := 0 // first sequence the assembly fast path may start at (seqdec.go)
+	if offT != nil || seqT != nil {
+		asmAt = nb
+	}
 	for i := 0; i < nb; i++ {
+		if useSeqAsm && i >= asmAt && i < nb-1 {
+			c := seqCtx{v: r.v, br: uint64(r.br), off: r.off, buf: unsafe.SliceData(r.buf),
+				llt: unsafe.SliceData(ll.e), oft: unsafe.SliceData(of.e), mlt: unsafe.SliceData(ml.e),
+				sl: uint64(sl), so: uint64(so), sm: uint64(sm), reps: st.reps,
+				out: unsafe.SliceData(out), n: len(out), ocap: cap(out),
+				lits: unsafe.SliceData(lits), litLen: len(lits), litCap: cap(lits), li: li,
+				base: base, blockStart: st.blockStart, outLim: st.outLim, rem: nb - 1 - i}
+			seqDecAsm(&c)
+			r.v, r.br, r.off = c.v, uint(c.br), c.off
+			sl, so, sm, st.reps, li, out = uint32(c.sl), uint32(c.so), uint32(c.sm), c.reps, c.li, out[:c.n]
+			k := nb - 1 - i - c.rem
+			if i += k; k == 0 {
+				asmAt = i + 16 // ponytail: fixed back-off after a non-simple sequence, so runs of them don't pay the call
+			}
+		}
 		le, oe, me := &ll.e[sl], &of.e[so], &ml.e[sm]
 		r.refill() // >= 57 bits: offset extra (<= 31) + match length extra (<= 16)
 		offBase := oe.base + r.get(oe.xb)
