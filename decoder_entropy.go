@@ -233,7 +233,9 @@ func fseWeightsD(src []byte, w []byte) (int, *Error) {
 	if fseWkspU32(tableLog, len(norm)-1) > fseWkspU32(6, hufTableLogMax-1) {
 		return 0, newErr(ErrTableLogTooLarge, "table log too large")
 	}
-	dt := buildDTable(norm, uint8(tableLog), kindOF)
+	var dbuf [1 << 6]dEntry // tableLog <= 6: the table lives on the stack
+	dt := dTable{e: dbuf[:0]}
+	dt.build(norm, uint8(tableLog), kindOF)
 	var bd bitD
 	if !bd.init(src[n:]) {
 		return 0, errCorrupt

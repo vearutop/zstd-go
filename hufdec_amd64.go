@@ -42,10 +42,7 @@ func (d *hufDec) fastLoopX1(dst []byte, n int, src []byte, bits *[4]uint64, ip, 
 		d.fastLoopX1Go(dst, n, src, bits, ip, op)
 		return
 	}
-	loop := huf4X1LoopBase
-	if hasBMI1 && hasBMI2 {
-		loop = huf4X1LoopBMI
-	}
+	bmi := hasBMI1 && hasBMI2 // direct calls below: through a func value //go:noescape is lost and ip, op, bits go to the heap
 	for {
 		iters := min((n-op[3])/5, ip[0]/7)
 		if iters == 0 {
@@ -60,7 +57,11 @@ func (d *hufDec) fastLoopX1(dst []byte, n int, src []byte, bits *[4]uint64, ip, 
 			d.fastLoopX1Go(dst, n, src, bits, ip, op)
 			return
 		}
-		loop(&d.sym[0], &dst[0], &src[0], bits, ip, op, iters, 64-uint64(d.tl))
+		if bmi {
+			huf4X1LoopBMI(&d.sym[0], &dst[0], &src[0], bits, ip, op, iters, 64-uint64(d.tl))
+		} else {
+			huf4X1LoopBase(&d.sym[0], &dst[0], &src[0], bits, ip, op, iters, 64-uint64(d.tl))
+		}
 	}
 }
 
@@ -69,10 +70,7 @@ func (d *hufDec) fastLoopX2(dst []byte, src []byte, bits *[4]uint64, ip, op, oen
 		d.fastLoopX2Go(dst, src, bits, ip, op, oend)
 		return
 	}
-	loop := huf4X2LoopBase
-	if hasBMI1 && hasBMI2 {
-		loop = huf4X2LoopBMI
-	}
+	bmi := hasBMI1 && hasBMI2
 	for {
 		iters := ip[0] / 7
 		for s := 0; s < 4; s++ {
@@ -90,6 +88,10 @@ func (d *hufDec) fastLoopX2(dst []byte, src []byte, bits *[4]uint64, ip, op, oen
 			d.fastLoopX2Go(dst, src, bits, ip, op, oend)
 			return
 		}
-		loop(&d.x2[0], &dst[0], &src[0], bits, ip, op, op[3]+5*iters)
+		if bmi {
+			huf4X2LoopBMI(&d.x2[0], &dst[0], &src[0], bits, ip, op, op[3]+5*iters)
+		} else {
+			huf4X2LoopBase(&d.x2[0], &dst[0], &src[0], bits, ip, op, op[3]+5*iters)
+		}
 	}
 }

@@ -53,6 +53,8 @@ func repetitiveLogs(lines int) []byte {
 // BenchmarkLogsStreamDecode decodes one multi-MB frame of log-like text through the streaming Reader (the way catp reads
 // .zst files): go test -run xxx -bench LogsStreamDecode
 func BenchmarkLogsStreamDecode(b *testing.B) {
+	defer zstd.SetStrictHufDefaultForTest(true)
+	zstd.SetStrictHufDefaultForTest(false) // measure the shipped default (single-symbol Huffman table)
 	data := repetitiveLogs(40000)
 	e := zstd.NewEncoder(nil)
 	e.Level = 3
@@ -86,6 +88,8 @@ func BenchmarkLogsStreamDecode(b *testing.B) {
 
 // BenchmarkTrimSlack measures streaming decode with different history slack (window/div) for the same frame.
 func BenchmarkTrimSlack(b *testing.B) {
+	defer zstd.SetStrictHufDefaultForTest(true)
+	zstd.SetStrictHufDefaultForTest(false) // measure the shipped default (single-symbol Huffman table)
 	data := repetitiveLogs(120000)
 	e := zstd.NewEncoder(nil)
 	e.Level = 3
@@ -109,6 +113,8 @@ func BenchmarkTrimSlack(b *testing.B) {
 
 // BenchmarkTrimFloor: streaming decode of a small-window (level 1) frame with different history floors.
 func BenchmarkTrimFloor(b *testing.B) {
+	defer zstd.SetStrictHufDefaultForTest(true)
+	zstd.SetStrictHufDefaultForTest(false) // measure the shipped default (single-symbol Huffman table)
 	data := repetitiveLogs(120000)
 	e := zstd.NewEncoder(nil)
 	e.Level = 1
