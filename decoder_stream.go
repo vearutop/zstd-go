@@ -374,10 +374,15 @@ func (s *DStream) continueStream(src []byte) error {
 	return nil
 }
 
+// trimSlackDiv: history is shifted down to the window once it exceeds window + max(3 blocks, window/trimSlackDiv), so the
+// bytes moved per byte decoded are about trimSlackDiv at most (memory: window*(1+1/trimSlackDiv)).
+var trimSlackDiv = 2
+
 // trim drops history older than the window once enough is buffered.
 func (s *DStream) trim() {
 	w := int(min(s.fp.window, uint64(1)<<31))
-	if len(s.hist) > w+3*s.st.bm && s.outStart == len(s.hist) {
+	slack := max(3*s.st.bm, w/trimSlackDiv)
+	if len(s.hist) > w+slack && s.outStart == len(s.hist) {
 		keep := s.hist[len(s.hist)-w:]
 		n := copy(s.hist, keep)
 		s.hist = s.hist[:n]

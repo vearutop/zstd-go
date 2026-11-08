@@ -83,3 +83,26 @@ func BenchmarkLogsStreamDecode(b *testing.B) {
 		}
 	})
 }
+
+// BenchmarkTrimSlack measures streaming decode with different history slack (window/div) for the same frame.
+func BenchmarkTrimSlack(b *testing.B) {
+	data := repetitiveLogs(120000)
+	e := zstd.NewEncoder(nil)
+	e.Level = 3
+	frame := e.EncodeAll(data, nil)
+	for _, div := range []int{1 << 30, 4, 2, 1} {
+		b.Run(fmt.Sprintf("div%d", div), func(b *testing.B) {
+			zstd.SetTrimSlackDivForTest(div)
+			b.SetBytes(int64(len(data)))
+			buf := make([]byte, 64<<10)
+			for i := 0; i < b.N; i++ {
+				r := zstd.NewReader(bytes.NewReader(frame), nil)
+				for {
+					if _, err := r.Read(buf); err != nil {
+						break
+					}
+				}
+			}
+		})
+	}
+}
