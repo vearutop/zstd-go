@@ -90,9 +90,11 @@ Single `.zst` stream, 512 KiB window, 26% prefix (3.6 GB compressed, 25M lines) 
 | sequence assembly back-off 16 -> 4 | 27.2 |
 | history floor 2 MiB (floor 0: 28.35, 1 MiB: 28.25; 4 MiB 27.15, 8 MiB 27.5 = noise) | 27.4 |
 | `dTable.build` regression fixed (struct literal reloaded wide: store-forwarding stall) | 26.66 (klauspost 25.3) |
+| history ring (window + 2 blocks, 2 MiB floor) instead of shifting the history; floor 0: 27.22, 1 MiB: 26.98, 2 MiB: 26.40, 4 MiB: 26.66 | 26.40 |
 
-Not factors: PGO (catp's `default.pgo`) and `GOAMD64=v3` move both decoders by under 0.4 s. Remaining gap (5%): `trim`
-memmove 0.46 s (klauspost keeps a ring), Go glue around the sequence assembly about 0.4 s, copy to the caller about even.
+Not factors: PGO (catp's `default.pgo`) and `GOAMD64=v3` move both decoders by under 0.4 s. Remaining gap (4%): Go glue around the
+sequence assembly about 0.4 s, matches reaching the previous ring lap take the slower dictionary-style copy, copy to the
+caller about even.
 
 Lessons: compare against the klauspost version the application builds with (v1.18.6 decodes ~50% slower than v1.20.3, which
 has arm64 assembly); the test binary forces libzstd's strict Huffman selection (`export_test.go`), so performance benchmarks
