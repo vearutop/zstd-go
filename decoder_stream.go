@@ -254,6 +254,11 @@ func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) {
 			}
 			s.inBuf = s.inBuf[:max(int(s.fp.blockMax), 4)]
 			s.ringSize, s.ringPos = ringBufferSize(s.fp.window, s.fp.size, int(s.fp.blockMax)), 0
+			if s.fp.size != ContentSizeUnknown { // size the history once instead of growing it by append (2x garbage)
+				if want := int(min(s.fp.size, uint64(s.histLimit()+s.st.bm))) + s.st.bm + wildPad; cap(s.hist) < want {
+					s.hist = make([]byte, 0, want)
+				}
+			}
 			s.stage = dsRead
 			fallthrough
 		case dsRead:
@@ -379,21 +384,28 @@ func (s *DStream) continueStream(src []byte) error {
 // bytes moved per byte decoded are about trimSlackDiv at most (memory: window*(1+1/trimSlackDiv)).
 var trimSlackDiv = 2
 
-// trimFloor is the history size below which no shifting happens (a 512 KiB window would otherwise be shifted every three
-// blocks, moving about one byte per byte decoded); it costs at most 2 MiB per stream with a window of 256 KiB or more.
-var trimFloor = 2 << 20
+// trimFloor is the history size below which no shifting happens. It is off: it saved memmove on the M3, but on a Xeon with
+// 1 MiB of L2 per core the larger history cycle cost more than it saved (BenchmarkTrimFloor, 512 KiB window: 0 -> 963 MB/s,
+// 1 MiB -> 936, 2 MiB -> 879, 4 MiB -> 724).
+var trimFloor = 0
 
 // trimFloorMinWindow: the floor only applies to windows of at least this size.
 const trimFloorMinWindow = 256 << 10
 
-// trim drops history older than the window once enough is buffered.
-func (s *DStream) trim() {
+// histLimit is the history size at which trim shifts it down to the window.
+func (s *DStream) histLimit() int {
 	w := int(min(s.fp.window, uint64(1)<<31))
 	slack := max(3*s.st.bm, w/trimSlackDiv)
 	if w >= trimFloorMinWindow { // small windows keep their small footprint
 		slack = max(slack, trimFloor-w)
 	}
-	if len(s.hist) > w+slack && s.outStart == len(s.hist) {
+	return w + slack
+}
+
+// trim drops history older than the window once enough is buffered.
+func (s *DStream) trim() {
+	w := int(min(s.fp.window, uint64(1)<<31))
+	if len(s.hist) > s.histLimit() && s.outStart == len(s.hist) {
 		keep := s.hist[len(s.hist)-w:]
 		n := copy(s.hist, keep)
 		s.hist = s.hist[:n]
