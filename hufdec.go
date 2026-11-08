@@ -5,6 +5,8 @@ package zstd
 // symbol), so both are needed to take the same accept/reject decisions as libzstd. Writes go through a destination with
 // 16 bytes of slack, like the C code's wildcopies.
 
+import "encoding/binary"
+
 const (
 	hufX1 = 0
 	hufX2 = 1
@@ -54,8 +56,17 @@ func (d *hufDec) read(src []byte, kind uint8) (int, uint8, *Error) {
 		}
 		length := uint32(1) << wt >> 1
 		nb := uint8(tl) + 1 - wt
-		for u := rank[wt]; u < rank[wt]+length; u++ {
-			d.sym[u], d.nb[u] = uint8(s), nb
+		u, end := rank[wt], rank[wt]+length
+		if length >= 8 { // runs are powers of two: fill 8 entries per store
+			sp, np := uint64(s)*0x0101010101010101, uint64(nb)*0x0101010101010101
+			for ; u < end; u += 8 {
+				binary.LittleEndian.PutUint64(d.sym[u:], sp)
+				binary.LittleEndian.PutUint64(d.nb[u:], np)
+			}
+		} else {
+			for ; u < end; u++ {
+				d.sym[u], d.nb[u] = uint8(s), nb
+			}
 		}
 		rank[wt] += length
 	}

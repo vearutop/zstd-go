@@ -65,24 +65,43 @@ func (dt *dTable) build(norm []int16, log uint8, kind int) {
 			next[s] = uint16(n)
 		}
 	}
+	e := dt.e
 	pos := 0
 	for s, n := range norm {
 		for i := 0; i < int(n); i++ {
-			dt.e[pos].sym = uint8(s)
+			e[pos].sym = uint8(s)
 			pos = (pos + step) & mask
 			for pos > high {
 				pos = (pos + step) & mask
 			}
 		}
 	}
-	for u := 0; u < size; u++ {
-		s := dt.e[u].sym
-		n := uint32(next[s])
-		next[s]++
-		nb := uint8(log) - uint8(bits.Len32(n)-1)
-		dt.e[u].nb = nb
-		dt.e[u].ns = uint16(n<<nb) - uint16(size)
-		dt.e[u].fuse(kind)
+	// one pass per kind: next state, bits and the symbol's baseline in a single store
+	switch kind {
+	case kindLL:
+		for u := range e {
+			s := e[u].sym
+			n := uint32(next[s])
+			next[s]++
+			nb := log - uint8(bits.Len32(n)-1)
+			e[u] = dEntry{ns: uint16(n<<nb) - uint16(size), sym: s, nb: nb, base: llBase[s], xb: llBits[s]}
+		}
+	case kindML:
+		for u := range e {
+			s := e[u].sym
+			n := uint32(next[s])
+			next[s]++
+			nb := log - uint8(bits.Len32(n)-1)
+			e[u] = dEntry{ns: uint16(n<<nb) - uint16(size), sym: s, nb: nb, base: mlBase[s] + 3, xb: mlBits[s]}
+		}
+	default:
+		for u := range e {
+			s := e[u].sym
+			n := uint32(next[s])
+			next[s]++
+			nb := log - uint8(bits.Len32(n)-1)
+			e[u] = dEntry{ns: uint16(n<<nb) - uint16(size), sym: s, nb: nb, base: 1 << s, xb: s}
+		}
 	}
 }
 
