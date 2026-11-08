@@ -77,3 +77,25 @@ platforms and `-tags purego` use the Go loops. The assembly only handles "simple
 Checked by differential tests against the Go loops (state and output bytes, valid and mutated frames):
 `go test -run 'HufAsm|SeqAsm|AsmMutated|CPUDetect' -v .` Passed under Rosetta (baseline) and on a Xeon Gold 5118
 (baseline and BMI2: 5M Huffman cases, 1232 frames + 9856 mutated per variant, 20000 loop contexts per variant).
+
+## Streaming decode vs klauspost v1.20.3 (catp, real log, Xeon Silver 4210)
+
+Single `.zst` stream, 512 KiB window, 26% prefix (3.6 GB compressed, 25M lines) read through `bufio.Scanner`; `user` seconds,
+`catp -exp-zstd` (this port) against catp's default klauspost reader (`WithDecoderConcurrency(1)`). klauspost is steady within
+0.5% between runs; the port was 27.8 s before the fixes below.
+
+| change | port user s |
+|---|---|
+| amd64 assembly, single-symbol Huffman default | 27.5 |
+| sequence assembly back-off 16 -> 4 | 27.2 |
+| history floor 2 MiB (floor 0: 28.35, 1 MiB: 28.25; 4 MiB 27.15, 8 MiB 27.5 = noise) | 27.4 |
+| `dTable.build` regression fixed (struct literal reloaded wide: store-forwarding stall) | 26.66 (klauspost 25.3) |
+
+Not factors: PGO (catp's `default.pgo`) and `GOAMD64=v3` move both decoders by under 0.4 s. Remaining gap (5%): `trim`
+memmove 0.46 s (klauspost keeps a ring), Go glue around the sequence assembly about 0.4 s, copy to the caller about even.
+
+Lessons: compare against the klauspost version the application builds with (v1.18.6 decodes ~50% slower than v1.20.3, which
+has arm64 assembly); the test binary forces libzstd's strict Huffman selection (`export_test.go`), so performance benchmarks
+call `SetStrictHufDefaultForTest(false)`; a synthetic benchmark preferred history floor 0 while the real log preferred 2 MiB,
+so tune on real data (`BenchmarkSampleStream`/`BenchmarkSampleScan`, `ZSTD_SAMPLE=file.zst`); check amd64 codegen for hot
+loops (a function value hides `//go:noescape`: 3 heap allocs per block; struct literals stall on amd64, not on arm64).
