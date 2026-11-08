@@ -1,6 +1,7 @@
 package zstd_test
 
 import (
+	"bufio"
 	"bytes"
 	"io"
 	"os"
@@ -50,6 +51,45 @@ func BenchmarkSampleStream(b *testing.B) {
 					break
 				}
 			}
+			r.Close()
+		}
+	})
+}
+
+// BenchmarkSampleScan is SampleStream read the way catp does: bufio.Scanner over the decoder, lines counted.
+func BenchmarkSampleScan(b *testing.B) {
+	defer zstd.SetStrictHufDefaultForTest(true)
+	zstd.SetStrictHufDefaultForTest(false)
+	name := os.Getenv("ZSTD_SAMPLE")
+	if name == "" {
+		name = "sample.zst"
+	}
+	data, err := os.ReadFile(name)
+	if err != nil {
+		b.Skip(err)
+	}
+	scan := func(r io.Reader) int {
+		s := bufio.NewScanner(r)
+		s.Buffer(make([]byte, 64*1024), 10*1024*1024)
+		n := 0
+		for s.Scan() {
+			n += len(s.Bytes())
+		}
+		return n
+	}
+	var total int64
+	total = int64(scan(zstd.NewReader(bytes.NewReader(data), nil)))
+	b.Run("port", func(b *testing.B) {
+		b.SetBytes(total)
+		for i := 0; i < b.N; i++ {
+			scan(zstd.NewReader(bytes.NewReader(data), nil))
+		}
+	})
+	b.Run("klauspost", func(b *testing.B) {
+		b.SetBytes(total)
+		for i := 0; i < b.N; i++ {
+			r, _ := kz.NewReader(bytes.NewReader(data), kz.WithDecoderConcurrency(1))
+			scan(r)
 			r.Close()
 		}
 	})
