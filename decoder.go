@@ -84,7 +84,8 @@ func (dt *dTable) build(norm []int16, log uint8, kind int) {
 			n := uint32(next[s])
 			next[s]++
 			nb := log - uint8(bits.Len32(n)-1)
-			e[u] = dEntry{ns: uint16(n<<nb) - uint16(size), sym: s, nb: nb, base: llBase[s], xb: llBits[s]}
+			d := &e[u] // field stores: a struct literal is built on the stack and reloaded wide (store-forwarding stall on amd64)
+			d.ns, d.nb, d.base, d.xb = uint16(n<<nb)-uint16(size), nb, llBase[s], llBits[s]
 		}
 	case kindML:
 		for u := range e {
@@ -92,7 +93,8 @@ func (dt *dTable) build(norm []int16, log uint8, kind int) {
 			n := uint32(next[s])
 			next[s]++
 			nb := log - uint8(bits.Len32(n)-1)
-			e[u] = dEntry{ns: uint16(n<<nb) - uint16(size), sym: s, nb: nb, base: mlBase[s] + 3, xb: mlBits[s]}
+			d := &e[u]
+			d.ns, d.nb, d.base, d.xb = uint16(n<<nb)-uint16(size), nb, mlBase[s]+3, mlBits[s]
 		}
 	default:
 		for u := range e {
@@ -100,7 +102,8 @@ func (dt *dTable) build(norm []int16, log uint8, kind int) {
 			n := uint32(next[s])
 			next[s]++
 			nb := log - uint8(bits.Len32(n)-1)
-			e[u] = dEntry{ns: uint16(n<<nb) - uint16(size), sym: s, nb: nb, base: 1 << s, xb: s}
+			d := &e[u]
+			d.ns, d.nb, d.base, d.xb = uint16(n<<nb)-uint16(size), nb, 1<<s, s
 		}
 	}
 }
