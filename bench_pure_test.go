@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -59,22 +60,7 @@ func BenchmarkPureCompress(b *testing.B) {
 				par := mode == "parallel"
 				run := func(b *testing.B, enc func() func(src []byte) int) {
 					b.SetBytes(avgLen(in.items))
-					var n atomic.Int64
-					if !par {
-						f := enc()
-						for i := 0; i < b.N; i++ {
-							f(in.items[i%len(in.items)])
-						}
-						return
-					}
-					b.RunParallel(func(pb *testing.PB) {
-						f := enc()
-						i := int(n.Add(1)) * 7
-						for pb.Next() {
-							f(in.items[i%len(in.items)])
-							i++
-						}
-					})
+					benchPar(b, par, in.items, func() func([]byte) { f := enc(); return func(x []byte) { f(x) } })
 				}
 				b.Run(name+"/port", func(b *testing.B) {
 					run(b, func() func([]byte) int {
@@ -120,22 +106,7 @@ func BenchmarkPureDecompress(b *testing.B) {
 				par := mode == "parallel"
 				run := func(b *testing.B, dec func() func(f []byte)) {
 					b.SetBytes(avgLen(in.items))
-					var n atomic.Int64
-					if !par {
-						f := dec()
-						for i := 0; i < b.N; i++ {
-							f(frames[i%len(frames)])
-						}
-						return
-					}
-					b.RunParallel(func(pb *testing.PB) {
-						f := dec()
-						i := int(n.Add(1)) * 7
-						for pb.Next() {
-							f(frames[i%len(frames)])
-							i++
-						}
-					})
+					benchPar(b, par, frames, dec)
 				}
 				b.Run(name+"/port", func(b *testing.B) {
 					run(b, func() func([]byte) {
@@ -158,4 +129,43 @@ func BenchmarkPureDecompress(b *testing.B) {
 			}
 		}
 	}
+}
+
+// benchPar runs mk()'s function over xs, serially or on all cores. The per-goroutine state (encoder tables, buffers)
+// is created and warmed up outside the timed region, as a long-lived service would have it.
+func benchPar(b *testing.B, par bool, xs [][]byte, mk func() func([]byte)) {
+	p := 1
+	if par {
+		p = runtime.GOMAXPROCS(0)
+	}
+	fs := make([]func([]byte), p)
+	var wg sync.WaitGroup
+	for i := range fs {
+		fs[i] = mk()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for _, x := range xs[:min(len(xs), 4)] {
+				fs[i](x)
+			}
+		}()
+	}
+	wg.Wait()
+	b.ResetTimer()
+	if !par {
+		for i := 0; i < b.N; i++ {
+			fs[0](xs[i%len(xs)])
+		}
+		return
+	}
+	var n atomic.Int64
+	b.RunParallel(func(pb *testing.PB) {
+		k := int(n.Add(1)) - 1
+		f := fs[k%p]
+		i := k * 7
+		for pb.Next() {
+			f(xs[i%len(xs)])
+			i++
+		}
+	})
 }
