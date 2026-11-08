@@ -389,7 +389,9 @@ func (d *hufDec) fast4(dst []byte, n int, src []byte) (handled, ok bool) {
 	return true, true
 }
 
-func (d *hufDec) fastLoopX1(dst []byte, n int, src []byte, bits *[4]uint64, ip, op *[4]int) {
+// fastLoopX1Go is the loop of HUF_decompress4X1_usingDTable_internal_fast_c_loop; fastLoopX1 dispatches to it or to the
+// assembly version (hufdec_amd64.go), which must leave the same state.
+func (d *hufDec) fastLoopX1Go(dst []byte, n int, src []byte, bits *[4]uint64, ip, op *[4]int) {
 	// the four streams live in locals (registers) instead of arrays behind pointers
 	b0, b1, b2, b3 := bits[0], bits[1], bits[2], bits[3]
 	i0, i1, i2, i3 := ip[0], ip[1], ip[2], ip[3]
@@ -502,7 +504,8 @@ func (d *hufDec) fastLoopX1(dst []byte, n int, src []byte, bits *[4]uint64, ip, 
 	}
 }
 
-func (d *hufDec) fastLoopX2(dst []byte, src []byte, bits *[4]uint64, ip, op, oend *[4]int) {
+// fastLoopX2Go is the loop of HUF_decompress4X2_usingDTable_internal_fast_c_loop (see fastLoopX1Go).
+func (d *hufDec) fastLoopX2Go(dst []byte, src []byte, bits *[4]uint64, ip, op, oend *[4]int) {
 	b0, b1, b2, b3 := bits[0], bits[1], bits[2], bits[3]
 	i0, i1, i2, i3 := ip[0], ip[1], ip[2], ip[3]
 	o0, o1, o2, o3 := op[0], op[1], op[2], op[3]
