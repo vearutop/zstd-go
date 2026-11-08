@@ -98,6 +98,9 @@ var (
 	ofPredefD = buildDTable(ofDefaultNorm, 5, kindOF)
 )
 
+// strictHufDefault makes every decoder strict (tests: the libzstd differential suites compare corrupt-stream behavior).
+var strictHufDefault bool
+
 type decState struct {
 	bm            int     // max block size in the current frame (compressed block and literals limit)
 	litDirect     bool    // the block's raw literals are read in place from the input
@@ -105,6 +108,7 @@ type decState struct {
 	sel           dictSel // dictionary override of the current call
 	oneShot       bool    // ZSTD_decompress semantics (not streaming)
 	limited       bool    // Decoder.MaxSize is set: the destination capacity is maxEnd
+	strictHuf     bool    // Decoder.StrictHuffman
 	outLim        int     // limit on the bytes a block may generate: bm when streaming, unbounded for ZSTD_decompress
 	blockStart    int     // output length at the start of the current block
 	maxEnd        int
@@ -307,13 +311,15 @@ func (st *decState) hufLits(data []byte, regen int, four, newTable bool) ([]byte
 	st.lits = growB(st.lits, regen)
 	dst := st.lits[:cap(st.lits)]
 	if newTable {
-		// one stream always uses the single-symbol decoder, four streams the likely faster one
+		// one stream always uses the single-symbol decoder; four streams too unless StrictHuffman asks for libzstd's choice
 		kind := uint8(hufX1)
 		if four {
 			if regen == 0 || len(data) == 0 {
 				return nil, corrupt()
 			}
-			kind = hufSelectDecoder(regen, len(data))
+			if st.strictHuf {
+				kind = hufSelectDecoder(regen, len(data))
+			}
 		}
 		sz, _, err := st.hown.read(data, kind)
 		if err != nil || sz >= len(data) {

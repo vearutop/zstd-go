@@ -74,6 +74,14 @@ Known limitations of the decoder:
    dylib exports, so the differential decoder tests do not build against a stock libzstd.
 7. `TestKlauspostBad` skips one fixture (`7008e808...zst`) because libzstd also accepts it (12.5 MB output).
 
+8. **Huffman decoder selection (default differs from libzstd, opt-out `Decoder.StrictHuffman`):** by default every four-stream
+   literals block is decoded with the single-symbol table; libzstd's `HUF_selectDecoder` sometimes picks the double-symbol one.
+   Valid streams give identical output either way (checked: 28 frames over 7 levels in one-shot, streaming and strict mode;
+   the differential suites run strict). Corrupt streams may be accepted or rejected differently (the double-symbol decoder
+   tolerates a missing last symbol, and the fast loops skip a bit-count check). In 36,000 randomly corrupted frames no
+   accept/reject difference was observed, and every accepted frame decoded to the original bytes or to what strict mode produces.
+   Set `StrictHuffman` for libzstd's exact behavior.
+
 ## How to re-check
 
 - `go vet ./... && go test -race .` (pure Go).

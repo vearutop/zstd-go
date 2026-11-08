@@ -247,6 +247,7 @@ func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) {
 			s.st.bm = int(s.fp.blockMax)
 			s.st.outLim = s.st.bm
 			s.st.oneShot = false
+			s.st.strictHuf = s.dec.StrictHuffman || strictHufDefault
 			s.st.limited = false
 			if need := max(int(s.fp.blockMax), 4); cap(s.inBuf) < need {
 				s.inBuf = make([]byte, need)

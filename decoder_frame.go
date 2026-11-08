@@ -36,6 +36,11 @@ type Decoder struct {
 	Magicless bool
 	// IgnoreChecksum skips the verification of content checksums (ZSTD_d_forceIgnoreChecksum).
 	IgnoreChecksum bool
+	// StrictHuffman selects the Huffman literal decoder (single- or double-symbol) exactly as libzstd does
+	// (HUF_selectDecoder). By default the cheaper single-symbol table is always used: it gives the same output for every valid
+	// stream and builds faster, but a corrupt stream may be accepted or rejected differently from libzstd (the double-symbol
+	// decoder tolerates a missing last symbol, and the fast loops skip a bit-count check).
+	StrictHuffman bool
 
 	dicts map[uint32]*Dict
 	last  *Dict
@@ -328,6 +333,7 @@ func (d *Decoder) decodeAll(src, dst []byte, maxSize int, limited bool, maxBlock
 	st := d.get()
 	defer d.pool.Put(st)
 	st.limited = limited
+	st.strictHuf = d.StrictHuffman || strictHufDefault
 	st.maxBlockParam = maxBlock
 	st.sel = sel
 	st.maxEnd = len(dst) + maxSize
