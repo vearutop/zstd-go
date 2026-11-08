@@ -68,3 +68,12 @@ Reading: small values with a dictionary are where the port wins big (compression
 14x on 48 threads; klauspost's per-call dictionary table setup does not scale). On large inputs the port matches klauspost at
 L1/L3 serially but scales worse in parallel (about 0.65-0.85x), is 3-5x slower from L6 up (klauspost's levels are different
 algorithms with larger output), and decodes at about 0.65-0.75x (klauspost uses amd64 assembly for Huffman and sequences).
+
+## amd64 assembly (decoder)
+
+Go assembly for the Huffman 4-stream fast loops (`hufdec_amd64.{h,s,go}`) and for the sequence decode+execute fast path
+(`seqdec_amd64.{h,s,go}`), each with a baseline x86-64 variant and a BMI2 variant chosen at runtime (`cpu_amd64.go`). Other
+platforms and `-tags purego` use the Go loops. The assembly only handles "simple" cases and defers everything else to the Go code.
+Checked by differential tests against the Go loops (state and output bytes, valid and mutated frames):
+`go test -run 'HufAsm|SeqAsm|AsmMutated|CPUDetect' -v .` Passed under Rosetta (baseline) and on a Xeon Gold 5118
+(baseline and BMI2: 5M Huffman cases, 1232 frames + 9856 mutated per variant, 20000 loop contexts per variant).
