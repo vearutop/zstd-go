@@ -35,6 +35,11 @@ matching libzstd in the differential decoder tests.
 - Row match finder: SWAR tag mask (ZSTD_row_getMatchMask equivalent) instead of a per-entry scan: +5-17% at L5-L12
   (blob L6 55 -> 60 MB/s, L9 27 -> 31, text L9 37 -> 39).
 - Decoder: FSE normalized counts on the stack: 80 -> 0 allocs/op for small values, 80 -> 16 for 2 MB frames.
+- Sequence writer: position-based bit writer, 64-entry code tables, three-stream loop with local state (+19% at L1/L3);
+  dfast reuses loaded 8-byte values; `histCodes` with four histograms; `count` without per-step bounds checks.
+  Now (M3, MB/s port): blob L1 312, L3 291; text L-3 379, L1 329, L3 319 (baseline 231/224, 261/244/238).
+- Decoder sequences loop: two branchless 64-bit refills per sequence instead of three conditional ones, trace hooks hoisted:
+  text L3 735 -> 947, text L9 928 -> 1182, blob L3 680 -> 836, records L3 about 1.2x of libzstd (was 1.4x).
 - Not worth it: moving rowFind's matchBuffer into the Encoder (no change; the profile line was sampling skid).
 - Remaining hot spots: dfast/fast match-finder inner loops (about 40 bounds checks), bitWriter.encode/add in writeSequences,
   rowFind cache misses (libzstd prefetches rows; Go has no prefetch), decoder `sequences` bit-reader dependency chain.

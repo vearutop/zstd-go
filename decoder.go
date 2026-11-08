@@ -379,6 +379,19 @@ func (r *rbits) fill() {
 	}
 }
 
+// refill makes at least 57 bits available with one unaligned load: the window moves down by the consumed whole bytes.
+// Running below the start of the (padded) buffer marks the stream bad.
+func (r *rbits) refill() {
+	off := r.off - int(r.br>>3)
+	r.br &= 7
+	if off < 0 {
+		off = 0
+		r.bad = true
+	}
+	r.off = off
+	r.v = binary.LittleEndian.Uint64(r.buf[off : off+8])
+}
+
 // get returns the next k bits (k <= 32); k == 0 gives 0.
 func (r *rbits) get(k uint8) uint32 {
 	v := r.v << (r.br & 63) >> 1 >> ((63 - k) & 63)
@@ -397,19 +410,19 @@ func (st *decState) sequences(in []byte, nb int, lits, out []byte, base int, dc 
 	total := 8*(len(in)-1) + bits.Len8(last) - 1 // data bits in the stream
 	br0, off0 := r.br, r.off
 	ll, of, ml := st.pll, st.pof, st.pml
-	r.fill()
+	r.refill()
 	sl, so, sm := r.get(ll.log), r.get(of.log), r.get(ml.log)
 	li := 0
 	litFull := lits[:cap(lits)] // reading past len is safe and lets us copy 16 bytes at a time
+	offT, seqT := offTrace, seqTrace
 	for i := 0; i < nb; i++ {
 		le, oe, me := &ll.e[sl], &of.e[so], &ml.e[sm]
-		r.fill()
+		r.refill() // >= 57 bits: offset extra (<= 31) + match length extra (<= 16)
 		offBase := oe.base + r.get(oe.xb)
-		r.fill()
 		mlen := int(me.base) + int(r.get(me.xb))
+		r.refill() // literal length extra (<= 16) + the three state updates (<= 26)
 		llen := int(le.base) + int(r.get(le.xb))
 		if i < nb-1 {
-			r.fill()
 			sl = uint32(le.ns) + r.get(le.nb)
 			sm = uint32(me.ns) + r.get(me.nb)
 			so = uint32(oe.ns) + r.get(oe.nb)
@@ -442,11 +455,11 @@ func (st *decState) sequences(in []byte, nb int, lits, out []byte, base int, dc 
 			return out, corrupt()
 		}
 		updateRep(&st.reps, offBase, ll0)
-		if offTrace != nil {
-			offTrace(int(off), len(out)-base)
+		if offT != nil {
+			offT(int(off), len(out)-base)
 		}
-		if seqTrace != nil {
-			seqTrace(llen, mlen, int(offBase))
+		if seqT != nil {
+			seqT(llen, mlen, int(offBase))
 		}
 		n := len(out)
 		if llen <= 16 && n+16 <= cap(out) && li+16 <= len(litFull) {
