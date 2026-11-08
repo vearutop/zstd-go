@@ -384,10 +384,10 @@ func (s *DStream) continueStream(src []byte) error {
 // bytes moved per byte decoded are about trimSlackDiv at most (memory: window*(1+1/trimSlackDiv)).
 var trimSlackDiv = 2
 
-// trimFloor is the history size below which no shifting happens. It is off: it saved memmove on the M3, but on a Xeon with
-// 1 MiB of L2 per core the larger history cycle cost more than it saved (BenchmarkTrimFloor, 512 KiB window: 0 -> 963 MB/s,
-// 1 MiB -> 936, 2 MiB -> 879, 4 MiB -> 724).
-var trimFloor = 0
+// trimFloor is the history size below which no shifting happens (a 512 KiB window would otherwise be shifted every three
+// blocks, moving more than one byte per byte decoded). catp on a Xeon (512 KiB window, user seconds): floor 0 28.35,
+// 1 MiB 28.25, 2 MiB 27.43. A synthetic stream benchmark preferred 0 there, so judge changes on real data (SampleStream).
+var trimFloor = 2 << 20
 
 // trimFloorMinWindow: the floor only applies to windows of at least this size.
 const trimFloorMinWindow = 256 << 10

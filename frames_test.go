@@ -134,7 +134,7 @@ func BenchmarkTrimFloor(b *testing.B) {
 			}
 		})
 	}
-	zstd.SetTrimFloorForTest(0)
+	zstd.SetTrimFloorForTest(2 << 20)
 }
 
 // BenchmarkSeqBackoff sweeps the sequence-assembly back-off on log-like data (amd64 only matters).
