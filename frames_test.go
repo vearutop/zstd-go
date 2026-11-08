@@ -86,42 +86,17 @@ func BenchmarkLogsStreamDecode(b *testing.B) {
 	})
 }
 
-// BenchmarkTrimSlack measures streaming decode with different history slack (window/div) for the same frame.
-func BenchmarkTrimSlack(b *testing.B) {
+// BenchmarkRingExtra measures streaming decode of a 512 KiB-window frame with different room added to the history ring.
+func BenchmarkRingExtra(b *testing.B) {
 	defer zstd.SetStrictHufDefaultForTest(true)
-	zstd.SetStrictHufDefaultForTest(false) // measure the shipped default (single-symbol Huffman table)
-	data := repetitiveLogs(120000)
-	e := zstd.NewEncoder(nil)
-	e.Level = 3
-	frame := e.EncodeAll(data, nil)
-	for _, div := range []int{1 << 30, 4, 2, 1} {
-		b.Run(fmt.Sprintf("div%d", div), func(b *testing.B) {
-			zstd.SetTrimSlackDivForTest(div)
-			b.SetBytes(int64(len(data)))
-			buf := make([]byte, 64<<10)
-			for i := 0; i < b.N; i++ {
-				r := zstd.NewReader(bytes.NewReader(frame), nil)
-				for {
-					if _, err := r.Read(buf); err != nil {
-						break
-					}
-				}
-			}
-		})
-	}
-}
-
-// BenchmarkTrimFloor: streaming decode of a small-window (level 1) frame with different history floors.
-func BenchmarkTrimFloor(b *testing.B) {
-	defer zstd.SetStrictHufDefaultForTest(true)
-	zstd.SetStrictHufDefaultForTest(false) // measure the shipped default (single-symbol Huffman table)
+	zstd.SetStrictHufDefaultForTest(false)
 	data := repetitiveLogs(120000)
 	e := zstd.NewEncoder(nil)
 	e.Level = 1
 	frame := e.EncodeAll(data, nil)
-	for _, floor := range []int{0, 512 << 10, 1 << 20, 2 << 20, 4 << 20} {
-		b.Run(fmt.Sprintf("floor%dK", floor>>10), func(b *testing.B) {
-			zstd.SetTrimFloorForTest(floor)
+	for _, extra := range []int{0, 256 << 10, 1 << 20, 2 << 20} {
+		b.Run(fmt.Sprintf("extra%dK", extra>>10), func(b *testing.B) {
+			zstd.SetRingExtraForTest(extra)
 			b.SetBytes(int64(len(data)))
 			buf := make([]byte, 64<<10)
 			for i := 0; i < b.N; i++ {
@@ -134,7 +109,7 @@ func BenchmarkTrimFloor(b *testing.B) {
 			}
 		})
 	}
-	zstd.SetTrimFloorForTest(2 << 20)
+	zstd.SetRingExtraForTest(0)
 }
 
 // BenchmarkSeqBackoff sweeps the sequence-assembly back-off on log-like data (amd64 only matters).

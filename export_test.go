@@ -5,10 +5,10 @@ func init() { strictHufDefault = true } // the existing differential tests expec
 // SetStrictHufDefaultForTest switches the package-wide strict default (tests of the default fast path turn it off).
 func SetStrictHufDefaultForTest(v bool) { strictHufDefault = v }
 
-// SetTrimSlackDivForTest lets the external benchmarks change the streaming history slack.
-func SetTrimSlackDivForTest(d int) { trimSlackDiv = d }
-
-// SetTrimFloorForTest sets the minimum history size before shifting.
-func SetTrimFloorForTest(n int) { trimFloor = n }
+// SetRingExtraForTest sets the room added to the streaming history ring beyond window + 2 blocks.
+func SetRingExtraForTest(n int) { ringExtra = n }
 
 func SetSeqAsmBackoffForTest(n int) { seqAsmBackoff = n }
+
+// SetRingFloorForTest sets the minimum history ring size for windows of 256 KiB or more.
+func SetRingFloorForTest(n int) { ringFloor = n }

@@ -9,11 +9,11 @@ import (
 
 // Streaming decompression, a port of ZSTD_decompressStream (zstd_decompress.c) with ZSTD_decompressContinue's state
 // machine. Consumption, production and the returned hints follow libzstd for every chunking of input and output. Memory is
-// bounded by the frame's window: the history is a sliding buffer instead of libzstd's ring buffer.
+// bounded by the frame's window: the history is a ring of window + 2 blocks (see prepRing), like klauspost's.
 //
 // Not covered: ZSTD_d_stableOutBuffer, ZSTD_DCtx_refPrefix, legacy formats, and matches reaching further back than the
-// window size (libzstd reads whatever its ring buffer still holds there; the Go decoder rejects them once the history has
-// been trimmed). Frames whose content is entirely in the input and fits the output are decoded in one pass like libzstd's
+// window size (libzstd reads whatever its ring buffer still holds there; the Go decoder rejects them once the ring has
+// wrapped past them). Frames whose content is entirely in the input and fits the output are decoded in one pass like libzstd's
 // single-pass shortcut (and then follow ZSTD_decompress semantics instead of the streaming ones).
 
 type dsStage uint8
@@ -61,11 +61,15 @@ type DStream struct {
 	decoded    uint64
 	xx         *xxhash.Digest
 	validate   bool
-	dc         []byte
-	trimmed    bool
+	dc         []byte // what precedes hist: the dictionary in the first lap, the tail of the previous lap after a wrap
 	inBuf      []byte
 	inPos      int
-	hist       []byte
+	hist       []byte // the current lap of the ring: ring[:pos:pos+space], block output is appended to it
+	ring       []byte
+	ringL      int  // logical ring size: window + 2 blocks of room (less when the content is smaller)
+	lapped     bool // the ring has wrapped: dc is ring[max(end, extLo):extHi]
+	extLo      int
+	extHi      int
 	outStart   int
 	outEnd     int
 	ringSize   int // libzstd's outBuffSize: the capacity its ring buffer would have
@@ -168,7 +172,7 @@ func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) {
 			s.lhSize, s.inPos, s.outStart, s.outEnd = 0, 0, 0, 0
 			s.hist = s.hist[:0]
 			s.hostage = false
-			s.trimmed = false
+			s.lapped, s.extLo, s.extHi = false, 0, 0
 			fallthrough
 		case dsLoadHeader:
 			h, need, e := getFrameHeader(s.hdr[:s.lhSize], s.dec.Magicless)
@@ -254,10 +258,9 @@ func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) {
 			}
 			s.inBuf = s.inBuf[:max(int(s.fp.blockMax), 4)]
 			s.ringSize, s.ringPos = ringBufferSize(s.fp.window, s.fp.size, int(s.fp.blockMax)), 0
-			if s.fp.size != ContentSizeUnknown { // size the history once instead of growing it by append (2x garbage)
-				if want := int(min(s.fp.size, uint64(s.histLimit()+s.st.bm))) + s.st.bm + wildPad; cap(s.hist) < want {
-					s.hist = make([]byte, 0, want)
-				}
+			s.ringL = s.ringLen()
+			if s.fp.size != ContentSizeUnknown { // known content: allocate the ring once instead of growing it by append
+				s.ensureRing(s.ringL+wildPad, 0)
 			}
 			s.stage = dsRead
 			fallthrough
@@ -380,38 +383,68 @@ func (s *DStream) continueStream(src []byte) error {
 	return nil
 }
 
-// trimSlackDiv: history is shifted down to the window once it exceeds window + max(3 blocks, window/trimSlackDiv), so the
-// bytes moved per byte decoded are about trimSlackDiv at most (memory: window*(1+1/trimSlackDiv)).
-var trimSlackDiv = 2
+// ringExtra is room added to the ring beyond window + 2 blocks (a test knob). ringFloor is the minimum ring size for windows
+// of at least ringFloorMinWindow: right after a wrap, matches reaching back past the lap start take the slower
+// dictionary-style copy, so a ring that wraps less often is faster (amd64, real log, 512 KiB window: minimal ring 1445 MB/s,
+// +1 MiB 1548, 2 MiB floor 1560, trim-based history 1530).
+var (
+	ringExtra = 0
+	ringFloor = 2 << 20
+)
 
-// trimFloor is the history size below which no shifting happens (a 512 KiB window would otherwise be shifted every three
-// blocks, moving more than one byte per byte decoded). catp on a Xeon (512 KiB window, user seconds): floor 0 28.35,
-// 1 MiB 28.25, 2 MiB 27.43. A synthetic stream benchmark preferred 0 there, so judge changes on real data (SampleStream).
-var trimFloor = 2 << 20
+const ringFloorMinWindow = 256 << 10
 
-// trimFloorMinWindow: the floor only applies to windows of at least this size.
-const trimFloorMinWindow = 256 << 10
-
-// histLimit is the history size at which trim shifts it down to the window.
-func (s *DStream) histLimit() int {
+// ringLen is the logical size of the history ring: the window plus two blocks of room (block + wild-copy overrun), or just
+// the content plus one block when the frame is smaller than that (no wrap then).
+func (s *DStream) ringLen() int {
 	w := int(min(s.fp.window, uint64(1)<<31))
-	slack := max(3*s.st.bm, w/trimSlackDiv)
-	if w >= trimFloorMinWindow { // small windows keep their small footprint
-		slack = max(slack, trimFloor-w)
+	space := s.st.bm + wildPad
+	n := w + 2*space
+	if w >= ringFloorMinWindow {
+		n = max(n, ringFloor)
 	}
-	return w + slack
+	n += ringExtra
+	if s.fp.size != ContentSizeUnknown && s.fp.size < uint64(n-space) {
+		n = int(s.fp.size) + space
+	}
+	return n
 }
 
-// trim drops history older than the window once enough is buffered.
-func (s *DStream) trim() {
-	w := int(min(s.fp.window, uint64(1)<<31))
-	if len(s.hist) > s.histLimit() && s.outStart == len(s.hist) {
-		keep := s.hist[len(s.hist)-w:]
-		n := copy(s.hist, keep)
-		s.hist = s.hist[:n]
-		s.outStart, s.outEnd = n, n
+// ensureRing makes the backing array at least need bytes long, keeping the first keep bytes (the current lap). Unknown-size
+// frames grow it geometrically up to the full ring.
+func (s *DStream) ensureRing(need, keep int) {
+	if len(s.ring) >= need {
+		return
+	}
+	n := max(need, min(s.ringL+wildPad, 2*len(s.ring)))
+	nr := make([]byte, n)
+	copy(nr, s.ring[:keep])
+	s.ring = nr
+}
+
+// prepRing makes room for the next block without moving any history, as klauspost does. hist is a window onto the ring
+// with room for one block; when a block no longer fits, the lap written so far becomes the "previous lap" and writing
+// restarts at the front. The part of the previous lap that block space ahead of hist has not overwritten yet is dc, which
+// the sequence code already treats as the bytes preceding hist (it is how dictionaries work), so no match copy changes. The
+// ring holds window + 2 blocks, so hist and dc together always hold at least a full window.
+func (s *DStream) prepRing() {
+	pos := len(s.hist)
+	space := s.st.bm + wildPad
+	if pos+space > s.ringL && s.outStart == pos { // wrap (only between flushes: the previous output is fully copied out)
+		s.ensureRing(s.ringL+wildPad, pos)
+		s.lapped, s.extLo, s.extHi = true, 0, pos
+		pos = 0
+		s.outStart, s.outEnd = 0, 0
+	} else {
+		s.ensureRing(pos+space+wildPad, pos)
+	}
+	end := pos + space
+	s.hist = s.ring[:pos:end]
+	if s.lapped {
 		s.dc = nil
-		s.trimmed = true
+		if lo := max(end, s.extLo); lo < s.extHi {
+			s.dc = s.ring[lo:s.extHi:min(s.extHi+wildPad, len(s.ring))] // wild copies may read wildPad bytes past the end
+		}
 	}
 }
 
@@ -445,7 +478,7 @@ func (s *DStream) cont(src []byte) (int, error) {
 		}
 		return 0, nil
 	case dcBlock, dcLastBlock:
-		s.trim()
+		s.prepRing()
 		start := len(s.hist)
 		capacity := s.ringSize - s.ringPos // ZSTD_decompressContinue's dstCapacity in libzstd's ring buffer
 		switch s.bType {

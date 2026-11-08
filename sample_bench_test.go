@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"strconv"
 	"testing"
 
 	kz "github.com/klauspost/compress/zstd"
@@ -58,6 +59,10 @@ func BenchmarkSampleStream(b *testing.B) {
 
 // BenchmarkSampleScan is SampleStream read the way catp does: bufio.Scanner over the decoder, lines counted.
 func BenchmarkSampleScan(b *testing.B) {
+	if v, err := strconv.Atoi(os.Getenv("ZSTD_RING_FLOOR")); err == nil {
+		zstd.SetRingFloorForTest(v)
+		defer zstd.SetRingFloorForTest(2 << 20)
+	}
 	defer zstd.SetStrictHufDefaultForTest(true)
 	zstd.SetStrictHufDefaultForTest(false)
 	name := os.Getenv("ZSTD_SAMPLE")
