@@ -13,7 +13,13 @@ func NewEncoder(d *Dict) *Encoder { return &Encoder{dict: d} }
 // It is ZSTD_compress_usingCDict (ZSTD_compressCCtx without a dictionary) at Encoder.Level; see Compress2 for the
 // ZSTD_compress2 configuration.
 func (e *Encoder) EncodeAll(src, dst []byte) []byte {
-	return e.frame(src, dst, e.begin(src, e.legacyRequest(src)))
+	r := e.legacyRequest(src)
+	r.alias = true
+	out := e.frame(src, dst, e.begin(src, r))
+	if e.aliased { // do not keep the caller's slice alive
+		e.buf, e.aliased = nil, false
+	}
+	return out
 }
 
 // legacyRequest is ZSTD_compressBegin_usingCDict_internal (ZSTD_compress_usingCDict), or ZSTD_compressCCtx without
@@ -123,12 +129,17 @@ func (e *Encoder) begin(src []byte, r *request) (L int) {
 	if d != nil && d.loadable() {
 		L = len(d.content)
 		if e.bufDict != d {
-			e.buf = append(e.buf[:0], d.content...)
+			e.own = append(e.own[:0], d.content...)
 			e.bufDict = d
 		}
-		e.buf = append(e.buf[:L], src...)
+		e.own = append(e.own[:L], src...)
+		e.buf = e.own
+	} else if r.alias {
+		// nothing in the encoder writes to buf: read the source in place; own keeps the cached dictionary prefix
+		e.buf, e.aliased = src, true
 	} else {
-		e.buf = append(e.buf[:0], src...)
+		e.own = append(e.own[:0], src...)
+		e.buf = e.own
 		e.bufDict = nil
 	}
 	e.dictID = 0

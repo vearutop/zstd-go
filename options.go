@@ -204,6 +204,7 @@ type frameParams struct {
 
 // request is what ZSTD_compressBegin_internal receives: resolved parameters, the pledged size and the dictionary.
 type request struct {
+	alias     bool    // the source may be read in place instead of being copied to the Encoder's buffer (EncodeAll)
 	cp        cParams // params->cParams, before the adjustments for an attached or copied CDict
 	useRow    psMode  // resolved
 	postSplit psMode  // resolved

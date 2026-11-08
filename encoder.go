@@ -19,7 +19,9 @@ type Encoder struct {
 	Level int
 
 	buf     []byte // dictionary content ++ source
-	bufDict *Dict  // dictionary currently loaded at the start of buf
+	bufDict *Dict  // dictionary currently loaded at the start of own
+	own     []byte // owned storage behind buf: dictionary ++ source
+	aliased bool   // buf is the caller's source slice (zero-copy EncodeAll)
 	cd      *cdict
 	cp      cParams
 	// per-frame window state (libzstd's ms->window / loadedDictEnd)

@@ -171,6 +171,7 @@ func (e *Encoder) streamChunk(dst, data []byte, inRing, last bool) ([]byte, erro
 		// the window: libzstd's ZSTD_window_update on data
 		p0 := s.dictL + s.pos
 		e.buf = append(e.buf[:p0], data...)
+		e.own = e.buf // keep the grown storage (the dictionary prefix is unchanged)
 		curr := e.ix(p0)
 		if !s.first {
 			if s.wrapped { // not contiguous: the prefix becomes the extDict
