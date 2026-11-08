@@ -106,3 +106,27 @@ func BenchmarkTrimSlack(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkTrimFloor: streaming decode of a small-window (level 1) frame with different history floors.
+func BenchmarkTrimFloor(b *testing.B) {
+	data := repetitiveLogs(120000)
+	e := zstd.NewEncoder(nil)
+	e.Level = 1
+	frame := e.EncodeAll(data, nil)
+	for _, floor := range []int{0, 1 << 20, 2 << 20, 4 << 20} {
+		b.Run(fmt.Sprintf("floor%dK", floor>>10), func(b *testing.B) {
+			zstd.SetTrimFloorForTest(floor)
+			b.SetBytes(int64(len(data)))
+			buf := make([]byte, 64<<10)
+			for i := 0; i < b.N; i++ {
+				r := zstd.NewReader(bytes.NewReader(frame), nil)
+				for {
+					if _, err := r.Read(buf); err != nil {
+						break
+					}
+				}
+			}
+		})
+	}
+	zstd.SetTrimFloorForTest(2 << 20)
+}

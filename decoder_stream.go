@@ -378,10 +378,20 @@ func (s *DStream) continueStream(src []byte) error {
 // bytes moved per byte decoded are about trimSlackDiv at most (memory: window*(1+1/trimSlackDiv)).
 var trimSlackDiv = 2
 
+// trimFloor is the history size below which no shifting happens (a 512 KiB window would otherwise be shifted every three
+// blocks, moving about one byte per byte decoded); it costs at most 2 MiB per stream with a window of 256 KiB or more.
+var trimFloor = 2 << 20
+
+// trimFloorMinWindow: the floor only applies to windows of at least this size.
+const trimFloorMinWindow = 256 << 10
+
 // trim drops history older than the window once enough is buffered.
 func (s *DStream) trim() {
 	w := int(min(s.fp.window, uint64(1)<<31))
 	slack := max(3*s.st.bm, w/trimSlackDiv)
+	if w >= trimFloorMinWindow { // small windows keep their small footprint
+		slack = max(slack, trimFloor-w)
+	}
 	if len(s.hist) > w+slack && s.outStart == len(s.hist) {
 		keep := s.hist[len(s.hist)-w:]
 		n := copy(s.hist, keep)
