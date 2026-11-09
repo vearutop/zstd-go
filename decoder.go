@@ -166,6 +166,12 @@ func (st *decState) block(in, out []byte, base int, dc []byte) ([]byte, error) {
 			st.outLim = st.bm + wildOverlength
 		}
 	}
+	return st.blockSeq(lits, in, out, base, dc)
+}
+
+// blockSeq is the rest of a compressed block after its literals: in is the sequences section.
+func (st *decState) blockSeq(lits, in, out []byte, base int, dc []byte) ([]byte, error) {
+	var err error
 	if len(in) < 1 {
 		return out, errSrcSize
 	}

@@ -77,6 +77,9 @@ type DStream struct {
 	lastN      int
 	hostage    bool
 	noProgress int
+
+	pre        *litJob // async pipeline: literals of the block about to be decoded, decoded ahead (see decoder_async.go)
+	noShortcut bool    // async pipeline: never take the single-pass shortcut (the pipeline feeds block-sized chunks)
 }
 
 // NewDStream returns a stream decoder using the dictionaries, Magicless and IgnoreChecksum settings of dec (nil: defaults).
@@ -197,7 +200,7 @@ func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) {
 			}
 			s.fp = h
 			// single-pass shortcut
-			if h.hasSize && !h.skippable && uint64(len(out)-op) >= h.size {
+			if h.hasSize && !h.skippable && !s.noShortcut && uint64(len(out)-op) >= h.size {
 				if fi := findFrameSizeInfo(in, s.dec.Magicless); fi.err == nil && fi.compressed <= len(in) {
 					res, e := s.dec.decodeAll(in[:fi.compressed], nil, len(out)-op, true, s.MaxBlockSize, s.takeDict())
 					if e != nil {
@@ -484,7 +487,19 @@ func (s *DStream) cont(src []byte) (int, error) {
 		switch s.bType {
 		case 2:
 			var err error
-			if s.hist, err = s.st.block(src, s.hist, 0, s.dc); err != nil {
+			if pre := s.pre; pre != nil && len(src) > 0 && len(src) == len(pre.body) && &src[0] == &pre.body[0] {
+				// the literals were decoded ahead from exactly these bytes
+				s.pre = nil
+				if pre.err != nil {
+					err = pre.err
+				} else {
+					s.st.blockStart = len(s.hist)
+					s.hist, err = s.st.blockSeq(pre.lits, pre.rest, s.hist, 0, s.dc)
+				}
+			} else {
+				s.hist, err = s.st.block(src, s.hist, 0, s.dc)
+			}
+			if err != nil {
 				s.hist = s.hist[:start]
 				return 0, err
 			}
@@ -552,13 +567,21 @@ func (s *DStream) cont(src []byte) (int, error) {
 // Reader is a streaming decompressor over a sequence of frames (skippable frames, such as a seek table, are skipped).
 // Memory is bounded by the window size of the frame being decoded.
 type Reader struct {
-	r   io.Reader
-	s   *DStream
-	in  []byte
-	pos int
-	end int
-	eof bool
-	err error
+	// Concurrency >= 2 (set before the first Read) decodes with a pipeline of goroutines: Huffman literals are decoded ahead
+	// of the sequence stage and the caller copies from finished blocks, so wall time drops while CPU time rises a little.
+	// Output and errors are the same as the synchronous Reader's. It holds up to Concurrency blocks in flight (a few hundred
+	// KiB each) on top of the history, and the Stream() parameters must not be changed while reading. 0 or 1: synchronous.
+	Concurrency int
+
+	r     io.Reader
+	s     *DStream
+	in    []byte
+	pos   int
+	end   int
+	eof   bool
+	err   error
+	began bool
+	async *asyncPipe
 }
 
 // NewReader returns a Reader decoding frames from r with dec (nil: no dictionaries).
@@ -572,6 +595,15 @@ func (z *Reader) Stream() *DStream { return z.s }
 func (z *Reader) Read(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, z.err
+	}
+	if !z.began {
+		z.began = true
+		if z.Concurrency >= 2 && z.s.dictMode == 0 && z.err == nil { // a RefPrefix on the stream is not supported by the pipeline
+			z.startAsync()
+		}
+	}
+	if z.async != nil {
+		return z.readAsync(p)
 	}
 	for {
 		if z.err != nil {
