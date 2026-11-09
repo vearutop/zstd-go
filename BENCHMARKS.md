@@ -171,6 +171,6 @@ hashLog 17; Default = level 1, windowLog 23, hashLog 18; SpeedBestCompression = 
 chainLog 22. They were found by a grid search (`TestProfileSearch`, PROFILE_GRID=fast|mid|slow|custom|final)
 on the 8 MB output and checked on the other two inputs. A longer minimum match (6) is what makes greedy/lazy competitive on logs.
 Reading: Fastest and Default are 1.5-8% smaller at 0.7-1.0x klauspost's speed (the 59 MB input is the slowest case); Best is
-about equal in both. klauspost's SpeedBetterCompression has no counterpart and the port has no `ProfileSpeedBetter`: its two-table
+about equal in both. klauspost's SpeedBetterCompression has no counterpart and the port has no better-compression preset: its two-table
 matcher does 385-620 MB/s at a ratio where libzstd's greedy matcher does 120-215 MB/s, and in the port greedy -> lazy (Best) costs
 only 15-30% speed for 4-5% smaller output, so a separate middle tier would mislead. Timings vary about 15% between runs.
