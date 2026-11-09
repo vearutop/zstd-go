@@ -15,6 +15,10 @@ type Writer struct {
 	FrameSize int
 	// Level is the compression level (see Encoder.Level); 0 keeps the Encoder default. Set before the first Write.
 	Level int
+	// Params, when not the zero value, configures each frame like Encoder.SetParams + Compress2 (explicit window, hash and
+	// chain logs, checksum, strategy ...) and takes precedence over Level. Set before the first Write. A larger WindowLog and
+	// HashLog than the level's default (level 1: 19 and 14) often shrink repetitive data by several percent at about the same speed.
+	Params Params
 	// Seekable makes Close append a seek table (see OpenSeekable). Set before the first Write.
 	Seekable bool
 
@@ -25,6 +29,7 @@ type Writer struct {
 	table []seekEntry
 	n     int // frames written
 	err   error
+	pset  bool // Params applied to the encoder
 }
 
 type seekEntry struct{ c, d, sum uint32 }
@@ -63,10 +68,22 @@ func (z *Writer) Flush() error {
 	if z.err != nil || len(z.buf) == 0 {
 		return z.err
 	}
-	if z.Level != 0 {
-		z.e.Level = z.Level
+	if z.Params != (Params{}) {
+		if !z.pset {
+			if z.err = z.e.SetParams(z.Params); z.err != nil {
+				return z.err
+			}
+			z.pset = true
+		}
+		if z.out, z.err = z.e.Compress2(z.out[:0], z.buf); z.err != nil {
+			return z.err
+		}
+	} else {
+		if z.Level != 0 {
+			z.e.Level = z.Level
+		}
+		z.out = z.e.EncodeAll(z.buf, z.out[:0])
 	}
-	z.out = z.e.EncodeAll(z.buf, z.out[:0])
 	if z.Seekable {
 		z.table = append(z.table, seekEntry{uint32(len(z.out)), uint32(len(z.buf)), uint32(xxhash.Sum64(z.buf))})
 	}

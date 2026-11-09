@@ -1,0 +1,160 @@
+package zstd_test
+
+import (
+	"bufio"
+	"bytes"
+	"fmt"
+	"io"
+	"os"
+	"testing"
+	"time"
+
+	kz "github.com/klauspost/compress/zstd"
+	zstd "github.com/vearutop/zstd-go"
+)
+
+// TestCompressionSizes compares output sizes on the lines of a real .zst (ZSTD_SAMPLE) containing FILTER (default
+// "short link", catp's -pass): the port at several levels and explicit window sizes against klauspost's levels:
+// ZSTD_SAMPLE=sample.zst FILTER='short link' go test -run CompressionSizes -v .
+func TestCompressionSizes(t *testing.T) {
+	name := os.Getenv("ZSTD_SAMPLE")
+	if name == "" {
+		t.Skip("ZSTD_SAMPLE not set")
+	}
+	filter := os.Getenv("FILTER")
+	if filter == "" {
+		filter = "short link"
+	}
+	f, err := os.Open(name)
+	if err != nil {
+		t.Skip(err)
+	}
+	defer f.Close()
+	s := bufio.NewScanner(zstd.NewReader(f, nil))
+	s.Buffer(make([]byte, 64<<10), 10<<20)
+	var in bytes.Buffer
+	nl := 0
+	for s.Scan() {
+		if bytes.Contains(s.Bytes(), []byte(filter)) {
+			in.Write(s.Bytes())
+			in.WriteByte('\n')
+			nl++
+		}
+	}
+	data := in.Bytes()
+	t.Logf("%d lines, %d bytes", nl, len(data))
+
+	row := func(label string, n int) { t.Logf("%-44s %9d  %.3f", label, n, float64(n)/float64(len(data))) }
+	for _, lvl := range []int{1, 2, 3, 5, 9} {
+		e := zstd.NewEncoder(nil)
+		if err := e.SetParams(zstd.Params{Level: lvl}); err != nil {
+			t.Fatal(err)
+		}
+		out, _ := e.Compress2(nil, data)
+		row(fmt.Sprintf("port level %d (one frame)", lvl), len(out))
+	}
+	for _, wl := range []int{19, 20, 22, 24} {
+		for _, hl := range []int{0, 17, 20} {
+			e := zstd.NewEncoder(nil)
+			if err := e.SetParams(zstd.Params{Level: 1, WindowLog: wl, HashLog: hl}); err != nil {
+				t.Fatal(err)
+			}
+			out, _ := e.Compress2(nil, data)
+			row(fmt.Sprintf("port level 1 windowLog=%d hashLog=%d", wl, hl), len(out))
+		}
+	}
+	for _, c := range []struct {
+		n string
+		l kz.EncoderLevel
+	}{{"klauspost SpeedFastest (catp)", kz.SpeedFastest}, {"klauspost SpeedDefault", kz.SpeedDefault}, {"klauspost SpeedBetter", kz.SpeedBetterCompression}, {"klauspost SpeedBest", kz.SpeedBestCompression}} {
+		var out bytes.Buffer
+		w, _ := kz.NewWriter(&out, kz.WithEncoderLevel(c.l), kz.WithLowerEncoderMem(true))
+		w.Write(data)
+		w.Close()
+		row(c.n+" (catp options)", out.Len())
+		out.Reset()
+		w, _ = kz.NewWriter(&out, kz.WithEncoderLevel(c.l))
+		w.Write(data)
+		w.Close()
+		row(c.n+" (default options)", out.Len())
+	}
+	for _, fs := range []int{128 << 10, 4 << 20, 16 << 20, 64 << 20} {
+		for _, lvl := range []int{1, 3} {
+			var o bytes.Buffer
+			zw := zstd.NewWriter(&o, nil)
+			zw.FrameSize, zw.Level = fs, lvl
+			zw.Write(data)
+			zw.Close()
+			row(fmt.Sprintf("port Writer FrameSize=%dK level %d", fs>>10, lvl), o.Len())
+		}
+	}
+	// catp writes through bufio in 64 KiB pieces: same bytes, only the Write pattern differs
+	var out bytes.Buffer
+	w, _ := kz.NewWriter(&out, kz.WithEncoderLevel(kz.SpeedFastest), kz.WithLowerEncoderMem(true))
+	bw := bufio.NewWriterSize(w, 64<<10)
+	io.Copy(bw, bytes.NewReader(data))
+	bw.Flush()
+	w.Close()
+	row("klauspost SpeedFastest via bufio 64K", out.Len())
+}
+
+// TestCompressionSweep sizes and times explicit parameters (and klauspost) on the filtered lines: ZSTD_SAMPLE and FILTER as above.
+func TestCompressionSweep(t *testing.T) {
+	name := os.Getenv("ZSTD_SAMPLE")
+	if name == "" {
+		t.Skip("ZSTD_SAMPLE not set")
+	}
+	filter := os.Getenv("FILTER")
+	if filter == "" {
+		filter = "short link"
+	}
+	f, err := os.Open(name)
+	if err != nil {
+		t.Skip(err)
+	}
+	defer f.Close()
+	s := bufio.NewScanner(zstd.NewReader(f, nil))
+	s.Buffer(make([]byte, 64<<10), 10<<20)
+	var in bytes.Buffer
+	for s.Scan() {
+		if bytes.Contains(s.Bytes(), []byte(filter)) {
+			in.Write(s.Bytes())
+			in.WriteByte('\n')
+		}
+	}
+	data := in.Bytes()
+	row := func(label string, n int, d time.Duration) {
+		t.Logf("%-46s %9d  %.3f  %6.0f MB/s", label, n, float64(n)/float64(len(data)), float64(len(data))/d.Seconds()/1e6)
+	}
+	run := func(p zstd.Params) {
+		e := zstd.NewEncoder(nil)
+		if err := e.SetParams(p); err != nil {
+			t.Fatal(err)
+		}
+		t0 := time.Now()
+		out, _ := e.Compress2(nil, data)
+		row(fmt.Sprintf("port level %d windowLog=%d hashLog=%d chainLog=%d", p.Level, p.WindowLog, p.HashLog, p.ChainLog), len(out), time.Since(t0))
+	}
+	for _, p := range []zstd.Params{
+		{Level: 1}, {Level: 1, WindowLog: 22}, {Level: 1, WindowLog: 22, HashLog: 16}, {Level: 1, WindowLog: 22, HashLog: 17},
+		{Level: 1, WindowLog: 22, HashLog: 18}, {Level: 1, WindowLog: 23, HashLog: 17},
+		{Level: 2}, {Level: 2, WindowLog: 22}, {Level: 3}, {Level: 3, WindowLog: 22}, {Level: 3, WindowLog: 22, HashLog: 18},
+		{Level: 4}, {Level: 5},
+		{Level: 3, WindowLog: 24, HashLog: 20}, {Level: 4, WindowLog: 24, HashLog: 20},
+		{Level: 6}, {Level: 6, WindowLog: 24, HashLog: 20, ChainLog: 20}, {Level: 7, WindowLog: 24, HashLog: 20, ChainLog: 20},
+		{Level: 9}, {Level: 9, WindowLog: 24, HashLog: 20, ChainLog: 21}, {Level: 12, WindowLog: 24},
+	} {
+		run(p)
+	}
+	for _, c := range []struct {
+		n string
+		l kz.EncoderLevel
+	}{{"klauspost SpeedFastest", kz.SpeedFastest}, {"klauspost SpeedDefault", kz.SpeedDefault}, {"klauspost SpeedBetter", kz.SpeedBetterCompression}} {
+		var out bytes.Buffer
+		t0 := time.Now()
+		w, _ := kz.NewWriter(&out, kz.WithEncoderLevel(c.l), kz.WithEncoderConcurrency(1))
+		w.Write(data)
+		w.Close()
+		row(c.n+" (1 goroutine)", out.Len(), time.Since(t0))
+	}
+}
