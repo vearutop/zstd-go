@@ -412,20 +412,6 @@ func newRbits(buf []byte, last byte) rbits {
 	return rbits{v: binary.LittleEndian.Uint64(buf[off:]), br: uint(9 - bits.Len8(last)), off: off, buf: buf}
 }
 
-// fill makes at least 33 bits available.
-func (r *rbits) fill() {
-	if r.br >= 32 {
-		if r.off >= 4 {
-			r.off -= 4
-			r.v = r.v<<32 | uint64(binary.LittleEndian.Uint32(r.buf[r.off:]))
-		} else {
-			r.v <<= 32
-			r.bad = true
-		}
-		r.br -= 32
-	}
-}
-
 // refill makes at least 57 bits available with one unaligned load: the window moves down by the consumed whole bytes.
 // Running below the start of the (padded) buffer marks the stream bad.
 func (r *rbits) refill() {

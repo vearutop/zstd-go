@@ -3,8 +3,6 @@ package zstd
 import (
 	"encoding/binary"
 	"math/bits"
-
-	"github.com/klauspost/compress/huff0"
 )
 
 const blockMax = 128 << 10
@@ -46,7 +44,6 @@ type Encoder struct {
 	lazySkipping     bool
 	useRow           bool   // row based match finder (greedy..lazy2 with windowLog > 14)
 	dms              *cdict // attached dictionary (lazy dictMatchState mode)
-	lit              huff0.Scratch
 	llc, ofc, mlc    []uint8
 	prevFse, nextFse fseTables
 	slots            [2][3]cTable // storage for tables built per block; e.slot is the one in use
@@ -275,9 +272,6 @@ func updateRep(r *[3]uint32, offBase uint32, ll0 bool) {
 	}
 	r[1], r[0] = r[0], cur
 }
-
-func le64(b []byte, i int) uint64 { return binary.LittleEndian.Uint64(b[i : i+8]) }
-func le32(b []byte, i int) uint32 { return binary.LittleEndian.Uint32(b[i : i+4]) }
 
 // count returns the common prefix length of a and b (b no longer than a is not required).
 func count(a, b []byte) int {

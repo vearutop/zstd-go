@@ -1,7 +1,5 @@
 package zstd
 
-import "math"
-
 // Port of FSE_optimalTableLog, FSE_normalizeCount and FSE_writeNCount (libzstd).
 
 func optimalTableLog(maxLog uint8, n int, maxSym int) uint8 {
@@ -214,38 +212,4 @@ func writeNCount(out []byte, norm []int16, log uint8) []byte {
 	out = append(out, byte(bitStream), byte(bitStream>>8))
 	// FSE_writeNCount trims to (bitCount+7)/8 bytes of the final flush.
 	return out[:len(out)-2+(bitCount+7)/8]
-}
-
-var log2Tab = func() (t [4096]float32) {
-	for i := 1; i < len(t); i++ {
-		t[i] = float32(math.Log2(float64(i)))
-	}
-	return
-}()
-
-func log2i(v int) float64 {
-	if v < len(log2Tab) {
-		return float64(log2Tab[v])
-	}
-	return math.Log2(float64(v))
-}
-
-// histCost estimates the cost in bits of coding the histogram with ct, or -1 if impossible.
-func (ct *cTable) histCost(hist []uint32) float64 {
-	var sum float64
-	lg := log2i(1 << ct.log)
-	for s, c := range hist {
-		if c == 0 {
-			continue
-		}
-		if s >= len(ct.norm) || ct.norm[s] == 0 {
-			return -1
-		}
-		p := int(ct.norm[s])
-		if p < 0 {
-			p = 1
-		}
-		sum += float64(c) * (lg - log2i(p))
-	}
-	return sum
 }

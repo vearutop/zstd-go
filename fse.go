@@ -89,14 +89,6 @@ func (ct *cTable) build(normIn []int16, log uint8) {
 	}
 }
 
-// cost is an upper-bound bit cost of symbol s, or -1 if the table cannot code it.
-func (ct *cTable) cost(s int) int {
-	if s >= len(ct.tt) || ct.norm[s] == 0 {
-		return -1
-	}
-	return int((ct.tt[s].deltaNbBits + 1<<16 - 1) >> 16)
-}
-
 // readNCount parses an FSE normalized-count header (FSE_readNCount) and returns it with the byte size.
 func readNCount(b []byte, maxSym int) (norm []int16, log uint8, n int, err error) {
 	errBad := errors.New("zstd: bad FSE header")

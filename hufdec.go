@@ -28,12 +28,6 @@ type hufDec struct {
 	x2   [1 << hufTableLogMax]x2Elt // X2
 }
 
-// readX1 parses a table description and builds the single-symbol table (HUF_readDTableX1_wksp); it returns the bytes used.
-func (d *hufDec) readX1(src []byte) (int, *Error) {
-	n, _, err := d.read(src, hufX1)
-	return n, err
-}
-
 // read parses a table description (HUF_readStats) and builds it as kind.
 func (d *hufDec) read(src []byte, kind uint8) (int, uint8, *Error) {
 	var w [hufSymbolValueMax + 1]byte
