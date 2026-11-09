@@ -16,10 +16,10 @@ import (
 	zstd "github.com/vearutop/zstd-go"
 )
 
-func cpuTime() time.Duration {
+func cpuTime() (time.Duration, int64) {
 	var ru syscall.Rusage
 	syscall.Getrusage(syscall.RUSAGE_SELF, &ru)
-	return time.Duration(ru.Utime.Nano() + ru.Stime.Nano())
+	return time.Duration(ru.Utime.Nano() + ru.Stime.Nano()), int64(ru.Nvcsw)
 }
 
 // BenchmarkSampleAsync scans a real .zst (ZSTD_SAMPLE) the way catp does, reporting wall time per pass and CPU time per pass
@@ -47,11 +47,13 @@ func BenchmarkSampleAsync(b *testing.B) {
 	total := int64(scan(zstd.NewReader(bytes.NewReader(data), nil)))
 	run := func(b *testing.B, f func()) {
 		b.SetBytes(total)
-		c0 := cpuTime()
+		c0, v0 := cpuTime()
 		for i := 0; i < b.N; i++ {
 			f()
 		}
-		b.ReportMetric((cpuTime()-c0).Seconds()/float64(b.N), "cpu-s/op")
+		c1, v1 := cpuTime()
+		b.ReportMetric((c1-c0).Seconds()/float64(b.N), "cpu-s/op")
+		b.ReportMetric(float64(v1-v0)/float64(b.N), "vcsw/op")
 	}
 	for _, c := range []int{1, 2, 3, 4} {
 		b.Run(fmt.Sprintf("port/c%d", c), func(b *testing.B) {

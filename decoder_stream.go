@@ -78,9 +78,10 @@ type DStream struct {
 	hostage    bool
 	noProgress int
 
-	pre        *litJob // async pipeline: literals of the block about to be decoded, decoded ahead (see decoder_async.go)
-	noShortcut bool    // async pipeline: never take the single-pass shortcut (the pipeline feeds block-sized chunks)
-	noHash     bool    // async pipeline: the checksum is verified elsewhere
+	pre        *litJob          // async pipeline: literals of the block about to be decoded, decoded ahead (see decoder_async.go)
+	noShortcut bool             // async pipeline: never take the single-pass shortcut (the pipeline feeds block-sized chunks)
+	noHash     bool             // async pipeline: the checksum is verified elsewhere
+	waitRoom   func(lo, hi int) // async pipeline: called before block output is written into ring[lo:hi]
 }
 
 // NewDStream returns a stream decoder using the dictionaries, Magicless and IgnoreChecksum settings of dec (nil: defaults).
@@ -443,6 +444,9 @@ func (s *DStream) prepRing() {
 		s.ensureRing(pos+space+wildPad, pos)
 	}
 	end := pos + space
+	if s.waitRoom != nil {
+		s.waitRoom(pos, end)
+	}
 	s.hist = s.ring[:pos:end]
 	if s.lapped {
 		s.dc = nil

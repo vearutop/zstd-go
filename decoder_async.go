@@ -11,7 +11,7 @@ import (
 	"github.com/cespare/xxhash/v2"
 )
 
-// Asynchronous Reader (Reader.Concurrency >= 2): a three-stage pipeline.
+// Asynchronous Reader (Reader.Concurrency >= 2): a pipeline of goroutines.
 //
 //	parse    owns the io.Reader: walks frames and blocks, decodes the Huffman literals of every compressed block ahead and
 //	         builds its FSE tables (both depend on the previous block's tables but on no output);
@@ -25,18 +25,22 @@ import (
 // an unknown dictionary, a block that is too large) it forwards the remaining bytes untouched and decode reports the error.
 // The Huffman state that block decoding keeps between blocks (the table of treeless literals) lives in parse only; it is
 // reset at every frame start like the synchronous decoder's.
+//
+// Decoded blocks are not copied on their way to Read: decode hands out slices of the DStream's history ring (consecutive
+// blocks of a lap are contiguous, so several travel in one message; a partial batch is sent as soon as decode would have to
+// wait for input). Before decode writes a block into ring space that an unread message still occupies it waits for Read to
+// finish with that message (DStream.waitRoom); the ring holds a window plus two blocks (2 MiB at least for large windows), so
+// this only stalls decode when the consumer is slower than the decoder anyway.
 
-// litJob is the literals of one compressed block, decoded ahead from body.
+// litJob is what parse prepared for one compressed block.
 type litJob struct {
 	body []byte // the block's compressed bytes (what DStream will be handed)
 	lits []byte // decoded literals (aliases body for raw literals)
 	rest []byte // the block's sequence bitstream
 	nb   int    // number of sequences (0: the block is its literals)
 	err  error  // literals or sequences header error, returned when the block is reached
-	lbuf []byte // pool buffer behind lits
 
-	pll, pof, pml *dTable    // the block's decoding tables: copies in tabs, or shared immutable (predefined, dictionary)
-	tabs          *seqTables // pool storage behind the copies
+	pll, pof, pml *dTable // the block's decoding tables: copies in the slot, or shared immutable (predefined, dictionary)
 }
 
 // seqTables is storage for the three decoding tables of one block.
@@ -52,9 +56,16 @@ func (t *seqTables) pick(active, own, dst *dTable) *dTable {
 	return dst
 }
 
+// asyncSlot is the storage one input chunk travels with: its bytes, and for compressed blocks the literals and tables.
+type asyncSlot struct {
+	buf  []byte
+	lbuf []byte     // literals (allocated when first needed)
+	tabs *seqTables // table copies (allocated when first needed)
+}
+
 type asyncChunk struct {
 	data []byte
-	buf  []byte // pool buffer behind data
+	slot *asyncSlot
 	job  *litJob
 	eof  bool
 	err  error // read error of the underlying reader
@@ -70,12 +81,17 @@ const (
 )
 
 type asyncOut struct {
-	b    []byte
-	buf  []byte // pool buffer behind b
-	err  error  // final: io.EOF or the stream's error
+	b    []byte // decoded bytes: a slice of the ring, read-only; Read reports it consumed by seq
+	seq  uint64
+	err  error // final: io.EOF or the stream's error
 	ctl  int
 	want uint32
 }
+
+const (
+	asyncBatchBlocks = 4         // blocks per message at most
+	asyncBatchBytes  = 256 << 10 // bytes per message at most
+)
 
 // pool is a bounded pool that allocates lazily; get is called by one goroutine only.
 type pool[T any] struct {
@@ -86,11 +102,7 @@ type pool[T any] struct {
 
 func newPool[T any](n int, mk func() T) *pool[T] { return &pool[T]{ch: make(chan T, n), mk: mk} }
 
-func newBufPool(n, size int) *pool[[]byte] {
-	return newPool(n, func() []byte { return make([]byte, size) })
-}
-
-// get returns a pooled value, a new one while fewer than the bound exist, or blocks; nil/zero once stop is closed.
+// get returns a pooled value, a new one while fewer than the bound exist, or blocks; the zero value once stop is closed.
 func (bp *pool[T]) get(stop <-chan struct{}) (v T) {
 	select {
 	case v = <-bp.ch:
@@ -117,20 +129,42 @@ func (bp *pool[T]) put(v T) {
 
 type asyncPipe struct {
 	chunks chan asyncChunk
-	mid    chan asyncOut     // decode -> verify
-	outs   chan asyncOut     // verify -> Read
-	chunkP *pool[[]byte]     // chunk buffers (parse gets, decode puts)
-	litP   *pool[[]byte]     // literals buffers (parse gets, decode puts)
-	tabP   *pool[*seqTables] // table storage (parse gets, decode puts)
-	outP   *pool[[]byte]     // output buffers (decode gets, Read puts)
+	mid    chan asyncOut // decode -> verify
+	outs   chan asyncOut // verify -> Read
+	slotP  *pool[*asyncSlot]
 	stop   chan struct{}
 	once   sync.Once
 
-	cur    []byte // Read side: the unread rest of the current output buffer
-	curBuf []byte
+	mu       sync.Mutex // guards consumed, waiting, stopped
+	cond     *sync.Cond
+	consumed uint64 // highest message Read has finished with
+	waiting  bool   // decode waits for consumed to advance
+	stopped  bool
+
+	cur    []byte // Read side: the unread rest of the current message
+	curSeq uint64
 }
 
-func (p *asyncPipe) shutdown() { p.once.Do(func() { close(p.stop) }) }
+func (p *asyncPipe) shutdown() {
+	p.once.Do(func() {
+		close(p.stop)
+		p.mu.Lock()
+		p.stopped = true
+		p.mu.Unlock()
+		p.cond.Broadcast()
+	})
+}
+
+// markConsumed tells decode that Read is done with message seq (and everything before it).
+func (p *asyncPipe) markConsumed(seq uint64) {
+	p.mu.Lock()
+	p.consumed = seq
+	w := p.waiting
+	p.mu.Unlock()
+	if w {
+		p.cond.Broadcast()
+	}
+}
 
 const asyncChunkCap = blockMax + 8 // block header + largest block (frame headers and checksums are smaller)
 
@@ -142,12 +176,10 @@ func startAsync(r io.Reader, s *DStream, depth int) *asyncPipe {
 		chunks: make(chan asyncChunk, depth),
 		mid:    make(chan asyncOut, n),
 		outs:   make(chan asyncOut, n),
-		chunkP: newBufPool(n, asyncChunkCap),
-		litP:   newBufPool(n, blockMax+64),
-		tabP:   newPool(n, func() *seqTables { return &seqTables{} }),
-		outP:   newBufPool(n, blockMax),
+		slotP:  newPool(n, func() *asyncSlot { return &asyncSlot{buf: make([]byte, asyncChunkCap)} }),
 		stop:   make(chan struct{}),
 	}
+	p.cond = sync.NewCond(&p.mu)
 	go p.parse(r, s)
 	go p.decode(s)
 	go p.verify(s.dec.IgnoreChecksum)
@@ -164,24 +196,15 @@ func (p *asyncPipe) send(c asyncChunk) bool {
 }
 
 // sendBytes forwards b untouched (b is copied, the caller reuses it).
-func (p *asyncPipe) sendBytes(b []byte) bool {
+func (p *asyncPipe) sendBytes(b []byte, start bool) bool {
 	if len(b) == 0 {
 		return true
 	}
-	cb := p.chunkP.get(p.stop)
-	if cb == nil {
+	sl := p.slotP.get(p.stop)
+	if sl == nil {
 		return false
 	}
-	return p.send(asyncChunk{data: cb[:copy(cb, b)], buf: cb})
-}
-
-// sendHeader forwards a frame header; hash: the frame's checksum will be verified.
-func (p *asyncPipe) sendHeader(b []byte, hash bool) bool {
-	cb := p.chunkP.get(p.stop)
-	if cb == nil {
-		return false
-	}
-	return p.send(asyncChunk{data: cb[:copy(cb, b)], buf: cb, start: hash})
+	return p.send(asyncChunk{data: sl.buf[:copy(sl.buf, b)], slot: sl, start: start})
 }
 
 // finish ends the stream for decode: err is the reader's error (io.EOF or io.ErrUnexpectedEOF: end of input).
@@ -196,16 +219,16 @@ func (p *asyncPipe) finish(err error) {
 // passthrough forwards the rest of the input untouched.
 func (p *asyncPipe) passthrough(br *bufio.Reader) {
 	for {
-		cb := p.chunkP.get(p.stop)
-		if cb == nil {
+		sl := p.slotP.get(p.stop)
+		if sl == nil {
 			return
 		}
-		n, err := br.Read(cb)
-		if n > 0 && !p.send(asyncChunk{data: cb[:n], buf: cb}) {
+		n, err := br.Read(sl.buf)
+		if n > 0 && !p.send(asyncChunk{data: sl.buf[:n], slot: sl}) {
 			return
 		}
 		if n == 0 {
-			p.chunkP.put(cb)
+			p.slotP.put(sl)
 		}
 		if err != nil {
 			p.finish(err)
@@ -217,18 +240,18 @@ func (p *asyncPipe) passthrough(br *bufio.Reader) {
 // forward forwards the next n bytes untouched; false if the input ended or the pipeline stopped (finish was called).
 func (p *asyncPipe) forward(br *bufio.Reader, n uint64) bool {
 	for n > 0 {
-		cb := p.chunkP.get(p.stop)
-		if cb == nil {
+		sl := p.slotP.get(p.stop)
+		if sl == nil {
 			return false
 		}
-		m, err := br.Read(cb[:min(uint64(len(cb)), n)])
+		m, err := br.Read(sl.buf[:min(uint64(len(sl.buf)), n)])
 		if m > 0 {
 			n -= uint64(m)
-			if !p.send(asyncChunk{data: cb[:m], buf: cb}) {
+			if !p.send(asyncChunk{data: sl.buf[:m], slot: sl}) {
 				return false
 			}
 		} else {
-			p.chunkP.put(cb)
+			p.slotP.put(sl)
 		}
 		if err != nil {
 			p.finish(err)
@@ -266,19 +289,19 @@ func (p *asyncPipe) parse(r io.Reader, s *DStream) {
 			m, err := io.ReadFull(br, hdr[n:need])
 			n += m
 			if err != nil {
-				p.sendBytes(hdr[:n])
+				p.sendBytes(hdr[:n], false)
 				p.finish(err)
 				return
 			}
 		}
 		if bad {
-			if p.sendBytes(hdr[:n]) {
+			if p.sendBytes(hdr[:n], false) {
 				p.passthrough(br)
 			}
 			return
 		}
 		if !magicless && binary.LittleEndian.Uint32(hdr[:])&magicSkippableMask == magicSkippableBase {
-			if !p.sendBytes(hdr[:n]) || !p.forward(br, uint64(binary.LittleEndian.Uint32(hdr[4:]))) {
+			if !p.sendBytes(hdr[:n], false) || !p.forward(br, uint64(binary.LittleEndian.Uint32(hdr[4:]))) {
 				return
 			}
 			continue
@@ -290,64 +313,62 @@ func (p *asyncPipe) parse(r io.Reader, s *DStream) {
 			bm = uint32(s.MaxBlockSize)
 		}
 		if e != nil || window > uint64(1)<<uint(wl) {
-			if p.sendBytes(hdr[:n]) {
+			if p.sendBytes(hdr[:n], false) {
 				p.passthrough(br)
 			}
 			return
 		}
 		st.bm = int(bm)
 		st.begin(dict)
-		if !p.sendHeader(hdr[:n], h.checksum && !s.dec.IgnoreChecksum) {
+		if !p.sendBytes(hdr[:n], h.checksum && !s.dec.IgnoreChecksum) {
 			return
 		}
 		// blocks
 		for {
-			cb := p.chunkP.get(p.stop)
-			if cb == nil {
+			sl := p.slotP.get(p.stop)
+			if sl == nil {
 				return
 			}
+			cb := sl.buf
 			m, err := io.ReadFull(br, cb[:3])
 			if err != nil {
-				p.send(asyncChunk{data: cb[:m], buf: cb})
+				p.send(asyncChunk{data: cb[:m], slot: sl})
 				p.finish(err)
 				return
 			}
 			cs, last, typ, _, e := getcBlockSize(cb[:3])
 			if e != nil || cs > int(bm) {
-				if p.send(asyncChunk{data: cb[:3], buf: cb}) {
+				if p.send(asyncChunk{data: cb[:3], slot: sl}) {
 					p.passthrough(br)
 				}
 				return
 			}
 			m, err = io.ReadFull(br, cb[3:3+cs])
 			if err != nil {
-				p.send(asyncChunk{data: cb[:3+m], buf: cb})
+				p.send(asyncChunk{data: cb[:3+m], slot: sl})
 				p.finish(err)
 				return
 			}
-			c := asyncChunk{data: cb[:3+cs], buf: cb}
+			c := asyncChunk{data: cb[:3+cs], slot: sl}
 			if typ == 2 {
-				lb := p.litP.get(p.stop)
-				if lb == nil {
-					return
+				if sl.lbuf == nil {
+					sl.lbuf = make([]byte, blockMax+64)
 				}
-				st.lits = lb[:0]
+				st.lits = sl.lbuf[:0]
 				body := cb[3 : 3+cs]
 				lits, rest, err := st.literals(body)
 				st.lits = nil
-				job := &litJob{body: body, lits: lits, lbuf: lb, err: err}
+				job := &litJob{body: body, lits: lits, err: err}
 				if err == nil {
 					job.nb, job.rest, job.err = st.seqPrep(rest)
 				}
 				if job.err == nil && job.nb > 0 {
-					tabs := p.tabP.get(p.stop)
-					if tabs == nil {
-						return
+					if sl.tabs == nil {
+						sl.tabs = &seqTables{}
 					}
-					job.tabs = tabs
-					job.pll = tabs.pick(st.pll, &st.ll, &tabs.ll)
-					job.pof = tabs.pick(st.pof, &st.of, &tabs.of)
-					job.pml = tabs.pick(st.pml, &st.ml, &tabs.ml)
+					job.pll = sl.tabs.pick(st.pll, &st.ll, &sl.tabs.ll)
+					job.pof = sl.tabs.pick(st.pof, &st.of, &sl.tabs.of)
+					job.pml = sl.tabs.pick(st.pml, &st.ml, &sl.tabs.ml)
 				}
 				c.job = job
 			}
@@ -359,14 +380,14 @@ func (p *asyncPipe) parse(r io.Reader, s *DStream) {
 			}
 		}
 		if h.checksum {
-			cb := p.chunkP.get(p.stop)
-			if cb == nil {
+			sl := p.slotP.get(p.stop)
+			if sl == nil {
 				return
 			}
-			m, err := io.ReadFull(br, cb[:4])
-			c := asyncChunk{data: cb[:m], buf: cb}
+			m, err := io.ReadFull(br, sl.buf[:4])
+			c := asyncChunk{data: sl.buf[:m], slot: sl}
 			if m == 4 && !s.dec.IgnoreChecksum {
-				c.sum, c.want = true, binary.LittleEndian.Uint32(cb[:4])
+				c.sum, c.want = true, binary.LittleEndian.Uint32(sl.buf[:4])
 			}
 			if !p.send(c) {
 				return
@@ -379,12 +400,22 @@ func (p *asyncPipe) parse(r io.Reader, s *DStream) {
 	}
 }
 
+// zcMsg is a message decode has handed out and Read has not finished with yet.
+type zcMsg struct {
+	seq    uint64
+	arr    *byte // the ring array it lives in
+	lo, hi int
+}
+
 func (p *asyncPipe) decode(s *DStream) {
 	defer close(p.mid)
 	s.noShortcut = true
 	s.noHash = true
-	var ob []byte
-	n := 0
+	var (
+		bLo, bHi, bN int // pending batch: s.ring[bLo:bHi], made of bN blocks
+		seq          uint64
+		inflight     []zcMsg
+	)
 	emit := func(o asyncOut) bool {
 		select {
 		case p.mid <- o:
@@ -393,26 +424,76 @@ func (p *asyncPipe) decode(s *DStream) {
 			return false
 		}
 	}
-	// flush hands the filled part of ob to verify and takes the next buffer.
+	// flush sends the pending batch on.
 	flush := func() bool {
-		if n == 0 {
+		if bHi == bLo {
 			return true
 		}
-		if !emit(asyncOut{b: ob[:n], buf: ob}) {
-			return false
-		}
-		ob, n = p.outP.get(p.stop), 0
-		return ob != nil
+		seq++
+		o := asyncOut{b: s.ring[bLo:bHi:bHi], seq: seq}
+		inflight = append(inflight, zcMsg{seq, &s.ring[0], bLo, bHi})
+		bLo, bHi, bN = 0, 0, 0
+		return emit(o)
 	}
-	if ob = p.outP.get(p.stop); ob == nil {
-		return
+	take := func(lo, hi int) bool {
+		if bHi != bLo && lo != bHi { // not contiguous (a wrap or a new frame): a new message
+			if !flush() {
+				return false
+			}
+		}
+		if bHi == bLo {
+			bLo = lo
+		}
+		bHi = hi
+		bN++
+		return true
+	}
+	// Before DStream writes a block into ring[lo:hi]: the pending batch must not be overwritten (send it), and every unread
+	// message that lives there must have been read.
+	s.waitRoom = func(lo, hi int) {
+		if bHi != bLo && lo < bHi && hi > bLo && !flush() {
+			return
+		}
+		arr := &s.ring[0]
+		for {
+			p.mu.Lock()
+			k, need := 0, uint64(0)
+			for _, m := range inflight {
+				if m.seq <= p.consumed {
+					continue
+				}
+				inflight[k] = m
+				k++
+				if m.arr == arr && m.lo < hi && m.hi > lo {
+					need = max(need, m.seq)
+				}
+			}
+			inflight = inflight[:k]
+			if need == 0 || p.stopped {
+				p.mu.Unlock()
+				return
+			}
+			p.waiting = true
+			for p.consumed < need && !p.stopped {
+				p.cond.Wait()
+			}
+			p.waiting = false
+			p.mu.Unlock()
+		}
 	}
 	for {
 		var c asyncChunk
 		select {
 		case c = <-p.chunks:
-		case <-p.stop:
-			return
+		default:
+			if !flush() { // nothing queued: do not hold finished blocks back
+				return
+			}
+			select {
+			case c = <-p.chunks:
+			case <-p.stop:
+				return
+			}
 		}
 		if c.err != nil {
 			if flush() {
@@ -420,15 +501,15 @@ func (p *asyncPipe) decode(s *DStream) {
 			}
 			return
 		}
-		if c.start && !emit(asyncOut{ctl: ctlStart}) {
+		if c.start && (!flush() || !emit(asyncOut{ctl: ctlStart})) {
 			return
 		}
 		pos := 0
 		s.pre = c.job
 		for {
-			nIn, nOut, _, err := s.Decompress(c.data[pos:], ob[n:])
+			s.noProgress = 0
+			nIn, _, _, err := s.Decompress(c.data[pos:], nil) // output is taken from the ring, not copied
 			pos += nIn
-			n += nOut
 			if err != nil {
 				s.pre = nil
 				if flush() {
@@ -436,28 +517,28 @@ func (p *asyncPipe) decode(s *DStream) {
 				}
 				return
 			}
-			if n == len(ob) {
-				if !flush() {
+			took := false
+			if s.stage == dsFlush && s.outEnd > s.outStart {
+				if !take(s.outStart, s.outEnd) {
 					return
 				}
-				continue
+				s.outStart = s.outEnd
+				took = true
 			}
-			if nIn == 0 && nOut == 0 {
+			if nIn == 0 && !took {
 				break
 			}
 		}
 		s.pre = nil
-		p.chunkP.put(c.buf)
-		if c.job != nil {
-			p.litP.put(c.job.lbuf)
-			if c.job.tabs != nil {
-				p.tabP.put(c.job.tabs)
+		if c.slot != nil {
+			p.slotP.put(c.slot)
+		}
+		if bN >= asyncBatchBlocks || bHi-bLo >= asyncBatchBytes {
+			if !flush() {
+				return
 			}
 		}
-		if !flush() {
-			return
-		}
-		if c.sum && !emit(asyncOut{ctl: ctlCheck, want: c.want}) {
+		if c.sum && (!flush() || !emit(asyncOut{ctl: ctlCheck, want: c.want})) {
 			return
 		}
 		if c.eof {
@@ -465,7 +546,9 @@ func (p *asyncPipe) decode(s *DStream) {
 			if s.midFrame() {
 				err = io.ErrUnexpectedEOF
 			}
-			emit(asyncOut{err: err})
+			if flush() {
+				emit(asyncOut{err: err})
+			}
 			return
 		}
 	}
@@ -513,8 +596,7 @@ func (z *Reader) readAsync(p []byte) (int, error) {
 			n := copy(p, a.cur)
 			a.cur = a.cur[n:]
 			if len(a.cur) == 0 {
-				a.outP.put(a.curBuf)
-				a.curBuf = nil
+				a.markConsumed(a.curSeq)
 			}
 			return n, nil
 		}
@@ -530,7 +612,7 @@ func (z *Reader) readAsync(p []byte) (int, error) {
 			z.err = o.err
 			return 0, z.err
 		}
-		a.cur, a.curBuf = o.b, o.buf
+		a.cur, a.curSeq = o.b, o.seq
 	}
 }
 
@@ -539,7 +621,7 @@ func (z *Reader) readAsync(p []byte) (int, error) {
 func (z *Reader) Close() error {
 	if z.async != nil {
 		z.async.shutdown()
-		z.async.cur, z.async.curBuf = nil, nil
+		z.async.cur = nil
 	}
 	if z.err == nil {
 		z.err = errReaderClosed

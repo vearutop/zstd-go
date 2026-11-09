@@ -295,3 +295,48 @@ func TestAsyncReadError(t *testing.T) {
 type errReader struct{ err error }
 
 func (e *errReader) Read([]byte) (int, error) { return 0, e.err }
+
+// TestAsyncRingStress decodes tiny-window frames (the history ring wraps constantly) with a slow, erratic consumer, so decode
+// has to wait for unread blocks before it may reuse their ring space, and compares with the original data.
+func TestAsyncRingStress(t *testing.T) {
+	rng := rand.New(rand.NewSource(11))
+	for _, wl := range []int{10, 12, 15, 19} {
+		for _, level := range []int{1, 5} {
+			size := min(80<<wl, 5<<20)
+			data := ringData(rng, size, 1<<wl)
+			e := zstd.NewEncoder(nil)
+			if err := e.SetParams(zstd.Params{Level: level, WindowLog: wl, Checksum: true, NoContentSize: wl%2 == 0}); err != nil {
+				t.Fatal(err)
+			}
+			frame, err := e.Compress2(nil, data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, conc := range []int{2, 3, 6} {
+				zstd.SetRingExtraForTest(rng.Intn(3000))
+				r := zstd.NewReader(bytes.NewReader(frame), nil)
+				r.Concurrency = conc
+				var got bytes.Buffer
+				buf := make([]byte, 1+rng.Intn(3000))
+				for reads := 0; ; reads++ {
+					if reads%500 == 0 {
+						time.Sleep(time.Duration(rng.Intn(300)) * time.Microsecond)
+					}
+					n, err := r.Read(buf[:1+rng.Intn(len(buf))])
+					got.Write(buf[:n])
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						t.Fatalf("wl=%d level=%d conc=%d: %v after %d bytes", wl, level, conc, err, got.Len())
+					}
+				}
+				r.Close()
+				zstd.SetRingExtraForTest(0)
+				if !bytes.Equal(got.Bytes(), data) {
+					t.Fatalf("wl=%d level=%d conc=%d: output differs (%d bytes, want %d)", wl, level, conc, got.Len(), len(data))
+				}
+			}
+		}
+	}
+}
