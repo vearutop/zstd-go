@@ -13,7 +13,6 @@ type Dict struct {
 	id            uint32
 	content       []byte
 	reps          [3]uint32
-	ml, of        *cTable // repeat tables, nil if none
 	dll, dml, dof *dTable // the same for decoding
 	huffDecT      hufDec  // decoding table for the literal table
 	huffDecOK     bool
