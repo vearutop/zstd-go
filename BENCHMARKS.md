@@ -272,3 +272,21 @@ with the workers (about 17 MB live per worker: job input, encoder window copy, o
 klauspost's concurrency does not scale (the match finder is serial: each block needs the history of the previous one; M3: 784 MB/s
 at 1 worker, 1033 at 16). The port is slower on one thread (about 150 MB/s against 281 for SpeedFastest) and 1.7x faster at 4 workers,
 2.9x at 32, with 6.5% smaller output than SpeedFastest and also smaller than SpeedDefault.
+
+## Single-thread compression speed work (ProfileFastest, 59 MB of log lines, MB/s, ratio 0.1378 throughout)
+
+| step | M3 Max | Xeon Silver 4210 |
+|---|---|---|
+| start of the work | 574 | about 155 |
+| Huffman literals: one flush per four symbols into a pre-sized buffer; `count` 16 bytes per step | 737 | 185 |
+| fast table entries carry the four bytes of their position (`fast_val.go`) | 800 | 243 |
+| `Compress2` reads the source in place instead of copying it | 845 | 265 |
+| hash with the shift, multiplier and result shift resolved per block (`hasher`) | 900 | 301-306 |
+| libzstd with the same parameters (cgo, `BenchmarkRefFastest`) | 920 | not measured |
+| klauspost SpeedFastest (ratio 0.1491) | 784 | 307-310 |
+
+The Xeon profile found what the M3 hid: checking a hash candidate read four bytes at a random place of the 4 MiB window, which
+missed a 1 MiB L2 on every probe (29% of the time on the Xeon, 14% on the M3 with its 16 MB L2). klauspost's entries carry those bytes
+for the same reason. The bytes of a position never change while it is in the table, so the decisions and the output are those of
+libzstd's loop (`TestExact*` against libzstd). Tried and dropped: single-bounds-check word reads (slower, the compiler does not merge the
+byte loads), four interleaved histogram tables (no gain).
