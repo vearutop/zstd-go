@@ -290,3 +290,25 @@ missed a 1 MiB L2 on every probe (29% of the time on the Xeon, 14% on the M3 wit
 for the same reason. The bytes of a position never change while it is in the table, so the decisions and the output are those of
 libzstd's loop (`TestExact*` against libzstd). Tried and dropped: single-bounds-check word reads (slower, the compiler does not merge the
 byte loads), four interleaved histogram tables (no gain).
+
+## Multithreaded compression after the single-thread speedup, Xeon Silver 4210, 59 MB of log lines (supersedes the Xeon tables above)
+
+MB/s by workers; ratio in the first column.
+
+| | 1 | 2 | 4 | 8 | 16 | 32 |
+|---|---|---|---|---|---|---|
+| `Compress2` Fastest, 4 MiB jobs (0.1395) | 224 | 420 | 716 | 1314 | 1617 | 1500 |
+| `Compress2` Fastest, 1 MiB jobs (0.1434) | 181 | 346 | 600 | 874 | 1385 | 1395 |
+| `Compress2` BestCompression, 4 MiB jobs (0.1295) | 29 | 47 | 82 | 143 | 212 | 186 |
+| `Writer.Concurrency` 4 MiB frames (0.1416) | 255 | 469 | 791 | 1069 | 1150 | 1132 |
+| `Writer.Concurrency` 1 MiB frames (0.1513) | 239 | 476 | 901 | 1370 | 1367 | 1544 |
+| klauspost SpeedFastest (0.1491) | 311 | 441 | 415 | 438 | 405 | 409 |
+| klauspost SpeedDefault (0.1421) | 230 | 251 | 227 | 207 | 267 | 238 |
+
+The 4 MiB jobs of 59 MB are 15 jobs, so that row stops scaling at 16 workers. `StreamWriter` with `NbWorkers`, a 4 GiB stream of the
+same lines, 4 MiB jobs: 105 MB/s single-threaded (0.1376, the whole frame in memory: 11.8 GB over the input), then 389 (2 workers),
+760 (4), 1215 (8), 1719 (16), 2131 (32) at 0.1393, with 144 MB to 1.06 GB of heap beyond the input.
+
+Against klauspost's concurrent Encoder: level at 2 workers, 1.7x at 4, 3.0x at 8 and 4.0x at 16 with 6% smaller output than
+SpeedFastest; klauspost does not get past about 440 MB/s. `Compress2` with 1 worker and 4 MiB jobs (224) is slower than the plain
+single-threaded path (about 303): each later job loads its overlap prefix into fresh tables.
