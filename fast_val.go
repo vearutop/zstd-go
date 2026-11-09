@@ -47,10 +47,29 @@ func (e *Encoder) fastSyncBack() {
 	e.fastLive = false
 }
 
+// hasher is hashPtr for a fixed (hBits, mls): the shift, multiplier and result shift resolved once, so the hot loop has no switch.
+// The 4-byte hash is the top bits of the 32-bit product, which the 64-bit product of (v << 32) has in its top half.
+type hasher struct {
+	mul      uint64
+	shl, shr uint8
+}
+
+var hashMul = [9]uint64{4: 2654435761, 5: 889523592379, 6: 227718039650203, 7: 58295818150454627, 8: 0xCF1BBCDCB7A56463}
+
+func newHasher(hBits, mls uint32) hasher {
+	if mls < 4 || mls > 8 {
+		mls = 4 // hashPtr's default
+	}
+	return hasher{mul: hashMul[mls], shl: uint8(64 - 8*mls), shr: uint8(64 - hBits)}
+}
+
+func (h hasher) of(v uint64) uint32 { return uint32((v << (h.shl & 63) * h.mul) >> (h.shr & 63)) }
+
 // fastNoDictV is fastNoDict over e.fast.
 func (e *Encoder) fastNoDictV(cp cParams, start, iend int, lowestValid uint32, isDict bool) {
 	buf := e.buf
 	tab, hlog, mls := e.fast, cp.hashLog, cp.minMatch
+	hs := newHasher(hlog, mls)
 	idx := func(p int) uint32 { return uint32(p + windowStartIndex) }
 	stepSize := int(cp.targetLength)
 	if cp.targetLength == 0 {
@@ -99,9 +118,9 @@ start:
 		goto cleanup
 	}
 	v = rd64(buf, ip0)
-	hash0, val0 = hashPtr(v, hlog, mls), uint32(v)
+	hash0, val0 = hs.of(v), uint32(v)
 	v = rd64(buf, ip1)
-	hash1, val1 = hashPtr(v, hlog, mls), uint32(v)
+	hash1, val1 = hs.of(v), uint32(v)
 	ent = tab[hash0]
 	for {
 		rval := rd32(buf, ip2-int(rep1))
@@ -128,7 +147,7 @@ start:
 		ent = tab[hash1]
 		hash0, val0 = hash1, val1
 		v = rd64(buf, ip2)
-		hash1, val1 = hashPtr(v, hlog, mls), uint32(v)
+		hash1, val1 = hs.of(v), uint32(v)
 		ip0, ip1, ip2 = ip1, ip2, ip3
 		current0 = idx(ip0)
 		tab[hash0] = uint64(current0) | uint64(val0)<<32
@@ -141,7 +160,7 @@ start:
 		ent = tab[hash1]
 		hash0, val0 = hash1, val1
 		v = rd64(buf, ip2)
-		hash1, val1 = hashPtr(v, hlog, mls), uint32(v)
+		hash1, val1 = hs.of(v), uint32(v)
 		ip0, ip1 = ip1, ip2
 		ip2 = ip0 + step
 		ip3 = ip1 + step
@@ -188,15 +207,15 @@ matchLabel:
 	anchor = ip0
 	if ip0 <= ilimit {
 		v = rd64(buf, int(current0)+2-windowStartIndex)
-		tab[hashPtr(v, hlog, mls)] = uint64(current0+2) | uint64(uint32(v))<<32
+		tab[hs.of(v)] = uint64(current0+2) | uint64(uint32(v))<<32
 		v = rd64(buf, ip0-2)
-		tab[hashPtr(v, hlog, mls)] = uint64(idx(ip0-2)) | uint64(uint32(v))<<32
+		tab[hs.of(v)] = uint64(idx(ip0-2)) | uint64(uint32(v))<<32
 		if rep2 > 0 {
 			for ip0 <= ilimit && ip0-int(rep2) >= 0 && rd32(buf, ip0) == rd32(buf, ip0-int(rep2)) {
 				rLength := cnt(buf, ip0+4, ip0+4-int(rep2), iend) + 4
 				rep2, rep1 = rep1, rep2
 				v = rd64(buf, ip0)
-				tab[hashPtr(v, hlog, mls)] = uint64(idx(ip0)) | uint64(uint32(v))<<32
+				tab[hs.of(v)] = uint64(idx(ip0)) | uint64(uint32(v))<<32
 				ip0 += rLength
 				e.storeSeq(anchor, 0, 1, rLength)
 				anchor = ip0
