@@ -11,10 +11,10 @@ package zstd
 //	preset                 size vs klauspost         speed vs klauspost
 //	ProfileSpeedFastest    3-8% smaller              0.7-1.0x
 //	ProfileSpeedDefault    1.5-5.6% smaller          0.75-1.0x
-//	ProfileSpeedBest       1.5% smaller to 3% larger 1.0-1.5x
+//	ProfileSpeedBestCompression       1.5% smaller to 3% larger 1.0-1.5x
 //
 // There is no counterpart of klauspost's SpeedBetterCompression: its two-table matcher runs at 385-620 MB/s at a ratio where
-// libzstd's greedy matcher does 120-215 MB/s, and the port's lazy ProfileSpeedBest is only 15-30% slower than greedy for 4-5% smaller output.
+// libzstd's greedy matcher does 120-215 MB/s, and the port's lazy ProfileSpeedBestCompression is only 15-30% slower than greedy for 4-5% smaller output.
 //
 // Tables cost memory per Encoder (4 bytes per entry): Fastest 0.5 MiB, Default 1 MiB, Best about 20 MiB.
 
@@ -30,7 +30,7 @@ func ProfileSpeedDefault() Params {
 	return Params{Level: 1, WindowLog: 23, HashLog: 18}
 }
 
-// ProfileSpeedBest: lazy matching with a 6-byte minimum match, search depth 16, an 8 MiB window and large tables.
-func ProfileSpeedBest() Params {
+// ProfileSpeedBestCompression: lazy matching with a 6-byte minimum match, search depth 16, an 8 MiB window and large tables.
+func ProfileSpeedBestCompression() Params {
 	return Params{Level: 3, Strategy: 4, WindowLog: 23, HashLog: 20, ChainLog: 22, SearchLog: 4, MinMatch: 6}
 }

@@ -15,7 +15,7 @@ var profiles = []struct {
 }{
 	{"SpeedFastest", zstd.ProfileSpeedFastest},
 	{"SpeedDefault", zstd.ProfileSpeedDefault},
-	{"SpeedBest", zstd.ProfileSpeedBest},
+	{"SpeedBestCompression", zstd.ProfileSpeedBestCompression},
 }
 
 // TestProfiles: every preset is accepted by the encoder, round-trips through Writer and Reader, and the wider ones beat plain

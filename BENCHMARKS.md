@@ -160,14 +160,14 @@ against 0.0722 at 128 KiB on catp's output).
 
 ## Presets named after klauspost levels (`Profile*`, BenchmarkProfiles, M3, single goroutine, MB/s and compressed/input)
 
-| input | SpeedFastest port / klauspost | SpeedDefault | SpeedBest |
+| input | SpeedFastest port / klauspost | SpeedDefault | SpeedBestCompression |
 |---|---|---|---|
 | 8 MB (catp output) | 825 / 1123, 0.0722 / 0.0763 | 953 / 992, 0.0718 / 0.0728 | 174 / 155, 0.0608 / 0.0618 |
 | 59 MB (DEBUG# lines) | 571 / 823, 0.1378 / 0.1491 | 551 / 719, 0.1341 / 0.1421 | 102 / 70, 0.1247 / 0.1263 |
 | 5.4 MB (LabelWithID lines) | 673 / 806, 0.1019 / 0.1052 | 699 / 694, 0.1020 / 0.1062 | 105 / 106, 0.0945 / 0.0914 |
 
 Presets (all plain libzstd parameters, byte-identical to ZSTD_compress2, `TestProfilesExact`): Fastest = level 1, windowLog 22,
-hashLog 17; Default = level 1, windowLog 23, hashLog 18; Best = lazy, minMatch 6, searchLog 4, windowLog 23, hashLog 20,
+hashLog 17; Default = level 1, windowLog 23, hashLog 18; SpeedBestCompression = lazy, minMatch 6, searchLog 4, windowLog 23, hashLog 20,
 chainLog 22. They were found by a grid search (`TestProfileSearch`, PROFILE_GRID=fast|mid|slow|custom|final)
 on the 8 MB output and checked on the other two inputs. A longer minimum match (6) is what makes greedy/lazy competitive on logs.
 Reading: Fastest and Default are 1.5-8% smaller at 0.7-1.0x klauspost's speed (the 59 MB input is the slowest case); Best is
