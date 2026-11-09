@@ -113,8 +113,9 @@ Same input as above (26% prefix, 3.6 GB compressed, scanned by catp); wall and u
 | port synchronous (`Concurrency` 0/1) | 27.5 | 26.7 |
 | port, literals stage only (first version), 2 / 4 | 17.2 / 16.4 | 35.9 / 34.8 |
 | port, literals + FSE tables ahead, checksum stage, 2 / 3 / 4 | 14.4 / 14.5 / 14.1 | 35.2 / 35.6 / 35.5 |
+| port, plus zero-copy ring handoff and batching, 2 / 3 / 4 | 13.65 / 13.62 / 13.51 | 33.8 / 35.0 / 34.8 |
 
-Pipeline: `parse` goroutine (owns the reader; Huffman literals and FSE tables ahead) -> `DStream` (sequences, unchanged; uses the
+Pipeline (final form; klauspost async 13.9 s / 34.6 s in the same run, so the port is ahead on wall time): `parse` goroutine (owns the reader; Huffman literals and FSE tables ahead) -> `DStream` (sequences, unchanged; uses the
 prepared literals/tables only for the exact bytes they came from) -> `verify` (xxhash) -> `Read`. The first version moved only
 the literals and was bound by the sequence stage (about 15 s); moving the table build (1.3 s) and the checksum (1.4 s) out of it
 brought wall time to klauspost's. Async costs about 35% more CPU for both libraries, mostly Go scheduler handoffs (wakeups and
@@ -126,3 +127,10 @@ identical errors for damaged ones, never more output than the synchronous reader
 Reader itself is not canonical on damaged input (a small frame that fits the caller's buffer takes a one-shot shortcut with other
 errors; what is delivered before an error in the failing block depends on input chunking), so the tests compare with the
 streaming reader fed byte by byte.
+
+Zero-copy and batching: decode hands out slices of the history ring (consecutive blocks of a lap are contiguous: up to 4 blocks per
+message, a partial batch goes out at once when no input is queued) and waits before overwriting ring space an unread message
+still occupies. Locally (arm64) this saved about 6% of the async CPU. Ablation there: capping GOMAXPROCS does not change CPU
+(not scheduler spinning); checksums off removes about 0.04 s of the 0.12 s async overhead per 492 MB; the rest is cache misses
+from data crossing cores (hashing and the final copy read cold data) and the input copies. Tests: `TestAsyncRingStress` (tiny
+windows, slow erratic consumer; with the wait disabled it corrupts output and trips the race detector).
