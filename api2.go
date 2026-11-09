@@ -91,7 +91,12 @@ func (e *Encoder) Compress2(dst, src []byte) ([]byte, error) {
 	if r.nbWorkers > 0 && len(src) > mtJobSizeMin { // ZSTD_CCtx_init_compressStream2: small sources are not split
 		return e.compressMT(dst, src, r)
 	}
-	return e.frame(src, dst, e.begin(src, r)), nil
+	r.alias = true // nothing in the encoder writes to the source: read it in place (as EncodeAll does)
+	out := e.frame(src, dst, e.begin(src, r))
+	if e.aliased { // do not keep the caller's slice alive
+		e.buf, e.aliased = nil, false
+	}
+	return out, nil
 }
 
 // buildRequest is ZSTD_CCtx_init_compressStream2: the requested parameters and dictionary resolved for a frame of
