@@ -210,3 +210,35 @@ func BenchmarkProfiles(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkCompressMT measures Compress2 with Params.NbWorkers on the input of compData: wall MB/s and compressed/input ratio
+// for several job sizes: ZSTD_SAMPLE=sample.zst FILTER='DEBUG#' go test -run xxx -bench CompressMT -benchtime 3x
+func BenchmarkCompressMT(b *testing.B) {
+	data := compData(b)
+	for _, pr := range []struct {
+		name string
+		p    zstd.Params
+	}{{"Fastest", zstd.ProfileFastest()}, {"BestCompression", zstd.ProfileBestCompression()}} {
+		for _, job := range []int{0, 1 << 20, 2 << 20, 4 << 20} {
+			for _, w := range []int{0, 1, 2, 4, 8} {
+				if w == 0 && job != 0 {
+					continue
+				}
+				b.Run(fmt.Sprintf("%s/job%dM/workers%d", pr.name, job>>20, w), func(b *testing.B) {
+					p := pr.p
+					p.NbWorkers, p.JobSize = w, job
+					e := zstd.NewEncoder(nil)
+					if err := e.SetParams(p); err != nil {
+						b.Fatal(err)
+					}
+					b.SetBytes(int64(len(data)))
+					var out []byte
+					for i := 0; i < b.N; i++ {
+						out, _ = e.Compress2(out[:0], data)
+					}
+					b.ReportMetric(float64(len(out))/float64(len(data)), "ratio")
+				})
+			}
+		}
+	}
+}

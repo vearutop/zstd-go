@@ -29,8 +29,14 @@ seed 5, 10 seeds by the worker, and fresh seeds 11-13 in my re-runs (1-4 sequenc
 Known limitations of the compressor:
 - **Long-distance matching** (libzstd turns it on automatically for strategy >= btopt with windowLog >= 27, e.g. levels 21/22 with
   unknown size) is not ported; frames where libzstd would use it return `ErrUnsupported` in the configuration API and streaming.
-- **Not ported:** `targetCBlockSize` and `enableDedicatedDictSearch` (both return `ErrUnsupported`), `forceMaxWindow`, multithreaded
-  compression (`nbWorkers > 0`), `stableInBuffer` / `stableOutBuffer`, index overflow correction (streams over 3.5 GB), streaming with
+- **Multithreaded compression** (`nbWorkers`, `jobSize`, `overlapLog`; `Params.NbWorkers/JobSize/OverlapLog`) is ported for
+  `Compress2`: the job layout of `zstdmt_compress.c` (jobs of `targetSectionSize` bytes, the previous job's tail as a raw prefix,
+  fresh entropy tables and invalidated repeat offsets per job, in-order checksum), byte-identical to libzstd for every worker count
+  (`TestExactMT*`: 1500 random configurations, 3136 boundary cases, every dictionary loading method). Not ported in this mode:
+  `RefPrefix` with a raw prefix (libzstd turns it into a CDict; returns `ErrUnsupported`), the streaming API (`CompressStream2` /
+  `StreamWriter` return `ErrUnsupported` for `nbWorkers > 0` unless the pledged size is at most 512 KiB, which libzstd also compresses
+  single-threaded), `rsyncable`, LDM.
+- **Not ported:** `targetCBlockSize` and `enableDedicatedDictSearch` (both return `ErrUnsupported`), `stableInBuffer` / `stableOutBuffer`, index overflow correction (streams over 3.5 GB), streaming with
   output buffers smaller than `ZSTD_compressBound` of the pending input, the external-sequence API (`ZSTD_compressSequences`,
   `ZSTD_generateSequences`) and the block-level API (`ZSTD_compressBlock`).
 - **Streaming memory:** the whole frame stays in `Encoder.buf` until `End`, so memory grows with frame length (libzstd keeps a window).

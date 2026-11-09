@@ -194,3 +194,23 @@ Scaling is linear to 8 workers while there are enough frames (16 MiB frames give
 workers). The price of parallelism through independent frames is the history each frame loses: 4 MiB frames are 2% and 1 MiB
 frames 9% larger than 16 MiB frames. Splitting one frame into jobs that share an overlap with the previous job (libzstd's
 ZSTD_c_nbWorkers) would keep the ratio; that is not implemented.
+
+## Multithreaded Compress2 (`Params.NbWorkers`, libzstd's job layout), 59 MB of log lines, M3 (14 cores)
+
+One frame, byte-identical to libzstd with the same nbWorkers/jobSize/overlapLog (`TestExactMT*`); wall MB/s and compressed/input
+ratio. Single-threaded: Fastest 574 MB/s, 0.1378; BestCompression 96 MB/s, 0.1247. `job0M` is the default job size
+(`1 << max(20, windowLog + 2)`: 16 MiB for Fastest, so 59 MB are only 4 jobs).
+
+| preset, job size | 1 worker | 2 | 4 | 8 | ratio (vs one thread) |
+|---|---|---|---|---|---|
+| Fastest, default (16 MiB) | 559 | 961 | 1788 | 1785 | 0.1382 (+0.3%) |
+| Fastest, 4 MiB | 512 | 992 | 1731 | 3134 | 0.1395 (+1.2%) |
+| Fastest, 2 MiB | 473 | 921 | 1723 | 2942 | 0.1414 (+2.6%) |
+| Fastest, 1 MiB | 428 | 819 | 1568 | 2831 | 0.1434 (+4.1%) |
+| BestCompression, 4 MiB | 94 | 182 | 306 | 539 | 0.1295 (+3.8%) |
+| BestCompression, 1 MiB | 81 | 159 | 289 | 506 | 0.1333 (+6.9%) |
+
+Against independent frames (`Writer.Concurrency`) at the same size and speed: Fastest 4 MiB 0.1395 against 0.1416 (frames),
+1 MiB 0.1434 against 0.1513; BestCompression 4 MiB 0.1295 against 0.1340. The overlap (default: a window/8 prefix for fast to lazy,
+window/4 for lazy2, up to the whole window for btultra2; `OverlapLog` 1-9) keeps about half of the history that independent
+frames lose. A `Writer` whose `Params` set `NbWorkers` multithreads every frame of `FrameSize` bytes (`TestWriterParamsMT`).

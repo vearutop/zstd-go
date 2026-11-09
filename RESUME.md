@@ -23,7 +23,7 @@ All three branches had `go vet .` passing at pause time, but each last commit is
 1. `worktree-agent-a6ba086daa796c971` - **compression API paths**: DONE for what is listed in PARITY.md and MERGED into master
    (merge commit on 2026-11-08; two small conflicts fixed: duplicate `ContentSizeUnknown`, duplicate test helpers envInt/genData).
    Remaining optional backlog: targetCBlockSize (zstd_compress_superblock.c), dedicated dictionary search, forceMaxWindow, LDM,
-   multithreading, stable buffers, external-sequence API, block-level API, bounded streaming history (needs idxShift in the fast/dfast/lazy
+   multithreaded streaming, stable buffers, external-sequence API, block-level API, bounded streaming history (needs idxShift in the fast/dfast/lazy
    match finders). The worktree can be removed (`git worktree remove`).
 2. branch `zdict-wip` (was worktree-agent-a39348e3c3f5a59c1, **parked by the user 2026-11-08**, no worktree, all committed) - **dictionary trainer (zdict)**.
    WIP only (one checkpoint commit 701878e, `go vet` passed): zdict.go, zdict_cover.go, zdict_fastcover.go, legacy trainer, suffix array,
@@ -54,7 +54,7 @@ README.md; merge compression-API first, then decoder, then zdict.
 
 ## Not done yet (parity backlog)
 
-Long-distance matching (windowLog >= 27, strategy >= btopt), multithreading job layout, dedicated dictionary search,
+Long-distance matching (windowLog >= 27, strategy >= btopt), multithreaded streaming (Compress2's job layout is done, mt.go), dedicated dictionary search,
 libzstd streaming-compression semantics, `ZSTD_CCtx_loadDictionary` as a distinct path (the API branch has part of it),
 dictionary trainer, decoder streaming / window enforcement / legacy formats.
 
