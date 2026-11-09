@@ -33,13 +33,17 @@ Known limitations of the compressor:
   `Compress2`: the job layout of `zstdmt_compress.c` (jobs of `targetSectionSize` bytes, the previous job's tail as a raw prefix,
   fresh entropy tables and invalidated repeat offsets per job, in-order checksum), byte-identical to libzstd for every worker count
   (`TestExactMT*`: 1500 random configurations, 3136 boundary cases, every dictionary loading method). Not ported in this mode:
-  `RefPrefix` with a raw prefix (libzstd turns it into a CDict; returns `ErrUnsupported`), the streaming API (`CompressStream2` /
-  `StreamWriter` return `ErrUnsupported` for `nbWorkers > 0` unless the pledged size is at most 512 KiB, which libzstd also compresses
-  single-threaded), `rsyncable`, LDM.
+  `RefPrefix` with a raw prefix (libzstd turns it into a CDict; returns `ErrUnsupported`), `rsyncable`, LDM.
+  The streaming API (`CompressStream2` / `StreamWriter`, `mtstream.go`) is ported too: a full section becomes a job at once, `Flush`
+  turns a partial section into a job, `End` makes the last job (empty when the input ended on a section boundary of an earlier call);
+  frames with a pledged size of at most 512 KiB stay single-threaded as in libzstd. The bytes of the whole frame equal libzstd's
+  (`TestExactMTStream`: random call sequences, `TestExactMTStreamEdges`: 648 job-boundary cases), while libzstd's per-call output
+  timing (jobs are emitted when finished) is not mirrored: the finished jobs are appended in order as calls go by, Flush and End wait.
+  Memory is bounded by `nbWorkers` jobs, not by the frame length.
 - **Not ported:** `targetCBlockSize` and `enableDedicatedDictSearch` (both return `ErrUnsupported`), `stableInBuffer` / `stableOutBuffer`, index overflow correction (streams over 3.5 GB), streaming with
   output buffers smaller than `ZSTD_compressBound` of the pending input, the external-sequence API (`ZSTD_compressSequences`,
   `ZSTD_generateSequences`) and the block-level API (`ZSTD_compressBlock`).
-- **Streaming memory:** the whole frame stays in `Encoder.buf` until `End`, so memory grows with frame length (libzstd keeps a window).
+- **Streaming memory:** (single-threaded) the whole frame stays in `Encoder.buf` until `End`, so memory grows with frame length (libzstd keeps a window).
 - The simple `Writer` in `streaming.go` writes independent frames and is not libzstd's streaming mode (use `StreamWriter` for that).
 - **Trained dictionary FSE tables whose symbol range is below the maximum:** libzstd reads uninitialised memory when seeding the
   optimal parser's statistics from them; the port treats the missing entries as cost 0, which cannot be checked byte for byte.

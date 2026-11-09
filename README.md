@@ -43,13 +43,13 @@ function-by-function port of the C sources (match finders, Huffman, FSE selectio
 - Not ported: long-distance matching (libzstd enables it automatically only for windowLog >= 27 with strategy >= btopt, i.e. sources
   above 64 MiB, where this port diverges), dictionaries larger than the match-finder tables (`ZSTD_loadDictionaryContent` loads only
   the suffix), the dedicated dictionary search, the "loaded dictionary" API path (`ZSTD_CCtx_loadDictionary`), streaming compression
-  semantics, multithreaded streaming, the dictionary trainer. The row match finder's hash salt (`ms->hashSalt`, history of the CCtx) is not
+  semantics, the dictionary trainer. The row match finder's hash salt (`ms->hashSalt`, history of the CCtx) is not
   modelled: it permutes rows and tags bijectively and does not change the output.
 - Decoder: own FSE / sequence / Huffman code (12-bit tables included). `DecodeAll` follows `ZSTD_decompress`: window, offset, block-size,
   dictionary and checksum rules, magicless format, multi-dictionary selection, destination-capacity rules; verified against libzstd on
   millions of valid and mutated frames (PARITY.md has the numbers and the limitations).
 - Configuration API: `Encoder.SetParams` / `Compress2` (ZSTD_c_* subset), `LoadDictionary`, `RefPrefix`, `RefCDict`; streaming compression
-  `CompressStream2` / `StreamWriter` with libzstd's exact bytes. Multithreaded `Compress2` (`Params.NbWorkers`) is byte-identical to libzstd's `nbWorkers`. Not ported: targetCBlockSize, dedicated dictionary search, LDM, MT streaming (PARITY.md).
+  `CompressStream2` / `StreamWriter` with libzstd's exact bytes. Multithreaded `Compress2` and `CompressStream2` / `StreamWriter` (`Params.NbWorkers`) are byte-identical to libzstd's `nbWorkers`. Not ported: targetCBlockSize, dedicated dictionary search, LDM (PARITY.md).
 - Streaming: `Writer` writes independent frames (not libzstd's streaming compression mode). `DStream`/`Reader` follow
   `ZSTD_decompressStream` with a sliding window (hints, ring-buffer capacity errors, `RefPrefix`); frame utility API
   (`GetFrameHeader`, `FindFrameCompressedSize`, `DecompressBound`, ...). Verified in lockstep against libzstd. See PARITY.md for

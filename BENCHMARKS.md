@@ -214,3 +214,18 @@ Against independent frames (`Writer.Concurrency`) at the same size and speed: Fa
 1 MiB 0.1434 against 0.1513; BestCompression 4 MiB 0.1295 against 0.1340. The overlap (default: a window/8 prefix for fast to lazy,
 window/4 for lazy2, up to the whole window for btultra2; `OverlapLog` 1-9) keeps about half of the history that independent
 frames lose. A `Writer` whose `Params` set `NbWorkers` multithreads every frame of `FrameSize` bytes (`TestWriterParamsMT`).
+
+## Multithreaded streaming (`StreamWriter`, `Params.NbWorkers`, 4 MiB jobs), ProfileFastest, M3 (14 cores)
+
+`BenchmarkStreamMT`: 2 GiB written in 64 KiB calls from the lines of the sample (the `a` filter, about 1 GB, so the ratio is
+compressed/input over repeats of it), output discarded. One frame, bytes identical to libzstd's `nbWorkers` stream.
+
+| workers | MB/s | ratio | peak heap beyond the input |
+|---|---|---|---|
+| 0 (single thread) | 373 | 0.1754 | 6.1 GB (the whole frame is kept) |
+| 2 | 862 | 0.1791 (+2.1%) | about 1 GB |
+| 4 | 1697 | 0.1791 | about 1 GB |
+| 8 | 2685-3030 | 0.1791 | 0.8-1.3 GB |
+
+The heap figure of the MT rows is the garbage the GC lets accumulate beside a 1 GB live input (GOGC 100); the live set is `workers`
+jobs (4 MiB input, prefix and output each): with a 59 MB input the peak is 63 MB (2 workers) to 179 MB (8 workers) in total.

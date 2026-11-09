@@ -61,7 +61,9 @@ type Params struct {
 	// one frame, byte-identical to libzstd with the same nbWorkers parameters (the output depends on JobSize and OverlapLog, not
 	// on NbWorkers). Inputs of 512 KiB or less are compressed as with 0. Each job after the first sees only the last OverlapLog
 	// share of the window of the previous job as history, and starts with fresh entropy tables and no repeat offsets, so it
-	// compresses a little worse than one thread. Not supported with RefPrefix, the streaming API or LDM.
+	// compresses a little worse than one thread. The streaming API (CompressStream2, StreamWriter) makes the same frame with at
+	// most NbWorkers jobs in memory (unlike the single-threaded stream, which keeps the whole frame), for any length. Not
+	// supported with a raw RefPrefix or LDM.
 	NbWorkers int
 	// JobSize is ZSTD_c_jobSize: the bytes of input per job (0: 1 << max(20, windowLog + 2), at most 1 GiB; at least 512 KiB).
 	JobSize int

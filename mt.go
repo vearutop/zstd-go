@@ -145,6 +145,9 @@ func (e *Encoder) mtJob(r *request, job, prefix []byte, total uint64, first, las
 		e.reps = [3]uint32{}
 		out = make([]byte, 0, len(job)+len(job)>>3+mtHeaderSlop)
 	}
+	if len(job) == 0 && last { // a frame must end with a last block
+		out = blockHeader(out, true, 0, 0)
+	}
 	for off := 0; off < len(job); off += mtChunk {
 		end := min(off+mtChunk, len(job))
 		before := len(out)

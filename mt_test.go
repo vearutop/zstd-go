@@ -61,11 +61,41 @@ func TestCompress2MT(t *testing.T) {
 	if !bytes.Equal(x, y) {
 		t.Fatal("a 512 KiB input was split")
 	}
-	// the multithreaded stream API is not ported; libzstd also compresses small known sizes single-threaded
+	// the streaming API: a pledged size makes the same frame as Compress2
 	s := zstd.NewEncoder(nil)
-	s.SetParams(zstd.Params{Level: 3, NbWorkers: 2})
-	if _, err := s.CompressStream2(nil, data, zstd.End); !errors.Is(err, zstd.ErrUnsupported) {
-		t.Fatalf("multithreaded streaming: got %v, want ErrUnsupported", err)
+	s.SetParams(zstd.Params{Level: 3, NbWorkers: 2, JobSize: 600 << 10})
+	s.SetPledgedSrcSize(uint64(len(data)))
+	var got []byte
+	for off := 0; off < len(data); off += 100000 {
+		var err error
+		if got, err = s.CompressStream2(got, data[off:min(off+100000, len(data))], zstd.Continue); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.CompressStream2(got, nil, zstd.End)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := zstd.NewEncoder(nil)
+	c.SetParams(zstd.Params{Level: 3, NbWorkers: 2, JobSize: 600 << 10})
+	want, _ := c.Compress2(nil, data)
+	if !bytes.Equal(got, want) {
+		t.Fatal("streamed multithreaded frame differs from Compress2")
+	}
+	// wrong pledged size, and a frame abandoned half way
+	s.SetPledgedSrcSize(uint64(len(data) - 1))
+	if _, err := s.CompressStream2(nil, data, zstd.Continue); !errors.Is(err, zstd.ErrPledgedSize) {
+		t.Fatalf("too much input: %v", err)
+	}
+	s.SetPledgedSrcSize(uint64(len(data) + 1))
+	s.CompressStream2(nil, data, zstd.Continue)
+	if _, err := s.CompressStream2(nil, nil, zstd.End); !errors.Is(err, zstd.ErrPledgedSize) {
+		t.Fatalf("too little input: %v", err)
+	}
+	s.CompressStream2(nil, data[:700<<10], zstd.Continue)
+	s.ResetSession()
+	if out, err := s.CompressStream2(nil, data, zstd.End); err != nil || len(out) == 0 {
+		t.Fatalf("after ResetSession: %v", err)
 	}
 	s = zstd.NewEncoder(nil)
 	s.SetParams(zstd.Params{Level: 3, NbWorkers: 2})

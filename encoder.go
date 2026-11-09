@@ -13,6 +13,7 @@ const blockMax = 128 << 10
 type Encoder struct {
 	hufOut []byte     // scratch for the Huffman-compressed literals of one block
 	mtEnc  []*Encoder // job encoders of the multithreaded Compress2, kept between calls
+	mt     *mtStream  // multithreaded frame in progress (mtstream.go)
 	dict   *Dict
 	// NoChecksum drops the content checksum from frames.
 	NoChecksum bool

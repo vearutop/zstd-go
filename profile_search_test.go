@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -242,3 +244,61 @@ func BenchmarkCompressMT(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkStreamMT: StreamWriter with NbWorkers over the data repeated to GB (STREAM_MB, default 1024) in 64 KiB writes; reports
+// MB/s, the ratio and the peak heap beyond the input, which stays near workers x (job + output) however long the stream is.
+func BenchmarkStreamMT(b *testing.B) {
+	data := compData(b)
+	mb := 1024
+	if v, err := strconv.Atoi(os.Getenv("STREAM_MB")); err == nil {
+		mb = v
+	}
+	for _, w := range []int{0, 2, 4, 8} {
+		b.Run(fmt.Sprintf("workers%d", w), func(b *testing.B) {
+			p := zstd.ProfileFastest()
+			p.NbWorkers, p.JobSize = w, 4<<20
+			var cw countWriter
+			var peak uint64
+			b.SetBytes(int64(mb) << 20)
+			for i := 0; i < b.N; i++ {
+				cw = 0
+				e := zstd.NewEncoder(nil)
+				if err := e.SetParams(p); err != nil {
+					b.Fatal(err)
+				}
+				z := zstd.NewStreamWriter(&cw, e)
+				done := make(chan struct{})
+				go func() { // peak heap sampler
+					var m runtime.MemStats
+					for {
+						select {
+						case <-done:
+							return
+						case <-time.After(20 * time.Millisecond):
+							runtime.ReadMemStats(&m)
+							peak = max(peak, m.HeapInuse)
+						}
+					}
+				}()
+				for n := 0; n < mb<<20; {
+					chunk := data[n%len(data):]
+					chunk = chunk[:min(len(chunk), 64<<10, mb<<20-n)]
+					if _, err := z.Write(chunk); err != nil {
+						b.Fatal(err)
+					}
+					n += len(chunk)
+				}
+				if err := z.Close(); err != nil {
+					b.Fatal(err)
+				}
+				close(done)
+			}
+			b.ReportMetric(float64(cw)/float64(mb<<20), "ratio")
+			b.ReportMetric(float64(peak)/(1<<20)-float64(len(data))/(1<<20), "heapOverInputMB")
+		})
+	}
+}
+
+type countWriter int
+
+func (c *countWriter) Write(p []byte) (int, error) { *c += countWriter(len(p)); return len(p), nil }
