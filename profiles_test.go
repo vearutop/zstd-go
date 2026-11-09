@@ -15,7 +15,6 @@ var profiles = []struct {
 }{
 	{"SpeedFastest", zstd.ProfileSpeedFastest},
 	{"SpeedDefault", zstd.ProfileSpeedDefault},
-	{"SpeedBetter", zstd.ProfileSpeedBetter},
 	{"SpeedBest", zstd.ProfileSpeedBest},
 }
 

@@ -160,16 +160,17 @@ against 0.0722 at 128 KiB on catp's output).
 
 ## Presets named after klauspost levels (`Profile*`, BenchmarkProfiles, M3, single goroutine, MB/s and compressed/input)
 
-| input | SpeedFastest port / klauspost | SpeedDefault | SpeedBetter | SpeedBest |
-|---|---|---|---|---|
-| 8 MB (catp output) | 825 / 1123, 0.0722 / 0.0763 | 953 / 992, 0.0718 / 0.0728 | 214 / 620, 0.0638 / 0.0641 | 174 / 155, 0.0608 / 0.0618 |
-| 59 MB (DEBUG# lines) | 571 / 823, 0.1378 / 0.1491 | 551 / 719, 0.1341 / 0.1421 | 119 / 385, 0.1301 / 0.1225 | 102 / 70, 0.1247 / 0.1263 |
-| 5.4 MB (LabelWithID lines) | 673 / 806, 0.1019 / 0.1052 | 699 / 694, 0.1020 / 0.1062 | 148 / 454, 0.0987 / 0.0963 | 105 / 106, 0.0945 / 0.0914 |
+| input | SpeedFastest port / klauspost | SpeedDefault | SpeedBest |
+|---|---|---|---|
+| 8 MB (catp output) | 825 / 1123, 0.0722 / 0.0763 | 953 / 992, 0.0718 / 0.0728 | 174 / 155, 0.0608 / 0.0618 |
+| 59 MB (DEBUG# lines) | 571 / 823, 0.1378 / 0.1491 | 551 / 719, 0.1341 / 0.1421 | 102 / 70, 0.1247 / 0.1263 |
+| 5.4 MB (LabelWithID lines) | 673 / 806, 0.1019 / 0.1052 | 699 / 694, 0.1020 / 0.1062 | 105 / 106, 0.0945 / 0.0914 |
 
 Presets (all plain libzstd parameters, byte-identical to ZSTD_compress2, `TestProfilesExact`): Fastest = level 1, windowLog 22,
-hashLog 17; Default = level 1, windowLog 23, hashLog 18; Better = greedy, minMatch 6, searchLog 4, windowLog 23, hashLog 20,
-chainLog 22; Best = lazy, same parameters. They were found by a grid search (`TestProfileSearch`, PROFILE_GRID=fast|mid|slow|custom|final)
+hashLog 17; Default = level 1, windowLog 23, hashLog 18; Best = lazy, minMatch 6, searchLog 4, windowLog 23, hashLog 20,
+chainLog 22. They were found by a grid search (`TestProfileSearch`, PROFILE_GRID=fast|mid|slow|custom|final)
 on the 8 MB output and checked on the other two inputs. A longer minimum match (6) is what makes greedy/lazy competitive on logs.
 Reading: Fastest and Default are 1.5-8% smaller at 0.7-1.0x klauspost's speed (the 59 MB input is the slowest case); Best is
-about equal in both; Better cannot be matched at its speed: klauspost's two-table matcher does 385-620 MB/s at a ratio where
-libzstd's greedy matcher does 120-215 MB/s, so on that tier klauspost wins. Timings vary about 15% between runs.
+about equal in both. klauspost's SpeedBetterCompression has no counterpart and the port has no `ProfileSpeedBetter`: its two-table
+matcher does 385-620 MB/s at a ratio where libzstd's greedy matcher does 120-215 MB/s, and in the port greedy -> lazy (Best) costs
+only 15-30% speed for 4-5% smaller output, so a separate middle tier would mislead. Timings vary about 15% between runs.

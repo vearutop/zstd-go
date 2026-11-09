@@ -11,10 +11,12 @@ package zstd
 //	preset                 size vs klauspost         speed vs klauspost
 //	ProfileSpeedFastest    3-8% smaller              0.7-1.0x
 //	ProfileSpeedDefault    1.5-5.6% smaller          0.75-1.0x
-//	ProfileSpeedBetter     0.5% smaller to 6% larger 0.3-0.35x (no libzstd configuration reaches its speed at this ratio)
 //	ProfileSpeedBest       1.5% smaller to 3% larger 1.0-1.5x
 //
-// Tables cost memory per Encoder (4 bytes per entry): Fastest 0.5 MiB, Default 1 MiB, Better and Best about 20 MiB.
+// There is no counterpart of klauspost's SpeedBetterCompression: its two-table matcher runs at 385-620 MB/s at a ratio where
+// libzstd's greedy matcher does 120-215 MB/s, and the port's lazy ProfileSpeedBest is only 15-30% slower than greedy for 4-5% smaller output.
+//
+// Tables cost memory per Encoder (4 bytes per entry): Fastest 0.5 MiB, Default 1 MiB, Best about 20 MiB.
 
 // ProfileSpeedFastest: libzstd level 1 (the "fast" strategy) with a 4 MiB window and a 128K-entry hash table instead of the
 // level's 512 KiB and 16K entries. klauspost's SpeedFastest looks that far back, plain level 1 does not, which cost 6% of the
@@ -26,13 +28,6 @@ func ProfileSpeedFastest() Params {
 // ProfileSpeedDefault: the same fast strategy with an 8 MiB window and a 256K-entry hash table.
 func ProfileSpeedDefault() Params {
 	return Params{Level: 1, WindowLog: 23, HashLog: 18}
-}
-
-// ProfileSpeedBetter: greedy matching with a 6-byte minimum match, an 8 MiB window and large tables. On log text a longer minimum
-// match is worth more than the extra short matches. It reaches SpeedBetter's compression ratio on some inputs and is up to 6%
-// larger on others, at about a third of its speed: libzstd's greedy and lazy matchers run at about 100-230 MB/s here.
-func ProfileSpeedBetter() Params {
-	return Params{Level: 3, Strategy: 3, WindowLog: 23, HashLog: 20, ChainLog: 22, SearchLog: 4, MinMatch: 6}
 }
 
 // ProfileSpeedBest: lazy matching with a 6-byte minimum match, search depth 16, an 8 MiB window and large tables.
