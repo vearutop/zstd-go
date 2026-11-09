@@ -257,3 +257,45 @@ func BenchmarkCompressFrontier(b *testing.B) {
 		b.ReportMetric(float64(out.Len())/float64(len(data)), "ratio")
 	})
 }
+
+// TestJobOverlapRatio estimates what libzstd's multithreaded layout would cost in size: the input is cut into jobs of JOB bytes,
+// each compressed as its own frame with the previous OVERLAP bytes as a raw-content prefix (like ZSTDMT_compressionJob: fresh
+// entropy state, the previous bytes as history, repeat offsets unusable), and the sizes are summed. Not a real MT stream (each
+// piece is a frame), but the match-finding and entropy conditions are the ones a job sees.
+func TestJobOverlapRatio(t *testing.T) {
+	data := compData(t)
+	p := zstd.ProfileFastest()
+	single := func() int {
+		e := zstd.NewEncoder(nil)
+		e.SetParams(p)
+		out, _ := e.Compress2(nil, data)
+		return len(out)
+	}()
+	t.Logf("%d bytes, one frame: %d (%.4f)", len(data), single, float64(single)/float64(len(data)))
+	for _, job := range []int{1 << 20, 2 << 20, 4 << 20, 8 << 20} {
+		for _, ov := range []int{0, 256 << 10, 512 << 10, 1 << 20, 2 << 20} {
+			total := 0
+			for off := 0; off < len(data); off += job {
+				end := min(off+job, len(data))
+				e := zstd.NewEncoder(nil)
+				if err := e.SetParams(p); err != nil {
+					t.Fatal(err)
+				}
+				if ov > 0 && off > 0 {
+					if err := e.RefPrefix(data[max(0, off-ov):off], zstd.DictRaw); err != nil {
+						t.Fatal(err)
+					}
+				}
+				out, err := e.Compress2(nil, data[off:end])
+				if err != nil {
+					t.Fatal(err)
+				}
+				total += len(out)
+				if off > 0 {
+					total -= 9 // a job's frame header and magic are not part of a real MT stream
+				}
+			}
+			t.Logf("job %dK overlap %4dK: %9d  %.4f  (%+.1f%% vs one frame)", job>>10, ov>>10, total, float64(total)/float64(len(data)), 100*float64(total-single)/float64(single))
+		}
+	}
+}
