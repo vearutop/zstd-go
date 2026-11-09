@@ -228,4 +228,32 @@ compressed/input over repeats of it), output discarded. One frame, bytes identic
 | 8 | 2685-3030 | 0.1791 | 0.8-1.3 GB |
 
 The heap figure of the MT rows is the garbage the GC lets accumulate beside a 1 GB live input (GOGC 100); the live set is `workers`
-jobs (4 MiB input, prefix and output each): with a 59 MB input the peak is 63 MB (2 workers) to 179 MB (8 workers) in total.
+jobs (4 MiB input, prefix and output each). With a small input (250 KB, repeated to 4 GiB) the Xeon Silver 4210 peaked at 73 MB
+(2 workers), 250 MB (8) and 322 MB (32) beyond the input, against 14 GB for the single-threaded stream; that input is so
+repetitive that its MB/s (1.4 GB/s at 2 workers, 3.4 GB/s at 32) says little about log data.
+
+## Multithreaded compression on the Xeon Silver 4210 (2.2 GHz, 20 cores / 40 threads), 59 MB of log lines (DEBUG#), ProfileFastest
+
+Ratios equal the M3's digit for digit (the bytes are platform independent). MB/s by number of workers.
+
+| `Compress2`, one frame | 1 | 2 | 4 | 8 | 16 | 32 | ratio |
+|---|---|---|---|---|---|---|---|
+| Fastest, 4 MiB jobs (15 jobs) | 157 | 305 | 460 | 765 | 1032 | 939 | 0.1395 |
+| Fastest, 1 MiB jobs (59 jobs) | 147 | 291 | 536 | 753 | 1197 | 1335 | 0.1434 |
+| BestCompression, 4 MiB jobs | 18 | 36 | 61 | 103 | 154 | 157 | 0.1295 |
+| `Writer.Concurrency`, 4 MiB frames | 173 | 341 | 537 | 702 | 759 | 746 | 0.1416 |
+| `Writer.Concurrency`, 1 MiB frames | 180 | 364 | 675 | 909 | 1231 | 1308 | 0.1513 |
+
+`StreamWriter` with `NbWorkers`, 4 MiB jobs, a 4 GiB stream (the same lines repeated), 64 KiB writes (`BenchmarkStreamMT`):
+
+| workers | MB/s | ratio | peak heap beyond the input |
+|---|---|---|---|
+| 0 (single thread) | 89 | 0.1376 | 11.8 GB (the whole frame is kept) |
+| 2 | 268 | 0.1393 | 142 MB |
+| 4 | 495 | 0.1393 | 252 MB |
+| 8 | 747 | 0.1393 | 318 MB |
+| 16 | 1088 | 0.1393 | 598 MB |
+| 32 | 1347 | 0.1393 | 1.1 GB |
+
+The stream scales 15x at 32 workers for +1.2% size; the speed gain flattens past 16 workers (20 physical cores). The heap grows
+with the workers (about 17 MB live per worker: job input, encoder window copy, output; roughly twice that measured with GC slack).

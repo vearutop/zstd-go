@@ -222,7 +222,7 @@ func BenchmarkCompressMT(b *testing.B) {
 		p    zstd.Params
 	}{{"Fastest", zstd.ProfileFastest()}, {"BestCompression", zstd.ProfileBestCompression()}} {
 		for _, job := range []int{0, 1 << 20, 2 << 20, 4 << 20} {
-			for _, w := range []int{0, 1, 2, 4, 8} {
+			for _, w := range []int{0, 1, 2, 4, 8, 16, 32} {
 				if w == 0 && job != 0 {
 					continue
 				}
@@ -253,7 +253,7 @@ func BenchmarkStreamMT(b *testing.B) {
 	if v, err := strconv.Atoi(os.Getenv("STREAM_MB")); err == nil {
 		mb = v
 	}
-	for _, w := range []int{0, 2, 4, 8} {
+	for _, w := range []int{0, 2, 4, 8, 16, 32} {
 		b.Run(fmt.Sprintf("workers%d", w), func(b *testing.B) {
 			p := zstd.ProfileFastest()
 			p.NbWorkers, p.JobSize = w, 4<<20

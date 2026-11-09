@@ -222,7 +222,7 @@ func BenchmarkWriterConcurrency(b *testing.B) {
 		p    zstd.Params
 	}{{"Fastest", zstd.ProfileFastest()}, {"BestCompression", zstd.ProfileBestCompression()}} {
 		for _, fs := range []int{1 << 20, 4 << 20, 16 << 20} {
-			for _, conc := range []int{1, 2, 4, 8} {
+			for _, conc := range []int{1, 2, 4, 8, 16, 32} {
 				b.Run(fmt.Sprintf("%s/frame%dM/conc%d", pr.name, fs>>20, conc), func(b *testing.B) {
 					b.SetBytes(int64(len(data)))
 					var size int
