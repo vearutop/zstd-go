@@ -15,6 +15,10 @@ type Writer struct {
 	FrameSize int
 	// Level is the compression level (see Encoder.Level); 0 keeps the Encoder default. Set before the first Write.
 	Level int
+	// With Params.NbWorkers > 0, FrameSize above 512 KiB and Concurrency < 2, each frame is compressed as one multithreaded
+	// stream while it arrives, so FrameSize can be large (100 MB and more, seekable) at a few jobs' worth of memory (about 70 MB
+	// of heap for 4 workers) instead of a whole frame. Such frames record no content size in their header. With Concurrency >= 2
+	// every frame is still buffered whole.
 	// Params, when not the zero value, configures each frame like Encoder.SetParams + Compress2 (explicit window, hash and
 	// chain logs, checksum, strategy ...) and takes precedence over Level. Set before the first Write. A larger WindowLog and
 	// HashLog than the level's default (level 1: 19 and 14) often shrink repetitive data by several percent at about the same speed.
@@ -39,6 +43,13 @@ type Writer struct {
 
 	async   *wpipe
 	started bool // the parallel pipeline was considered (at the first Write)
+
+	// multithreaded frames (Params.NbWorkers > 0, frames above 512 KiB, Concurrency < 2): each frame is one CompressStream2
+	// session fed as data arrives, so memory stays at the stream's few jobs whatever FrameSize is
+	mt  bool
+	fin int            // input bytes of the current frame
+	fc  int            // compressed bytes of the current frame
+	sum *xxhash.Digest // seek table checksum of the current frame
 }
 
 type seekEntry struct{ c, d, sum uint32 }
@@ -62,7 +73,15 @@ func (z *Writer) Write(p []byte) (n int, err error) {
 		z.started = true
 		if z.Concurrency >= 2 && len(p) > 0 {
 			z.startAsync()
+		} else if z.Params.NbWorkers > 0 && z.size() > mtJobSizeMin && len(p) > 0 {
+			if z.err = z.e.SetParams(z.Params); z.err != nil {
+				return 0, z.err
+			}
+			z.mt, z.pset, z.sum = true, true, xxhash.New()
 		}
+	}
+	if z.mt {
+		return z.writeMT(p)
 	}
 	if z.async != nil {
 		if err = z.async.getErr(); err != nil {
@@ -95,6 +114,12 @@ func (z *Writer) Write(p []byte) (n int, err error) {
 
 // Flush emits the pending input as a frame (if any); it makes the data decodable without waiting for Close.
 func (z *Writer) Flush() error {
+	if z.mt {
+		if z.err == nil && z.fin > 0 {
+			z.err = z.endFrameMT()
+		}
+		return z.err
+	}
 	if z.async != nil && z.err == nil {
 		z.err = z.asyncFlush()
 		return z.err
@@ -161,5 +186,51 @@ func (z *Writer) Close() error {
 		return z.err
 	}
 	z.err = errors.New("zstd: write to closed Writer")
+	return nil
+}
+
+// writeMT feeds p to the current frame's stream, closing the frame whenever it reaches FrameSize. The frames carry no content
+// size (unknown when they start), so they are the multithreaded frames of Compress2 apart from that header field.
+func (z *Writer) writeMT(p []byte) (n int, err error) {
+	fs := z.size()
+	for len(p) > 0 {
+		k := min(fs-z.fin, len(p))
+		if z.out, z.err = z.e.CompressStream2(z.out[:0], p[:k], Continue); z.err != nil {
+			return n, z.err
+		}
+		if z.Seekable {
+			z.sum.Write(p[:k])
+		}
+		z.fin, p, n = z.fin+k, p[k:], n+k
+		if z.err = z.emitMT(); z.err == nil && z.fin == fs {
+			z.err = z.endFrameMT()
+		}
+		if z.err != nil {
+			return n, z.err
+		}
+	}
+	return n, nil
+}
+
+func (z *Writer) emitMT() error {
+	z.fc += len(z.out)
+	_, err := z.w.Write(z.out)
+	return err
+}
+
+// endFrameMT finishes the current frame and records it in the seek table.
+func (z *Writer) endFrameMT() (err error) {
+	if z.out, err = z.e.CompressStream2(z.out[:0], nil, End); err != nil {
+		return err
+	}
+	if err = z.emitMT(); err != nil {
+		return err
+	}
+	if z.Seekable {
+		z.table = append(z.table, seekEntry{uint32(z.fc), uint32(z.fin), uint32(z.sum.Sum64())})
+		z.sum.Reset()
+	}
+	z.n++
+	z.fin, z.fc = 0, 0
 	return nil
 }

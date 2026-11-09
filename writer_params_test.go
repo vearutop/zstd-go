@@ -69,7 +69,7 @@ func TestWriterParamsMT(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, conc := range []int{0, 3} {
+	for _, conc := range []int{3} {
 		var out bytes.Buffer
 		w := zstd.NewWriter(&out, nil)
 		w.FrameSize, w.Params, w.Concurrency = fs, p, conc
@@ -85,6 +85,48 @@ func TestWriterParamsMT(t *testing.T) {
 		got, err := io.ReadAll(zstd.NewReader(&out, nil))
 		if err != nil || !bytes.Equal(got, data) {
 			t.Fatalf("Concurrency %d: round trip: %v", conc, err)
+		}
+	}
+}
+
+// TestWriterStreamMT: with NbWorkers and Concurrency < 2 a Writer compresses each frame as it arrives (no frame-sized buffer);
+// the frames decode to the input, the seek table works, and Flush closes a frame.
+func TestWriterStreamMT(t *testing.T) {
+	data := ringData(rand.New(rand.NewSource(7)), 7<<20+123, 1<<19)
+	p := zstd.Params{Level: 1, Checksum: true, NbWorkers: 3, JobSize: 600 << 10}
+	const fs = 3 << 20
+	var out bytes.Buffer
+	w := zstd.NewWriter(&out, nil)
+	w.FrameSize, w.Params, w.Seekable = fs, p, true
+	for i := 0; i < len(data); i += 100000 {
+		if _, err := w.Write(data[i:min(i+100000, len(data))]); err != nil {
+			t.Fatal(err)
+		}
+		if i == 4000000 { // a frame cut short by Flush
+			if err := w.Flush(); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	d, err := zstd.NewDecoder()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.DecodeAll(out.Bytes(), nil)
+	if err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("round trip: %v, %d bytes", err, len(got))
+	}
+	s, err := zstd.OpenSeekable(bytes.NewReader(out.Bytes()), int64(out.Len()), func(dst, frame []byte) ([]byte, error) { return d.DecodeAll(frame, dst) })
+	if err != nil || s.Size() != int64(len(data)) {
+		t.Fatalf("seekable: %v", err)
+	}
+	for _, off := range []int{0, 4000001, 4000000, fs + 5, len(data) - 100} {
+		buf := make([]byte, 100)
+		if _, err := s.ReadAt(buf, int64(off)); err != nil || !bytes.Equal(buf, data[off:off+100]) {
+			t.Fatalf("ReadAt %d: %v", off, err)
 		}
 	}
 }
