@@ -260,6 +260,7 @@ func BenchmarkStreamMT(b *testing.B) {
 			var cw countWriter
 			var peak uint64
 			b.SetBytes(int64(mb) << 20)
+			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				cw = 0
 				e := zstd.NewEncoder(nil)

@@ -92,7 +92,7 @@ func (e *Encoder) compressMT(dst, src []byte, r *request) ([]byte, error) {
 				if j > 0 {
 					prefix = src[lo-min(section, prefixMax) : lo] // the tail of the previous (full) job
 				}
-				outs[j] = enc.mtJob(r, src[lo:hi], prefix, uint64(n), j == 0, hi == n)
+				outs[j] = enc.mtJob(r, src[lo:hi], prefix, uint64(n), j == 0, hi == n, nil)
 			}
 		}()
 	}
@@ -114,8 +114,8 @@ func (e *Encoder) compressMT(dst, src []byte, r *request) ([]byte, error) {
 }
 
 // mtJob is ZSTDMT_compressionJob: the blocks of job (preceded by the frame header for the first job) compressed with prefix as
-// history. total is the size of the whole frame content.
-func (e *Encoder) mtJob(r *request, job, prefix []byte, total uint64, first, last bool) []byte {
+// history. total is the size of the whole frame content. out is a buffer to reuse for the result (nil: allocate).
+func (e *Encoder) mtJob(r *request, job, prefix []byte, total uint64, first, last bool, out []byte) []byte {
 	jr := *r
 	if first {
 		jr.alias = len(job) > 0 && jr.dict == nil // read the source in place
@@ -128,11 +128,14 @@ func (e *Encoder) mtJob(r *request, job, prefix []byte, total uint64, first, las
 		}
 	}
 	L := e.begin(job, &jr)
-	var out []byte
+	if need := len(job) + len(job)>>3 + mtHeaderSlop; cap(out) < need {
+		out = make([]byte, 0, need)
+	}
+	out = out[:0]
 	var produced, consumed int64
 	hdrLen := 0
 	if first {
-		out = e.header(make([]byte, 0, len(job)+len(job)>>3+mtHeaderSlop), total)
+		out = e.header(out, total)
 		hdrLen = len(out)
 	} else {
 		// the header is flushed (and later overwritten) before the first chunk and counts as produced bytes there;
@@ -143,7 +146,6 @@ func (e *Encoder) mtJob(r *request, job, prefix []byte, total uint64, first, las
 		e.dictLimit, e.copyMode = e.lowLimit, false
 		e.loadedDictEnd = 0
 		e.reps = [3]uint32{}
-		out = make([]byte, 0, len(job)+len(job)>>3+mtHeaderSlop)
 	}
 	if len(job) == 0 && last { // a frame must end with a last block
 		out = blockHeader(out, true, 0, 0)

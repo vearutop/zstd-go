@@ -14,8 +14,8 @@ import (
 // to dst in order as the calls go by; Flush and End wait for everything.
 
 type mtTask struct {
-	in, out []byte
-	done    chan struct{}
+	in, out, pre []byte // input, output and overlap prefix buffers, recycled once the output has been appended
+	done         chan struct{}
 }
 
 type mtStream struct {
@@ -32,7 +32,9 @@ type mtStream struct {
 	sum      *xxhash.Digest
 	queue    []*mtTask
 	encs     chan *Encoder
-	bufs     chan []byte
+	bufs     chan []byte // free input buffers
+	outs     chan []byte // free output buffers
+	pres     chan []byte // free prefix buffers
 }
 
 func newMTStream(r *request, pledged uint64) *mtStream {
@@ -40,6 +42,7 @@ func newMTStream(r *request, pledged uint64) *mtStream {
 	m := &mtStream{
 		r: r, section: section, prefixMx: prefix, workers: r.nbWorkers, total: pledged,
 		encs: make(chan *Encoder, r.nbWorkers), bufs: make(chan []byte, r.nbWorkers+1),
+		outs: make(chan []byte, r.nbWorkers+1), pres: make(chan []byte, r.nbWorkers+2),
 	}
 	if r.fp.checksum {
 		m.sum = xxhash.New()
@@ -47,12 +50,24 @@ func newMTStream(r *request, pledged uint64) *mtStream {
 	return m
 }
 
-func (m *mtStream) getBuf() []byte {
+// take returns a free buffer of the pool, or nil.
+func take(pool chan []byte) []byte {
 	select {
-	case b := <-m.bufs:
+	case b := <-pool:
 		return b[:0]
 	default:
 		return nil
+	}
+}
+
+// give returns a buffer to the pool (dropped when the pool is full).
+func give(pool chan []byte, b []byte) {
+	if cap(b) == 0 {
+		return
+	}
+	select {
+	case pool <- b:
+	default:
 	}
 }
 
@@ -99,13 +114,19 @@ func (m *mtStream) submit(dst []byte, last bool) []byte {
 	dst = m.collect(dst, max(len(m.queue)-m.workers+1, 0))
 	job, prefix, first := m.cur, m.prefix, m.nextJob == 0
 	if k := min(len(job), m.prefixMx); !last && k > 0 {
-		m.prefix = append([]byte(nil), job[len(job)-k:]...)
+		m.prefix = append(take(m.pres), job[len(job)-k:]...)
+	} else {
+		m.prefix = nil
 	}
 	m.nextJob++
 	m.ended = last
-	t := &mtTask{in: job, done: make(chan struct{})}
+	t := &mtTask{in: job, pre: prefix, done: make(chan struct{})}
+	outBuf := take(m.outs)
 	m.queue = append(m.queue, t)
-	m.cur = m.getBuf()
+	m.cur = take(m.bufs)
+	if m.cur == nil && !last { // the stream is longer than a section: sections will keep coming, size the buffer once
+		m.cur = make([]byte, 0, m.section)
+	}
 	go func() {
 		var enc *Encoder
 		select {
@@ -113,7 +134,7 @@ func (m *mtStream) submit(dst []byte, last bool) []byte {
 		default:
 			enc = NewEncoder(nil)
 		}
-		t.out = enc.mtJob(m.r, job, prefix, m.total, first, last)
+		t.out = enc.mtJob(m.r, job, prefix, m.total, first, last, outBuf)
 		select {
 		case m.encs <- enc:
 		default:
@@ -138,10 +159,9 @@ func (m *mtStream) collect(dst []byte, wait int) []byte {
 			}
 		}
 		dst = append(dst, t.out...)
-		select {
-		case m.bufs <- t.in:
-		default:
-		}
+		give(m.bufs, t.in)
+		give(m.outs, t.out)
+		give(m.pres, t.pre)
 		m.queue[0] = nil
 		m.queue = m.queue[1:]
 	}

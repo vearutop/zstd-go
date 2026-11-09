@@ -24,11 +24,19 @@ func fillCDictFast(cd *cdict, content []byte) {
 
 // fillCCtxFast is ZSTD_fillHashTableForCCtx (ZSTD_dtlm_fast).
 func (e *Encoder) fillCCtxFast(content []byte) {
-	buf := append(append([]byte(nil), content...), make([]byte, 8)...)
+	// the last position read is iend-2+8 = len-2: the content needs no padding, and no copy
 	iend := len(content) - hashReadSize
-	for ip := dictStart(e.cp, len(content)); ip+3 < iend+2; ip += 3 {
-		e.long[hashPtr(rd64(buf, ip), e.cp.hashLog, e.cp.minMatch)] = uint32(ip + windowStartIndex)
+	hs := newHasher(e.cp.hashLog, e.cp.minMatch)
+	if cap(e.fast) < len(e.long) {
+		e.fast = make([]uint64, len(e.long))
 	}
+	e.fast = e.fast[:len(e.long)]
+	clear(e.fast)
+	for ip := dictStart(e.cp, len(content)); ip+3 < iend+2; ip += 3 {
+		v := rd64(content, ip)
+		e.fast[hs.of(v)] = uint64(ip+windowStartIndex) | uint64(uint32(v))<<32
+	}
+	e.fastLive = true // the loop over e.fast takes the table as it is (fast_val.go); e.long is given back before any other loop
 }
 
 const fastStepIncr = 1 << (searchStrength - 1) // kStepIncr of the noDict and extDict loops
