@@ -80,6 +80,7 @@ type DStream struct {
 
 	pre        *litJob // async pipeline: literals of the block about to be decoded, decoded ahead (see decoder_async.go)
 	noShortcut bool    // async pipeline: never take the single-pass shortcut (the pipeline feeds block-sized chunks)
+	noHash     bool    // async pipeline: the checksum is verified elsewhere
 }
 
 // NewDStream returns a stream decoder using the dictionaries, Magicless and IgnoreChecksum settings of dec (nil: defaults).
@@ -235,7 +236,7 @@ func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) {
 					}
 				}
 				s.dc = s.st.begin(dict)
-				s.validate = h.checksum && !s.dec.IgnoreChecksum
+				s.validate = h.checksum && !s.dec.IgnoreChecksum && !s.noHash
 				if s.validate {
 					s.xx.Reset()
 				}
@@ -490,11 +491,16 @@ func (s *DStream) cont(src []byte) (int, error) {
 			if pre := s.pre; pre != nil && len(src) > 0 && len(src) == len(pre.body) && &src[0] == &pre.body[0] {
 				// the literals were decoded ahead from exactly these bytes
 				s.pre = nil
-				if pre.err != nil {
+				switch {
+				case pre.err != nil:
 					err = pre.err
-				} else {
+				case pre.nb == 0:
+					s.hist = append(s.hist, pre.lits...)
+				default:
 					s.st.blockStart = len(s.hist)
-					s.hist, err = s.st.blockSeq(pre.lits, pre.rest, s.hist, 0, s.dc)
+					s.st.pll, s.st.pof, s.st.pml = pre.pll, pre.pof, pre.pml
+					s.hist, err = s.st.sequences(pre.rest, pre.nb, pre.lits, s.hist, 0, s.dc)
+					s.st.pll, s.st.pof, s.st.pml = nil, nil, nil // pool storage: never read after the block
 				}
 			} else {
 				s.hist, err = s.st.block(src, s.hist, 0, s.dc)

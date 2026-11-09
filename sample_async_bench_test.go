@@ -51,7 +51,7 @@ func BenchmarkSampleAsync(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			f()
 		}
-		b.ReportMetric((cpuTime() - c0).Seconds()/float64(b.N), "cpu-s/op")
+		b.ReportMetric((cpuTime()-c0).Seconds()/float64(b.N), "cpu-s/op")
 	}
 	for _, c := range []int{1, 2, 3, 4} {
 		b.Run(fmt.Sprintf("port/c%d", c), func(b *testing.B) {

@@ -171,50 +171,62 @@ func (st *decState) block(in, out []byte, base int, dc []byte) ([]byte, error) {
 
 // blockSeq is the rest of a compressed block after its literals: in is the sequences section.
 func (st *decState) blockSeq(lits, in, out []byte, base int, dc []byte) ([]byte, error) {
-	var err error
+	nb, in, err := st.seqPrep(in)
+	if err != nil {
+		return out, err
+	}
+	if nb == 0 {
+		return append(out, lits...), nil
+	}
+	return st.sequences(in, nb, lits, out, base, dc)
+}
+
+// seqPrep parses the sequences section header and resolves or builds the three decoding tables (st.pll, st.pof, st.pml);
+// it returns the number of sequences and the bitstream. The tables depend on the previous block's (repeat mode) but not on
+// any output, so the pipeline runs it ahead.
+func (st *decState) seqPrep(in []byte) (nb int, rest []byte, err error) {
 	if len(in) < 1 {
-		return out, errSrcSize
+		return 0, in, errSrcSize
 	}
 	// number of sequences
-	var nb int
 	switch b0 := int(in[0]); {
 	case b0 < 128:
 		nb, in = b0, in[1:]
 	case b0 < 255:
 		if len(in) < 2 {
-			return out, errSrcSize
+			return 0, in, errSrcSize
 		}
 		nb, in = (b0-128)<<8+int(in[1]), in[2:]
 	default:
 		if len(in) < 3 {
-			return out, errSrcSize
+			return 0, in, errSrcSize
 		}
 		nb, in = int(in[1])+int(in[2])<<8+0x7F00, in[3:]
 	}
 	if nb == 0 {
 		if len(in) != 0 {
-			return out, corrupt() // bytes after an empty sequences section
+			return 0, in, corrupt() // bytes after an empty sequences section
 		}
-		return append(out, lits...), nil
+		return 0, in, nil
 	}
 	if len(in) < 1 {
-		return out, errSrcSize
+		return 0, in, errSrcSize
 	}
 	modes := in[0]
 	in = in[1:]
 	if modes&3 != 0 {
-		return out, corrupt()
+		return 0, in, corrupt()
 	}
 	if in, err = st.table(&st.ll, &st.pll, llPredefD, kindLL, int(modes>>6), 35, 9, in); err != nil {
-		return out, err
+		return 0, in, err
 	}
 	if in, err = st.table(&st.of, &st.pof, ofPredefD, kindOF, int(modes>>4&3), 31, 8, in); err != nil {
-		return out, err
+		return 0, in, err
 	}
 	if in, err = st.table(&st.ml, &st.pml, mlPredefD, kindML, int(modes>>2&3), 52, 9, in); err != nil {
-		return out, err
+		return 0, in, err
 	}
-	return st.sequences(in, nb, lits, out, base, dc)
+	return nb, in, nil
 }
 
 // table resolves one stream's decoding table by mode: 0 predefined, 1 RLE, 2 new FSE table, 3 repeat.
