@@ -11,7 +11,8 @@ const blockMax = 128 << 10
 
 // Encoder is a reusable single-shot encoder, not safe for concurrent use.
 type Encoder struct {
-	hufOut []byte // scratch for the Huffman-compressed literals of one block
+	hufOut []byte     // scratch for the Huffman-compressed literals of one block
+	mtEnc  []*Encoder // job encoders of the multithreaded Compress2, kept between calls
 	dict   *Dict
 	// NoChecksum drops the content checksum from frames.
 	NoChecksum bool

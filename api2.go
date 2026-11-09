@@ -88,6 +88,9 @@ func (e *Encoder) Compress2(dst, src []byte) ([]byte, error) {
 	if err != nil {
 		return dst, err
 	}
+	if r.nbWorkers > 0 && len(src) > mtJobSizeMin { // ZSTD_CCtx_init_compressStream2: small sources are not split
+		return e.compressMT(dst, src, r)
+	}
 	return e.frame(src, dst, e.begin(src, r)), nil
 }
 

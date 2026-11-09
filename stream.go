@@ -84,6 +84,9 @@ func (e *Encoder) initStream(op Directive, inSize uint64) error {
 	if err != nil {
 		return err
 	}
+	if r.nbWorkers > 0 && pledged > mtJobSizeMin {
+		return ErrUnsupported // multithreaded streaming is not ported (small known sizes are single-threaded in libzstd too)
+	}
 	L := e.begin(nil, r)
 	windowSize := max(1, min(uint64(1)<<e.cp.windowLog, pledged))
 	bs := int(min(uint64(e.blockMax), windowSize))
