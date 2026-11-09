@@ -13,9 +13,9 @@ var profiles = []struct {
 	name string
 	p    func() zstd.Params
 }{
-	{"SpeedFastest", zstd.ProfileSpeedFastest},
-	{"SpeedDefault", zstd.ProfileSpeedDefault},
-	{"SpeedBestCompression", zstd.ProfileSpeedBestCompression},
+	{"Fastest", zstd.ProfileFastest},
+	{"Default", zstd.ProfileDefault},
+	{"BestCompression", zstd.ProfileBestCompression},
 }
 
 // TestProfiles: every preset is accepted by the encoder, round-trips through Writer and Reader, and the wider ones beat plain
@@ -48,8 +48,8 @@ func TestProfiles(t *testing.T) {
 	}
 }
 
-func TestProfileSpeedFastest(t *testing.T) {
-	p := zstd.ProfileSpeedFastest()
+func TestProfileFastest(t *testing.T) {
+	p := zstd.ProfileFastest()
 	if p != (zstd.Params{Level: 1, WindowLog: 22, HashLog: 17}) {
 		t.Fatalf("unexpected preset %+v", p)
 	}

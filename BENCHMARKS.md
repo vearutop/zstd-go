@@ -153,9 +153,9 @@ hashLog 17 976 / 0.0722 and 559 / 0.1378 (same speed as SpeedFastest, 5-8% small
 579 / 0.1437; port level 3 765 / 0.0741 and 455 / 0.1453. Level 9 (about 140 MB/s) only makes sense for small outputs.
 Single-shot timings are noisy (a first run put klauspost at 1062 MB/s); use -benchtime Nx.
 
-`ProfileSpeedFastest()` (level 1, windowLog 22, hashLog 17; `Writer.Params` / `Encoder.SetParams`) is the preset for high-volume
+`ProfileFastest()` (level 1, windowLog 22, hashLog 17; `Writer.Params` / `Encoder.SetParams`) is the preset for high-volume
 logs: the speed of klauspost SpeedFastest and 5-8% smaller output; verified byte-identical to libzstd with the same parameters
-(`TestProfileSpeedFastestExact`, libzstd tag). A 64 KiB or 32 KiB maxBlockSize (klauspost's block size) does not help (ratio 0.0728 and 0.0744
+(`TestProfileFastestExact`, libzstd tag). A 64 KiB or 32 KiB maxBlockSize (klauspost's block size) does not help (ratio 0.0728 and 0.0744
 against 0.0722 at 128 KiB on catp's output).
 
 ## Presets named after klauspost levels (`Profile*`, BenchmarkProfiles, M3, single goroutine, MB/s and compressed/input)
