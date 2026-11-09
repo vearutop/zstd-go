@@ -257,3 +257,18 @@ Ratios equal the M3's digit for digit (the bytes are platform independent). MB/s
 
 The stream scales 15x at 32 workers for +1.2% size; the speed gain flattens past 16 workers (20 physical cores). The heap grows
 with the workers (about 17 MB live per worker: job input, encoder window copy, output; roughly twice that measured with GC slack).
+
+### Against klauspost's concurrent Encoder (`WithEncoderConcurrency`), the same 59 MB, Xeon Silver 4210, MB/s
+
+| workers | klauspost SpeedFastest (0.1491) | klauspost SpeedDefault (0.1421) | port `Compress2`, 4 MiB jobs (0.1395) | port `Writer.Concurrency`, 4 MiB frames (0.1416) |
+|---|---|---|---|---|
+| 1 | 281 | 171 | 149 | 172 |
+| 2 | 357 | 205 | 312 | 291 |
+| 4 | 293 | 200 | 500 | 458 |
+| 8 | 334 | 170 | 781 | 630 |
+| 16 | 293 | 165 | 959 | 747 |
+| 32 | 345 | 196 | 993 | 794 |
+
+klauspost's concurrency does not scale (the match finder is serial: each block needs the history of the previous one; M3: 784 MB/s
+at 1 worker, 1033 at 16). The port is slower on one thread (about 150 MB/s against 281 for SpeedFastest) and 1.7x faster at 4 workers,
+2.9x at 32, with 6.5% smaller output than SpeedFastest and also smaller than SpeedDefault.
