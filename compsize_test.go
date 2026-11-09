@@ -222,6 +222,8 @@ func BenchmarkCompressFrontier(b *testing.B) {
 	}
 	port("L1", zstd.Params{Level: 1})
 	port("L1w22h17", zstd.Params{Level: 1, WindowLog: 22, HashLog: 17})
+	port("L1w22h17b64K", zstd.Params{Level: 1, WindowLog: 22, HashLog: 17, MaxBlockSize: 64 << 10})
+	port("L1w22h17b32K", zstd.Params{Level: 1, WindowLog: 22, HashLog: 17, MaxBlockSize: 32 << 10})
 	port("L2w22", zstd.Params{Level: 2, WindowLog: 22})
 	port("L2w22h17", zstd.Params{Level: 2, WindowLog: 22, HashLog: 17})
 	port("L3", zstd.Params{Level: 3})
