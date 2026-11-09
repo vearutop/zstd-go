@@ -312,3 +312,19 @@ same lines, 4 MiB jobs: 105 MB/s single-threaded (0.1376, the whole frame in mem
 Against klauspost's concurrent Encoder: level at 2 workers, 1.7x at 4, 3.0x at 8 and 4.0x at 16 with 6% smaller output than
 SpeedFastest; klauspost does not get past about 440 MB/s. `Compress2` with 1 worker and 4 MiB jobs (224) is slower than the plain
 single-threaded path (about 303): each later job loads its overlap prefix into fresh tables.
+
+### Pooled job buffers in the multithreaded stream (Xeon Silver 4210, `BenchmarkStreamMT`, 4 GiB, 4 MiB jobs)
+
+Input, output and overlap-prefix buffers are recycled, and the fast-strategy prefix fill reads the content in place.
+
+| workers | MB/s | heap beyond the input | allocated over the stream |
+|---|---|---|---|
+| 0 (single thread, whole frame kept) | 109 | 11.8 GB | 25.4 GB |
+| 2 | 436 | 71 MB | 86 MB |
+| 4 | 910 | 112 MB | 124 MB |
+| 8 | 1550 | 168 MB | 206 MB |
+| 16 | 2117 | 338 MB | 366 MB |
+| 32 | 2554 | 588 MB | 634 MB |
+
+Ratio 0.1393 throughout (0.1376 single frame without jobs). About 18 MB per worker is live: job input, output, overlap prefix and the
+worker's encoder tables. `Compress2` with one worker and 4 MiB jobs: 242 MB/s (was 224).
