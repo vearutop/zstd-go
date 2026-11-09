@@ -23,8 +23,15 @@ func TestProfilesExact(t *testing.T) {
 				for _, c := range []struct {
 					p ref.Param
 					v int
-				}{{ref.CompressionLevel, p.Level}, {ref.WindowLog, p.WindowLog}, {ref.HashLog, p.HashLog}, {ref.ChainLog, p.ChainLog},
-					{ref.SearchLog, p.SearchLog}, {ref.MinMatch, p.MinMatch}, {ref.Strategy, p.Strategy}} {
+				}{
+					{ref.CompressionLevel, p.Level},
+					{ref.WindowLog, p.WindowLog},
+					{ref.HashLog, p.HashLog},
+					{ref.ChainLog, p.ChainLog},
+					{ref.SearchLog, p.SearchLog},
+					{ref.MinMatch, p.MinMatch},
+					{ref.Strategy, p.Strategy},
+				} {
 					if c.v == 0 && c.p != ref.CompressionLevel {
 						continue
 					}

@@ -13,6 +13,6 @@ func detectBMI() (bmi1, bmi2 bool) {
 	if maxID, _, _, _ := cpuid(0, 0); maxID < 7 {
 		return false, false
 	}
-	_, ebx, _, _ := cpuid(7, 0)
+	_, ebx, _, _ := cpuid(7, 0) //nolint:dogsled // only ebx matters
 	return ebx&(1<<3) != 0, ebx&(1<<8) != 0
 }

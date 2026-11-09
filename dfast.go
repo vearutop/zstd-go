@@ -26,7 +26,7 @@ func hashPtr(v uint64, hBits uint32, mls uint32) uint32 {
 	case 8:
 		return uint32((v * 0xCF1BBCDCB7A56463) >> (64 - hBits))
 	default: // 4
-		return uint32((uint32(v) * 2654435761) >> (32 - hBits))
+		return (uint32(v) * 2654435761) >> (32 - hBits)
 	}
 }
 

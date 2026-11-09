@@ -145,7 +145,7 @@ type decState struct {
 }
 
 func (d *Decoder) get() *decState {
-	if s, _ := d.pool.Get().(*decState); s != nil {
+	if s, ok := d.pool.Get().(*decState); ok && s != nil {
 		return s
 	}
 	return &decState{}
@@ -454,12 +454,14 @@ func (st *decState) sequences(in []byte, nb int, lits, out []byte, base int, dc 
 	}
 	for i := 0; i < nb; i++ {
 		if useSeqAsm && i >= asmAt && i < nb-1 {
-			c := seqCtx{v: r.v, br: uint64(r.br), off: r.off, buf: unsafe.SliceData(r.buf),
+			c := seqCtx{
+				v: r.v, br: uint64(r.br), off: r.off, buf: unsafe.SliceData(r.buf),
 				llt: unsafe.SliceData(ll.e), oft: unsafe.SliceData(of.e), mlt: unsafe.SliceData(ml.e),
 				sl: uint64(sl), so: uint64(so), sm: uint64(sm), reps: st.reps,
 				out: unsafe.SliceData(out), n: len(out), ocap: cap(out),
 				lits: unsafe.SliceData(lits), litLen: len(lits), litCap: cap(lits), li: li,
-				base: base, blockStart: st.blockStart, outLim: st.outLim, rem: nb - 1 - i}
+				base: base, blockStart: st.blockStart, outLim: st.outLim, rem: nb - 1 - i,
+			}
 			seqDecAsm(&c)
 			r.v, r.br, r.off = c.v, uint(c.br), c.off
 			sl, so, sm, st.reps, li, out = uint32(c.sl), uint32(c.so), uint32(c.sm), c.reps, c.li, out[:c.n]

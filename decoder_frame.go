@@ -48,7 +48,7 @@ type Decoder struct {
 }
 
 // NewDecoder returns a decoder that knows the given dictionaries.
-func NewDecoder(dicts ...*Dict) (*Decoder, error) {
+func NewDecoder(dicts ...*Dict) (*Decoder, error) { //nolint:unparam // the error is part of the API
 	d := &Decoder{dicts: map[uint32]*Dict{}}
 	for _, dc := range dicts {
 		if dc == nil { // no dictionary
@@ -69,7 +69,9 @@ var dictCache sync.Map // *Dict -> *dictDec
 
 func dictInfo(dc *Dict) *dictDec {
 	if v, ok := dictCache.Load(dc); ok {
-		return v.(*dictDec)
+		if dd, ok := v.(*dictDec); ok {
+			return dd
+		}
 	}
 	di := &dictDec{}
 	di.err, di.huf = checkDictEntropy(dc.raw)
@@ -197,7 +199,7 @@ func getFrameHeader(src []byte, magicless bool) (h frameHeader, need int, err er
 		}
 		return h, 0, errPrefix
 	}
-	fhs, _ := frameHeaderSize(src, magicless)
+	fhs, _ := frameHeaderSize(src, magicless) //nolint:errcheck // a short or bad header is caught by the length check below
 	if len(src) < fhs {
 		return h, fhs, nil
 	}

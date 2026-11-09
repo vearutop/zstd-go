@@ -100,7 +100,7 @@ func (s *Seekable) ReadAt(p []byte, off int64) (n int, err error) {
 		if int64(cap(frame)) < clen {
 			frame = make([]byte, clen)
 		}
-		if _, err = s.r.ReadAt(frame[:clen], s.cOff[i]); err != nil && err != io.EOF {
+		if _, err = s.r.ReadAt(frame[:clen], s.cOff[i]); err != nil && !errors.Is(err, io.EOF) {
 			return n, err
 		}
 		if out, err = s.decode(out[:0], frame[:clen]); err != nil {

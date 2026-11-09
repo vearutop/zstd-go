@@ -10,8 +10,10 @@ import (
 	"testing"
 )
 
-var hufAsmCases = flag.Int("hufasm.cases", 100000, "number of random cases for TestHufAsmVsGo")
-var hufAsmSeed = flag.Int64("hufasm.seed", 1, "random seed for TestHufAsmVsGo")
+var (
+	hufAsmCases = flag.Int("hufasm.cases", 100000, "number of random cases for TestHufAsmVsGo")
+	hufAsmSeed  = flag.Int64("hufasm.seed", 1, "random seed for TestHufAsmVsGo")
+)
 
 // hufVariant selects the loop implementation: "go", "base" or "bmi"; it returns a restore func.
 func hufVariant(v string) func() {

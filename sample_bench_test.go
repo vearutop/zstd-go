@@ -82,8 +82,7 @@ func BenchmarkSampleScan(b *testing.B) {
 		}
 		return n
 	}
-	var total int64
-	total = int64(scan(zstd.NewReader(bytes.NewReader(data), nil)))
+	total := int64(scan(zstd.NewReader(bytes.NewReader(data), nil)))
 	b.Run("port", func(b *testing.B) {
 		b.SetBytes(total)
 		for i := 0; i < b.N; i++ {

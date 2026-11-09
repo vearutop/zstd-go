@@ -87,7 +87,7 @@ type DStream struct {
 // NewDStream returns a stream decoder using the dictionaries, Magicless and IgnoreChecksum settings of dec (nil: defaults).
 func NewDStream(dec *Decoder) *DStream {
 	if dec == nil {
-		dec, _ = NewDecoder()
+		dec, _ = NewDecoder() //nolint:errcheck // never fails without dictionaries
 	}
 	return &DStream{dec: dec, st: &decState{}, xx: xxhash.New()}
 }
@@ -157,7 +157,7 @@ func (s *DStream) nextSrc(avail int) int {
 // Decompress is ZSTD_decompressStream: it consumes input from in and writes to out, returning the bytes consumed and
 // produced and libzstd's hint (a suggested size of the next input; 0 when a frame is completely decoded and flushed).
 // On error nIn and nOut are 0 (libzstd does not update the positions then), except for the early header errors.
-func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) {
+func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) { //nolint:unparam // hint is libzstd's
 	wl := s.WindowLogMax
 	if wl == 0 {
 		wl = windowLogDefault

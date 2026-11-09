@@ -29,7 +29,7 @@ type hufDec struct {
 }
 
 // read parses a table description (HUF_readStats) and builds it as kind.
-func (d *hufDec) read(src []byte, kind uint8) (int, uint8, *Error) {
+func (d *hufDec) read(src []byte, kind uint8) (int, uint8, *Error) { //nolint:unparam // the table log is used by tests
 	var w [hufSymbolValueMax + 1]byte
 	var rank [hufTableLogMax + 1]uint32
 	nbSym, tl, size, err := hufReadStats(src, &w, &rank)
@@ -282,11 +282,22 @@ var debugHuf bool
 
 // hufAlgoTime is algoTime[Q][single, double] of HUF_selectDecoder: {tableTime, decode256Time}.
 var hufAlgoTime = [16][2][2]uint32{
-	{{0, 0}, {1, 1}}, {{0, 0}, {1, 1}},
-	{{150, 216}, {381, 119}}, {{170, 205}, {514, 112}}, {{177, 199}, {539, 110}}, {{197, 194}, {644, 107}},
-	{{221, 192}, {735, 107}}, {{256, 189}, {881, 106}}, {{359, 188}, {1167, 109}}, {{582, 187}, {1570, 114}},
-	{{688, 187}, {1712, 122}}, {{825, 186}, {1965, 136}}, {{976, 185}, {2131, 150}}, {{1180, 186}, {2070, 175}},
-	{{1377, 185}, {1731, 202}}, {{1412, 185}, {1695, 202}},
+	{{0, 0}, {1, 1}},
+	{{0, 0}, {1, 1}},
+	{{150, 216}, {381, 119}},
+	{{170, 205}, {514, 112}},
+	{{177, 199}, {539, 110}},
+	{{197, 194}, {644, 107}},
+	{{221, 192}, {735, 107}},
+	{{256, 189}, {881, 106}},
+	{{359, 188}, {1167, 109}},
+	{{582, 187}, {1570, 114}},
+	{{688, 187}, {1712, 122}},
+	{{825, 186}, {1965, 136}},
+	{{976, 185}, {2131, 150}},
+	{{1180, 186}, {2070, 175}},
+	{{1377, 185}, {1731, 202}},
+	{{1412, 185}, {1695, 202}},
 }
 
 // hufSelectDecoder is HUF_selectDecoder: hufX1 or hufX2, whichever is likely faster.

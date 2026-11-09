@@ -3,6 +3,7 @@ package zstd
 import (
 	"encoding/binary"
 	"errors"
+	"slices"
 	"sync"
 )
 
@@ -69,7 +70,7 @@ func LoadDictType(b []byte, typ DictContentType) (*Dict, error) {
 			norms[i] = norm
 			tn := norm
 			if t.kind == kindOF { // libzstd builds the offset table over all MaxOff+1 symbols
-				tn = append(norm[:len(norm):len(norm)], make([]int16, 32-len(norm))...)
+				tn = append(slices.Clip(norm), make([]int16, 32-len(norm))...)
 			}
 			ct := buildCTable(tn, lg)
 			switch t.kind {
@@ -153,8 +154,8 @@ func (d *Dict) ID() uint32 { return d.id }
 
 // Compress appends a frame of src to dst, using a pooled Encoder; safe for concurrent use.
 func (d *Dict) Compress(dst, src []byte) []byte {
-	e, _ := d.pool.Get().(*Encoder)
-	if e == nil {
+	e, ok := d.pool.Get().(*Encoder)
+	if !ok {
 		e = NewEncoder(d)
 	}
 	dst = e.EncodeAll(src, dst)

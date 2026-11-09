@@ -1,4 +1,5 @@
 // Code generated from libzstd lib/compress/clevels.h; DO NOT EDIT.
+
 package zstd
 
 var defaultCParams = [4][23]cParams{

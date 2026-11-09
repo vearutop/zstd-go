@@ -363,7 +363,7 @@ func hufCompressWeights(dst []byte, weights []byte) ([]byte, int) {
 	}
 	start := len(dst)
 	dst = writeNCount(dst, norm[:maxSym+1], log)
-	ct := wtPool.Get().(*cTable) // reused storage: ct escapes through fseCompressUsingCTable
+	ct := wtPool.Get().(*cTable) //nolint:errcheck // reused storage: ct escapes through fseCompressUsingCTable
 	defer wtPool.Put(ct)
 	ct.build(norm[:maxSym+1], log)
 	var w bitWriter
@@ -581,7 +581,7 @@ func hufCompress(dst, src []byte, single bool, preferRepeat, optimalDepth, suspe
 	if srcSize == 0 {
 		return nil, false
 	}
-	compressWith := func(prefix []byte, t *hufTable) ([]byte, bool) {
+	compressWith := func(prefix []byte, t *hufTable) []byte {
 		var o []byte
 		var ok bool
 		if single {
@@ -590,12 +590,12 @@ func hufCompress(dst, src []byte, single bool, preferRepeat, optimalDepth, suspe
 			o, ok = t.compress4X(prefix, src)
 		}
 		if !ok || len(o)-len(dst) >= srcSize-1 {
-			return nil, false
+			return nil
 		}
-		return o, true
+		return o
 	}
 	if preferRepeat && *repeat == hufRepeatValid {
-		o, _ := compressWith(dst, old)
+		o := compressWith(dst, old)
 		return o, false
 	}
 	var count [256]uint32
@@ -618,7 +618,7 @@ func hufCompress(dst, src []byte, single bool, preferRepeat, optimalDepth, suspe
 		*repeat = hufRepeatNone
 	}
 	if preferRepeat && *repeat != hufRepeatNone {
-		o, _ := compressWith(dst, old)
+		o := compressWith(dst, old)
 		return o, false
 	}
 	huffLog := hufOptimalTableLog(hufTableLogDefault, srcSize, maxSym, count[:], optimalDepth)
@@ -637,7 +637,7 @@ func hufCompress(dst, src []byte, single bool, preferRepeat, optimalDepth, suspe
 		oldSize := old.estimate(count[:], maxSym)
 		newSize := nt.estimate(count[:], maxSym)
 		if oldSize <= hSize+newSize || hSize+12 >= srcSize {
-			o, _ := compressWith(dst, old)
+			o := compressWith(dst, old)
 			return o, false
 		}
 	}
@@ -646,8 +646,7 @@ func hufCompress(dst, src []byte, single bool, preferRepeat, optimalDepth, suspe
 	}
 	*repeat = hufRepeatNone
 	*old = nt
-	o, ok := compressWith(withHdr, &nt)
-	return o, false
+	return compressWith(withHdr, &nt), false
 }
 
 // fseDecodeWeights is FSE_decompress_wksp for the weight table (max table log 6, at most maxOut symbols).

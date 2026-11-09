@@ -20,19 +20,19 @@ package zstd
 //
 // Tables cost memory per Encoder (4 bytes per entry): ProfileFastest 0.5 MiB, ProfileDefault 1 MiB, ProfileBestCompression about 20 MiB.
 
-// ProfileFastest: libzstd level 1 (the "fast" strategy) with a 4 MiB window and a 128K-entry hash table instead of the
+// ProfileFastest is libzstd level 1 (the "fast" strategy) with a 4 MiB window and a 128K-entry hash table instead of the
 // level's 512 KiB and 16K entries. klauspost's SpeedFastest looks that far back, plain level 1 does not, which cost 6% of the
 // size on real logs. A 64 KiB or 32 KiB maxBlockSize (klauspost's block size) does not help.
 func ProfileFastest() Params {
 	return Params{Level: 1, WindowLog: 22, HashLog: 17}
 }
 
-// ProfileDefault: the same fast strategy with an 8 MiB window and a 256K-entry hash table.
+// ProfileDefault is the same fast strategy with an 8 MiB window and a 256K-entry hash table.
 func ProfileDefault() Params {
 	return Params{Level: 1, WindowLog: 23, HashLog: 18}
 }
 
-// ProfileBestCompression: lazy matching with a 6-byte minimum match, search depth 16, an 8 MiB window and large tables.
+// ProfileBestCompression is lazy matching with a 6-byte minimum match, search depth 16, an 8 MiB window and large tables.
 func ProfileBestCompression() Params {
 	return Params{Level: 3, Strategy: 4, WindowLog: 23, HashLog: 20, ChainLog: 22, SearchLog: 4, MinMatch: 6}
 }

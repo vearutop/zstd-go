@@ -8,17 +8,19 @@ import (
 // Switch is ZSTD_ParamSwitch_e (ZSTD_ps_auto, ZSTD_ps_enable, ZSTD_ps_disable).
 type Switch uint8
 
+// Values of Switch.
 const (
-	SwitchAuto Switch = iota
-	SwitchEnable
-	SwitchDisable
+	SwitchAuto    Switch = iota // ZSTD_ps_auto
+	SwitchEnable                // ZSTD_ps_enable
+	SwitchDisable               // ZSTD_ps_disable
 )
 
 // AttachPref is ZSTD_dictAttachPref_e (ZSTD_c_forceAttachDict).
 type AttachPref uint8
 
+// Values of AttachPref.
 const (
-	AttachDefault AttachPref = iota // ZSTD_dictDefaultAttach
+	AttachDefault AttachPref = iota // ZSTD_dictDefaultAttach (the default)
 	AttachForce                     // ZSTD_dictForceAttach
 	CopyForce                       // ZSTD_dictForceCopy
 	LoadForce                       // ZSTD_dictForceLoad
@@ -27,6 +29,7 @@ const (
 // DictContentType is ZSTD_dictContentType_e.
 type DictContentType uint8
 
+// Values of DictContentType.
 const (
 	DictAuto DictContentType = iota // ZSTD_dct_auto: zstd-format when the magic matches, raw content otherwise
 	DictRaw                         // ZSTD_dct_rawContent
@@ -118,9 +121,6 @@ func (p *Params) validate() error {
 		if err := bound(c.n, c.v, c.lo, c.hi); err != nil {
 			return err
 		}
-	}
-	if p.TargetCBlockSize != 0 && p.TargetCBlockSize < 1340 {
-		// ZSTD_c_targetCBlockSize: raised to the minimum
 	}
 	if p.TargetCBlockSize > 128<<10 {
 		return bound("targetCBlockSize", p.TargetCBlockSize, 1340, 128<<10)

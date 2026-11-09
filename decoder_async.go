@@ -210,7 +210,7 @@ func (p *asyncPipe) sendBytes(b []byte, start bool) bool {
 // finish ends the stream for decode: err is the reader's error (io.EOF or io.ErrUnexpectedEOF: end of input).
 func (p *asyncPipe) finish(err error) {
 	c := asyncChunk{eof: true}
-	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
 		c = asyncChunk{err: err}
 	}
 	p.send(c)
@@ -618,7 +618,7 @@ func (z *Reader) readAsync(p []byte) (int, error) {
 
 // Close stops the pipeline of a Reader with Concurrency >= 2 and discards what is buffered; further Reads fail. A Reader that
 // is dropped without Close (or without reading to the end) is cleaned up when it is garbage collected.
-func (z *Reader) Close() error {
+func (z *Reader) Close() error { //nolint:unparam // io.Closer
 	if z.async != nil {
 		z.async.shutdown()
 		z.async.cur = nil

@@ -38,6 +38,6 @@ func ViolatesWindowForTest(d *Decoder, frame []byte) bool {
 		}
 	}
 	defer func() { offTrace = nil }()
-	d.DecodeAll(frame, nil)
+	d.DecodeAll(frame, nil) //nolint:errcheck // only the offsets seen on the way matter
 	return bad
 }

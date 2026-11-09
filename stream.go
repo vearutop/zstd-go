@@ -26,6 +26,7 @@ import (
 // Directive is ZSTD_EndDirective.
 type Directive uint8
 
+// Directives of CompressStream2.
 const (
 	Continue Directive = iota // ZSTD_e_continue: collect data, emit complete blocks
 	Flush                     // ZSTD_e_flush: emit everything buffered as blocks

@@ -28,7 +28,7 @@ func huf4X2LoopBMI(x2 *x2Elt, dst, src *byte, bits *[4]uint64, ip, op *[4]int, o
 // hufAsm enables the assembly loops; tests clear it to run the Go loops.
 var hufAsm = true
 
-// the X1 assembly addresses nb[i] as sym[i+4096]
+// the X1 assembly addresses nb[i] as sym[i+4096].
 var _ = [1]struct{}{}[unsafe.Offsetof(hufDec{}.nb)-unsafe.Offsetof(hufDec{}.sym)-1<<hufTableLogMax]
 
 // hufAsmState reports whether one assembly pass from this state stays in bounds: ip ordered (checked by the caller)
