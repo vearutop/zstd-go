@@ -1,7 +1,9 @@
 package zstd
 
 import (
+	"encoding/binary"
 	"math/bits"
+	"slices"
 	"sync"
 )
 
@@ -439,23 +441,46 @@ func (t *hufTable) write(dst []byte) (out []byte, ok bool) {
 	return dst, true
 }
 
-// hufEncode appends the Huffman bitstream of src (symbols coded last to first), with end mark.
+// hufEncode appends the Huffman bitstream of src (symbols coded last to first), with end mark. Codes are at most 12 bits, so
+// four symbols and the up to 7 pending bits fit the 64-bit accumulator between flushes (HUF_FLUSHBITS_2 in libzstd).
 func (t *hufTable) encode(dst, src []byte) []byte {
-	var w bitWriter
-	w.buf = dst
-	for i := len(src) - 1; i >= 0; i-- {
-		s := src[i]
-		w.add(uint32(t.val[s]), t.nb[s])
-		if w.n >= 32 {
-			w.flush()
-		}
+	base := len(dst)
+	need := len(src)*3/2 + 16 // 12 bits per symbol at worst, and the 8-byte flush stores
+	dst = slices.Grow(dst, need)[:base+need]
+	out := dst[base:]
+	var acc uint64
+	var n uint
+	pos := 0
+	i := len(src)
+	for ; i >= 4; i -= 4 {
+		s0, s1, s2, s3 := src[i-1], src[i-2], src[i-3], src[i-4]
+		acc |= uint64(t.val[s0]) << n
+		n += uint(t.nb[s0])
+		acc |= uint64(t.val[s1]) << n
+		n += uint(t.nb[s1])
+		acc |= uint64(t.val[s2]) << n
+		n += uint(t.nb[s2])
+		acc |= uint64(t.val[s3]) << n
+		n += uint(t.nb[s3])
+		binary.LittleEndian.PutUint64(out[pos:], acc)
+		pos += int(n >> 3)
+		acc >>= n &^ 7
+		n &= 7
 	}
-	w.add(1, 1)
-	w.flush()
-	if w.n > 0 {
-		w.buf = append(w.buf, byte(w.acc))
+	for ; i > 0; i-- {
+		s := src[i-1]
+		acc |= uint64(t.val[s]) << n
+		n += uint(t.nb[s])
 	}
-	return w.buf
+	acc |= 1 << n // end mark
+	n++
+	binary.LittleEndian.PutUint64(out[pos:], acc)
+	pos += int(n >> 3)
+	if n&7 != 0 {
+		out[pos] = byte(acc >> (n &^ 7))
+		pos++
+	}
+	return dst[:base+pos]
 }
 
 // compress1X is HUF_compress1X_usingCTable; ok is false when libzstd would return 0 (not compressible).
