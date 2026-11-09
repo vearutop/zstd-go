@@ -8,13 +8,14 @@ package zstd
 // Measured on three inputs of real log lines (8 MB, 59 MB, 5.4 MB; BENCHMARKS.md) against klauspost v1.20.3, single goroutine,
 // with about 15% noise between runs:
 //
-//	preset                 size vs klauspost         speed vs klauspost
-//	ProfileSpeedFastest    3-8% smaller              0.7-1.0x
-//	ProfileSpeedDefault    1.5-5.6% smaller          0.75-1.0x
-//	ProfileSpeedBestCompression       1.5% smaller to 3% larger 1.0-1.5x
+//	preset                       size vs klauspost          speed vs klauspost
+//	ProfileSpeedFastest          3-8% smaller               0.7-1.0x
+//	ProfileSpeedDefault          1.5-5.6% smaller           0.75-1.0x
+//	ProfileSpeedBestCompression  1.5% smaller to 3% larger  1.0-1.5x
 //
 // There is no counterpart of klauspost's SpeedBetterCompression: its two-table matcher runs at 385-620 MB/s at a ratio where
-// libzstd's greedy matcher does 120-215 MB/s, and the port's lazy ProfileSpeedBestCompression is only 15-30% slower than greedy for 4-5% smaller output.
+// libzstd's greedy matcher does 120-215 MB/s, and the port's lazy ProfileSpeedBestCompression is only 15-30% slower than greedy
+// for 4-5% smaller output.
 //
 // Tables cost memory per Encoder (4 bytes per entry): Fastest 0.5 MiB, Default 1 MiB, Best about 20 MiB.
 
