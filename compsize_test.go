@@ -101,28 +101,40 @@ func TestCompressionSizes(t *testing.T) {
 // TestCompressionSweep sizes and times explicit parameters (and klauspost) on the filtered lines: ZSTD_SAMPLE and FILTER as above.
 func TestCompressionSweep(t *testing.T) {
 	name := os.Getenv("ZSTD_SAMPLE")
-	if name == "" {
-		t.Skip("ZSTD_SAMPLE not set")
+	if name == "" && os.Getenv("ZSTD_DATA") == "" {
+		t.Skip("ZSTD_SAMPLE or ZSTD_DATA not set")
 	}
 	filter := os.Getenv("FILTER")
 	if filter == "" {
 		filter = "short link"
 	}
-	f, err := os.Open(name)
-	if err != nil {
-		t.Skip(err)
-	}
-	defer f.Close()
-	s := bufio.NewScanner(zstd.NewReader(f, nil))
-	s.Buffer(make([]byte, 64<<10), 10<<20)
-	var in bytes.Buffer
-	for s.Scan() {
-		if bytes.Contains(s.Bytes(), []byte(filter)) {
-			in.Write(s.Bytes())
-			in.WriteByte('\n')
+	var data []byte
+	if dn := os.Getenv("ZSTD_DATA"); dn != "" { // a .zst whose decoded content is the input as is
+		f, err := os.Open(dn)
+		if err != nil {
+			t.Skip(err)
 		}
+		defer f.Close()
+		if data, err = io.ReadAll(zstd.NewReader(f, nil)); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		f, err := os.Open(name)
+		if err != nil {
+			t.Skip(err)
+		}
+		defer f.Close()
+		s := bufio.NewScanner(zstd.NewReader(f, nil))
+		s.Buffer(make([]byte, 64<<10), 10<<20)
+		var in bytes.Buffer
+		for s.Scan() {
+			if bytes.Contains(s.Bytes(), []byte(filter)) {
+				in.Write(s.Bytes())
+				in.WriteByte('\n')
+			}
+		}
+		data = in.Bytes()
 	}
-	data := in.Bytes()
 	row := func(label string, n int, d time.Duration) {
 		t.Logf("%-46s %9d  %.3f  %6.0f MB/s", label, n, float64(n)/float64(len(data)), float64(len(data))/d.Seconds()/1e6)
 	}
@@ -143,6 +155,7 @@ func TestCompressionSweep(t *testing.T) {
 		{Level: 3, WindowLog: 24, HashLog: 20}, {Level: 4, WindowLog: 24, HashLog: 20},
 		{Level: 6}, {Level: 6, WindowLog: 24, HashLog: 20, ChainLog: 20}, {Level: 7, WindowLog: 24, HashLog: 20, ChainLog: 20},
 		{Level: 9}, {Level: 9, WindowLog: 24, HashLog: 20, ChainLog: 21}, {Level: 12, WindowLog: 24},
+		{Level: 10}, {Level: 12}, {Level: 15}, {Level: 17}, {Level: 19},
 	} {
 		run(p)
 	}

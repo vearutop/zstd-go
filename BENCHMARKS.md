@@ -134,3 +134,14 @@ still occupies. Locally (arm64) this saved about 6% of the async CPU. Ablation t
 (not scheduler spinning); checksums off removes about 0.04 s of the 0.12 s async overhead per 492 MB; the rest is cache misses
 from data crossing cores (hashing and the final copy read cold data) and the input copies. Tests: `TestAsyncRingStress` (tiny
 windows, slow erratic consumer; with the wait disabled it corrupts output and trips the race detector).
+
+## Compression size vs klauspost on catp's real output (8,204,730 bytes of log lines)
+
+catp's `-output x.zst` with this library (`Writer{FrameSize: 16 MiB, Level: 1}`) wrote 665,339 bytes, klauspost
+(`SpeedFastest`, which uses a 4 MiB window and 64 KiB blocks) 625,948; libzstd level 1 has a 512 KiB window and a small hash
+table, so the port (byte-exact to libzstd) is 6.3% larger. Sizes of the same data (`TestCompressionSweep`, `ZSTD_DATA=file.zst`):
+level 1 665,335; level 1 + windowLog 22 + hashLog 17 592,159; level 3 607,612; level 5 545,192; level 6 520,198; level 9 501,341
+(56 ms for the 8 MB); level 12 496,431; level 15 490,630; level 19 439,321 (2 s); klauspost SpeedDefault 597,366, SpeedBetter
+525,894. Compression CPU is negligible for catp's output, so level 9 (-20% against klauspost's choice) is the practical setting;
+`Writer.Params` sets window/hash logs explicitly. On a 59 MB sample the same pattern holds (hash table size matters as much as
+the window: level 1 with windowLog 22 and hashLog 18 is 8.9% smaller than SpeedFastest at the same speed).
