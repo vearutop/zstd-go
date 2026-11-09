@@ -101,3 +101,28 @@ has arm64 assembly); the test binary forces libzstd's strict Huffman selection (
 call `SetStrictHufDefaultForTest(false)`; a synthetic benchmark preferred history floor 0 while the real log preferred 2 MiB,
 so tune on real data (`BenchmarkSampleStream`/`BenchmarkSampleScan`, `ZSTD_SAMPLE=file.zst`); check amd64 codegen for hot
 loops (a function value hides `//go:noescape`: 3 heap allocs per block; struct literals stall on amd64, not on arm64).
+
+## Async Reader (`Reader.Concurrency`), catp on a Xeon Silver 4210
+
+Same input as above (26% prefix, 3.6 GB compressed, scanned by catp); wall and user seconds. `Concurrency` = blocks in flight.
+
+| | wall | user |
+|---|---|---|
+| klauspost synchronous | 26.3 | 25.6 |
+| klauspost async (default, 4 blocks) | 13.9 | 34.4 |
+| port synchronous (`Concurrency` 0/1) | 27.5 | 26.7 |
+| port, literals stage only (first version), 2 / 4 | 17.2 / 16.4 | 35.9 / 34.8 |
+| port, literals + FSE tables ahead, checksum stage, 2 / 3 / 4 | 14.4 / 14.5 / 14.1 | 35.2 / 35.6 / 35.5 |
+
+Pipeline: `parse` goroutine (owns the reader; Huffman literals and FSE tables ahead) -> `DStream` (sequences, unchanged; uses the
+prepared literals/tables only for the exact bytes they came from) -> `verify` (xxhash) -> `Read`. The first version moved only
+the literals and was bound by the sequence stage (about 15 s); moving the table build (1.3 s) and the checksum (1.4 s) out of it
+brought wall time to klauspost's. Async costs about 35% more CPU for both libraries, mostly Go scheduler handoffs (wakeups and
+spinning per block hop); batching several blocks per message would cut it. Locally (arm64, no assembly in the sequence stage)
+the split is worth 1.46x, klauspost's finer split 1.9x.
+
+Contract (tests: `TestAsync*`, 43800 mutated streams per run): output identical to the synchronous Reader for valid streams,
+identical errors for damaged ones, never more output than the synchronous reader can deliver before an error. The synchronous
+Reader itself is not canonical on damaged input (a small frame that fits the caller's buffer takes a one-shot shortcut with other
+errors; what is delivered before an error in the failing block depends on input chunking), so the tests compare with the
+streaming reader fed byte by byte.
