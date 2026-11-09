@@ -302,3 +302,36 @@ func BenchmarkStreamMT(b *testing.B) {
 type countWriter int
 
 func (c *countWriter) Write(p []byte) (int, error) { *c += countWriter(len(p)); return len(p), nil }
+
+// BenchmarkKlauspostConcurrency: klauspost's streaming Encoder with WithEncoderConcurrency over the same input in 64 KiB writes,
+// to compare with BenchmarkWriterConcurrency (independent frames) and BenchmarkCompressMT / BenchmarkStreamMT (one frame).
+func BenchmarkKlauspostConcurrency(b *testing.B) {
+	data := compData(b)
+	for _, lv := range []struct {
+		name string
+		l    kz.EncoderLevel
+	}{{"SpeedFastest", kz.SpeedFastest}, {"SpeedDefault", kz.SpeedDefault}, {"SpeedBetterCompression", kz.SpeedBetterCompression}} {
+		for _, conc := range []int{1, 2, 4, 8, 16, 32} {
+			b.Run(fmt.Sprintf("%s/conc%d", lv.name, conc), func(b *testing.B) {
+				b.SetBytes(int64(len(data)))
+				var cw countWriter
+				for i := 0; i < b.N; i++ {
+					cw = 0
+					z, err := kz.NewWriter(&cw, kz.WithEncoderLevel(lv.l), kz.WithEncoderConcurrency(conc))
+					if err != nil {
+						b.Fatal(err)
+					}
+					for off := 0; off < len(data); off += 64 << 10 {
+						if _, err := z.Write(data[off:min(off+64<<10, len(data))]); err != nil {
+							b.Fatal(err)
+						}
+					}
+					if err := z.Close(); err != nil {
+						b.Fatal(err)
+					}
+				}
+				b.ReportMetric(float64(cw)/float64(len(data)), "ratio")
+			})
+		}
+	}
+}
