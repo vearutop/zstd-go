@@ -11,10 +11,12 @@ const blockMax = 128 << 10
 
 // Encoder is a reusable single-shot encoder, not safe for concurrent use.
 type Encoder struct {
-	hufOut []byte     // scratch for the Huffman-compressed literals of one block
-	mtEnc  []*Encoder // job encoders of the multithreaded Compress2, kept between calls
-	mt     *mtStream  // multithreaded frame in progress (mtstream.go)
-	dict   *Dict
+	hufOut   []byte     // scratch for the Huffman-compressed literals of one block
+	mtEnc    []*Encoder // job encoders of the multithreaded Compress2, kept between calls
+	mt       *mtStream  // multithreaded frame in progress (mtstream.go)
+	fast     []uint64   // fast strategy table with the bytes of each position (fast_val.go); authoritative while fastLive
+	fastLive bool
+	dict     *Dict
 	// NoChecksum drops the content checksum from frames.
 	NoChecksum bool
 	// Level is the compression level; 0 means 3 (libzstd's default). Byte-exact with libzstd for every level.
@@ -330,9 +332,13 @@ func (e *Encoder) matchFind(L, base, n int) {
 	case stratFast:
 		switch {
 		case e.lowLimit < e.dictLimit: // ZSTD_window_hasExtDict
+			e.fastSyncBack()
 			e.fastExtDict(e.cp, start, end, e.lowMatchIndex(end, maxDist), e.dictLimit)
 		case attached:
+			e.fastSyncBack()
 			e.fastDict(e.cd, e.cp, L, start, end)
+		case e.fastLoad():
+			e.fastNoDictV(e.cp, start, end, e.dictLimit, false)
 		default:
 			e.fastNoDict(e.cp, start, end, e.dictLimit, false)
 		}
@@ -380,6 +386,7 @@ func (e *Encoder) lowMatchIndex(end int, maxDist uint32) uint32 {
 // growTables clears the working tables sized by the parameters (the fast strategy has no second table; the row
 // match finder has a tag table instead of the chain table).
 func (e *Encoder) growTables() {
+	e.fastLive = false
 	e.long = grow(e.long, 1<<e.cp.hashLog)
 	e.short = e.short[:0]
 	switch {

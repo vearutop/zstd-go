@@ -147,6 +147,7 @@ func (e *Encoder) begin(src []byte, r *request) (L int) {
 		e.dictID = d.id
 	}
 	cd := r.cd
+	e.fastLive = false // the tables are rebuilt below
 	switch {
 	case cd != nil && cd.dictSize > 0 && r.attach != LoadForce &&
 		(n < 128<<10 || n < cd.dictSize*6 || n == contentSizeUnknown || cd.level == 0):
