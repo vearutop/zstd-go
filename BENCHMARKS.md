@@ -145,3 +145,10 @@ level 1 665,335; level 1 + windowLog 22 + hashLog 17 592,159; level 3 607,612; l
 525,894. Compression CPU is negligible for catp's output, so level 9 (-20% against klauspost's choice) is the practical setting;
 `Writer.Params` sets window/hash logs explicitly. On a 59 MB sample the same pattern holds (hash table size matters as much as
 the window: level 1 with windowLog 22 and hashLog 18 is 8.9% smaller than SpeedFastest at the same speed).
+
+Fast end of the frontier (`BenchmarkCompressFrontier`, repeated runs, M3, MB/s and compressed/input; 8 MB = catp's output, 59 MB =
+the DEBUG# lines of the sample): klauspost SpeedFastest 873 / 0.0763 and 567 / 0.1491 (1 goroutine; default concurrency 949 and
+646), SpeedDefault 1035 / 0.0728 and 717 / 0.1421; port level 1 849 / 0.0811 and 577 / 0.1544; port level 1 with windowLog 22 and
+hashLog 17 976 / 0.0722 and 559 / 0.1378 (same speed as SpeedFastest, 5-8% smaller); port level 2 windowLog 22 984 / 0.0735 and
+579 / 0.1437; port level 3 765 / 0.0741 and 455 / 0.1453. Level 9 (about 140 MB/s) only makes sense for small outputs.
+Single-shot timings are noisy (a first run put klauspost at 1062 MB/s); use -benchtime Nx.

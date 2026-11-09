@@ -171,3 +171,87 @@ func TestCompressionSweep(t *testing.T) {
 		row(c.n+" (1 goroutine)", out.Len(), time.Since(t0))
 	}
 }
+
+// BenchmarkCompressFrontier is the fast end of the speed/size frontier on ZSTD_DATA (a .zst whose content is the input) or
+// the FILTERed lines of ZSTD_SAMPLE: go test -run xxx -bench CompressFrontier -benchtime 5x
+func BenchmarkCompressFrontier(b *testing.B) {
+	var data []byte
+	if dn := os.Getenv("ZSTD_DATA"); dn != "" {
+		f, err := os.Open(dn)
+		if err != nil {
+			b.Skip(err)
+		}
+		defer f.Close()
+		data, _ = io.ReadAll(zstd.NewReader(f, nil))
+	} else if name := os.Getenv("ZSTD_SAMPLE"); name != "" {
+		filter := os.Getenv("FILTER")
+		if filter == "" {
+			filter = "short link"
+		}
+		f, err := os.Open(name)
+		if err != nil {
+			b.Skip(err)
+		}
+		defer f.Close()
+		s := bufio.NewScanner(zstd.NewReader(f, nil))
+		s.Buffer(make([]byte, 64<<10), 10<<20)
+		var in bytes.Buffer
+		for s.Scan() {
+			if bytes.Contains(s.Bytes(), []byte(filter)) {
+				in.Write(s.Bytes())
+				in.WriteByte('\n')
+			}
+		}
+		data = in.Bytes()
+	} else {
+		b.Skip("ZSTD_DATA or ZSTD_SAMPLE not set")
+	}
+	port := func(name string, p zstd.Params) {
+		b.Run("port/"+name, func(b *testing.B) {
+			e := zstd.NewEncoder(nil)
+			if err := e.SetParams(p); err != nil {
+				b.Fatal(err)
+			}
+			b.SetBytes(int64(len(data)))
+			var out []byte
+			for i := 0; i < b.N; i++ {
+				out, _ = e.Compress2(out[:0], data)
+			}
+			b.ReportMetric(float64(len(out))/float64(len(data)), "ratio")
+		})
+	}
+	port("L1", zstd.Params{Level: 1})
+	port("L1w22h17", zstd.Params{Level: 1, WindowLog: 22, HashLog: 17})
+	port("L2w22", zstd.Params{Level: 2, WindowLog: 22})
+	port("L2w22h17", zstd.Params{Level: 2, WindowLog: 22, HashLog: 17})
+	port("L3", zstd.Params{Level: 3})
+	port("L3w22h18", zstd.Params{Level: 3, WindowLog: 22, HashLog: 18})
+	for _, conc := range []int{1, 0} {
+		b.Run(fmt.Sprintf("klauspost/Fastest/conc%d", conc), func(b *testing.B) {
+			b.SetBytes(int64(len(data)))
+			var out bytes.Buffer
+			for i := 0; i < b.N; i++ {
+				out.Reset()
+				opts := []kz.EOption{kz.WithEncoderLevel(kz.SpeedFastest), kz.WithLowerEncoderMem(true)}
+				if conc > 0 {
+					opts = append(opts, kz.WithEncoderConcurrency(conc))
+				}
+				w, _ := kz.NewWriter(&out, opts...)
+				w.Write(data)
+				w.Close()
+			}
+			b.ReportMetric(float64(out.Len())/float64(len(data)), "ratio")
+		})
+	}
+	b.Run("klauspost/Default/conc1", func(b *testing.B) {
+		b.SetBytes(int64(len(data)))
+		var out bytes.Buffer
+		for i := 0; i < b.N; i++ {
+			out.Reset()
+			w, _ := kz.NewWriter(&out, kz.WithEncoderLevel(kz.SpeedDefault), kz.WithEncoderConcurrency(1))
+			w.Write(data)
+			w.Close()
+		}
+		b.ReportMetric(float64(out.Len())/float64(len(data)), "ratio")
+	})
+}
