@@ -174,3 +174,23 @@ Reading: Fastest and Default are 1.5-8% smaller at 0.7-1.0x klauspost's speed (t
 about equal in both. klauspost's SpeedBetterCompression has no counterpart and the port has no better-compression preset: its two-table
 matcher does 385-620 MB/s at a ratio where libzstd's greedy matcher does 120-215 MB/s, and in the port greedy -> lazy (Best) costs
 only 15-30% speed for 4-5% smaller output, so a separate middle tier would mislead. Timings vary about 15% between runs.
+
+## Parallel Writer (`Writer.Concurrency`), 59 MB of log lines (the DEBUG# lines of the sample), M3 with 14 cores
+
+Wall MB/s of input and compressed/input ratio. Output is byte-identical to the synchronous Writer (`TestWriterConcurrentMatchesSync`:
+320 configurations including dictionary, seekable, Flush at random points); frames are compressed by `Concurrency` workers (one
+Encoder each) and written in order by one goroutine.
+
+| preset, frame size | conc 1 | conc 2 | conc 4 | conc 8 | ratio |
+|---|---|---|---|---|---|
+| Fastest, 1 MiB | 437 | 872 | 1697 | 2967 | 0.1513 |
+| Fastest, 4 MiB | 474 | 961 | 1669 | 2888 | 0.1416 |
+| Fastest, 16 MiB | 489 | 846 | 1583 | 1592 | 0.1387 |
+| BestCompression, 1 MiB | 89 | 180 | 342 | 601 | 0.1450 |
+| BestCompression, 4 MiB | 89 | 174 | 295 | 457 | 0.1340 |
+| BestCompression, 16 MiB | 84 | 147 | 273 | 275 | 0.1270 |
+
+Scaling is linear to 8 workers while there are enough frames (16 MiB frames give 4 frames of 59 MB: nothing to gain beyond 4
+workers). The price of parallelism through independent frames is the history each frame loses: 4 MiB frames are 2% and 1 MiB
+frames 9% larger than 16 MiB frames. Splitting one frame into jobs that share an overlap with the previous job (libzstd's
+ZSTD_c_nbWorkers) would keep the ratio; that is not implemented.
