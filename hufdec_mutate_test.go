@@ -23,6 +23,9 @@ func TestAsmMutatedFrames(t *testing.T) {
 	}
 	defer func(v bool) { hufAsm = v }(hufAsm)
 	n := 400
+	if testing.Short() {
+		n = 60
+	}
 	if v, err := strconv.Atoi(os.Getenv("ASM_MUT_CASES")); err == nil {
 		n = v
 	}

@@ -47,7 +47,7 @@ func TestWriterConcurrentMatchesSync(t *testing.T) {
 	}
 	rng := rand.New(rand.NewSource(21))
 	datas := map[string][]byte{
-		"ring":   ringData(rng, 2<<20, 1<<18),
+		"ring":   ringData(rng, writerSyncRing(), 1<<18),
 		"logs":   repetitiveLogs(20000),
 		"random": func() []byte { b := make([]byte, 600<<10); rng.Read(b); return b }(),
 		"small":  []byte("hello, parallel writer"),
@@ -67,10 +67,14 @@ func TestWriterConcurrentMatchesSync(t *testing.T) {
 		{"seekable", func(w *zstd.Writer) { w.Seekable = true }, nil},
 		{"dict", func(w *zstd.Writer) { w.Level = 3 }, dict},
 	}
+	sizes := []int{0, 5000, 64 << 10, 700 << 10}
+	if testing.Short() { // the race detector makes the full matrix take minutes
+		sizes, cfgs = sizes[:3], append(cfgs[:2:2], cfgs[5:]...)
+	}
 	n := 0
 	for dn, data := range datas {
 		for _, c := range cfgs {
-			for _, fs := range []int{0, 5000, 64 << 10, 700 << 10} {
+			for _, fs := range sizes {
 				for _, flushes := range []bool{false, true} {
 					conc := 2 + n%5
 					n++
@@ -239,4 +243,12 @@ func BenchmarkWriterConcurrency(b *testing.B) {
 			}
 		}
 	}
+}
+
+// writerSyncRing is the size of the largest input of TestWriterConcurrentMatchesSync; smaller under -short (race detector).
+func writerSyncRing() int {
+	if testing.Short() {
+		return 700 << 10
+	}
+	return 2 << 20
 }

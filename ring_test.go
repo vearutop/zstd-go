@@ -75,7 +75,7 @@ func TestStreamRing(t *testing.T) {
 	}
 	cases := 0
 	for _, wl := range []int{10, 11, 13, 16, 19} {
-		for _, level := range []int{1, 3, 9} {
+		for _, level := range shortLevels([]int{1, 3, 9}) {
 			for _, mode := range []string{"known", "unknown", "dict"} {
 				for _, extra := range []int{0, 777} {
 					rng := rand.New(rand.NewSource(int64(wl*1000 + level*10 + extra)))

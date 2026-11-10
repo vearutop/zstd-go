@@ -110,12 +110,18 @@ func TestSeqAsmDiff(t *testing.T) {
 		t.Fatal(err)
 	}
 	muts := envInt("SEQASM_MUT", 8)
+	if testing.Short() {
+		muts = min(muts, 1)
+	}
 	seed := int64(envInt("SEQASM_SEED", 1))
 	seqAsmVariants(t, func(t *testing.T) {
 		defer func() { useSeqAsm = true }()
 		r := rand.New(rand.NewSource(seed))
 		sizes := []int{0, 1, 7, 100, 1000, 5000, 40000, 300000, 1500000}
 		levels := []int{-5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19}
+		if testing.Short() { // -race is slow: a spread of levels and no large inputs
+			sizes, levels = sizes[:8], []int{-5, 1, 3, 6, 9, 12, 19}
+		}
 		frames, mutated := 0, 0
 		for _, withDict := range []bool{false, true} {
 			var d *Dict
@@ -266,6 +272,9 @@ func seqAsmTable(r *rand.Rand, kind, maxSym, maxLog int) []dEntry {
 // SEQASM_LOOP sets the number of contexts (default 20000).
 func TestSeqAsmLoop(t *testing.T) {
 	iters := envInt("SEQASM_LOOP", 20000)
+	if testing.Short() {
+		iters /= 10
+	}
 	seqAsmVariants(t, func(t *testing.T) {
 		r := rand.New(rand.NewSource(int64(envInt("SEQASM_SEED", 1))))
 		done, bails, seqs := 0, 0, 0

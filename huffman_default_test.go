@@ -30,7 +30,7 @@ func TestDefaultHuffmanValidStreams(t *testing.T) {
 	strict.StrictHuffman = true
 	n := 0
 	for name, data := range fastHufCorpus() {
-		for _, level := range []int{-3, 1, 3, 6, 9, 15, 19} {
+		for _, level := range shortLevels([]int{-3, 1, 3, 6, 9, 15, 19}) {
 			e := zstd.NewEncoder(nil)
 			e.Level = level
 			frame := e.EncodeAll(data, nil)
@@ -72,7 +72,7 @@ func TestDefaultHuffmanCorruptStreams(t *testing.T) {
 			e := zstd.NewEncoder(nil)
 			e.Level = level
 			frame := e.EncodeAll(data, nil)
-			for k := 0; k < 3000; k++ {
+			for k := 0; k < corruptCases(); k++ {
 				f := append([]byte(nil), frame...)
 				for m := 1 + rnd.Intn(3); m > 0; m-- {
 					f[rnd.Intn(len(f))] ^= byte(1 << rnd.Intn(8))
@@ -127,4 +127,19 @@ func BenchmarkHuffmanMode(b *testing.B) {
 			}
 		}
 	}
+}
+
+// shortLevels keeps two levels under -short (the race detector makes the full set take minutes).
+func shortLevels(l []int) []int {
+	if testing.Short() {
+		return []int{l[1], l[len(l)/2]}
+	}
+	return l
+}
+
+func corruptCases() int {
+	if testing.Short() {
+		return 300
+	}
+	return 3000
 }
