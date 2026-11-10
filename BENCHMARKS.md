@@ -68,3 +68,263 @@ Reading: small values with a dictionary are where the port wins big (compression
 14x on 48 threads; klauspost's per-call dictionary table setup does not scale). On large inputs the port matches klauspost at
 L1/L3 serially but scales worse in parallel (about 0.65-0.85x), is 3-5x slower from L6 up (klauspost's levels are different
 algorithms with larger output), and decodes at about 0.65-0.75x (klauspost uses amd64 assembly for Huffman and sequences).
+
+## amd64 assembly (decoder)
+
+Go assembly for the Huffman 4-stream fast loops (`hufdec_amd64.{h,s,go}`) and for the sequence decode+execute fast path
+(`seqdec_amd64.{h,s,go}`), each with a baseline x86-64 variant and a BMI2 variant chosen at runtime (`cpu_amd64.go`). Other
+platforms and `-tags purego` use the Go loops. The assembly only handles "simple" cases and defers everything else to the Go code.
+Checked by differential tests against the Go loops (state and output bytes, valid and mutated frames):
+`go test -run 'HufAsm|SeqAsm|AsmMutated|CPUDetect' -v .` Passed under Rosetta (baseline) and on a Xeon Gold 5118
+(baseline and BMI2: 5M Huffman cases, 1232 frames + 9856 mutated per variant, 20000 loop contexts per variant).
+
+## Streaming decode vs klauspost v1.20.3 (catp, real log, Xeon Silver 4210)
+
+Single `.zst` stream, 512 KiB window, 26% prefix (3.6 GB compressed, 25M lines) read through `bufio.Scanner`; `user` seconds,
+`catp -exp-zstd` (this port) against catp's default klauspost reader (`WithDecoderConcurrency(1)`). klauspost is steady within
+0.5% between runs; the port was 27.8 s before the fixes below.
+
+| change | port user s |
+|---|---|
+| amd64 assembly, single-symbol Huffman default | 27.5 |
+| sequence assembly back-off 16 -> 4 | 27.2 |
+| history floor 2 MiB (floor 0: 28.35, 1 MiB: 28.25; 4 MiB 27.15, 8 MiB 27.5 = noise) | 27.4 |
+| `dTable.build` regression fixed (struct literal reloaded wide: store-forwarding stall) | 26.66 (klauspost 25.3) |
+| history ring (window + 2 blocks, 2 MiB floor) instead of shifting the history; floor 0: 27.22, 1 MiB: 26.98, 2 MiB: 26.40, 4 MiB: 26.66 | 26.40 |
+
+Not factors: PGO (catp's `default.pgo`) and `GOAMD64=v3` move both decoders by under 0.4 s. Remaining gap (4%): Go glue around the
+sequence assembly about 0.4 s, matches reaching the previous ring lap take the slower dictionary-style copy, copy to the
+caller about even.
+
+Lessons: compare against the klauspost version the application builds with (v1.18.6 decodes ~50% slower than v1.20.3, which
+has arm64 assembly); the test binary forces libzstd's strict Huffman selection (`export_test.go`), so performance benchmarks
+call `SetStrictHufDefaultForTest(false)`; a synthetic benchmark preferred history floor 0 while the real log preferred 2 MiB,
+so tune on real data (`BenchmarkSampleStream`/`BenchmarkSampleScan`, `ZSTD_SAMPLE=file.zst`); check amd64 codegen for hot
+loops (a function value hides `//go:noescape`: 3 heap allocs per block; struct literals stall on amd64, not on arm64).
+
+## Async Reader (`Reader.Concurrency`), catp on a Xeon Silver 4210
+
+Same input as above (26% prefix, 3.6 GB compressed, scanned by catp); wall and user seconds. `Concurrency` = blocks in flight.
+
+| | wall | user |
+|---|---|---|
+| klauspost synchronous | 26.3 | 25.6 |
+| klauspost async (default, 4 blocks) | 13.9 | 34.4 |
+| port synchronous (`Concurrency` 0/1) | 27.5 | 26.7 |
+| port, literals stage only (first version), 2 / 4 | 17.2 / 16.4 | 35.9 / 34.8 |
+| port, literals + FSE tables ahead, checksum stage, 2 / 3 / 4 | 14.4 / 14.5 / 14.1 | 35.2 / 35.6 / 35.5 |
+| port, plus zero-copy ring handoff and batching, 2 / 3 / 4 | 13.65 / 13.62 / 13.51 | 33.8 / 35.0 / 34.8 |
+
+Pipeline (final form; klauspost async 13.9 s / 34.6 s in the same run, so the port is ahead on wall time): `parse` goroutine (owns the reader; Huffman literals and FSE tables ahead) -> `DStream` (sequences, unchanged; uses the
+prepared literals/tables only for the exact bytes they came from) -> `verify` (xxhash) -> `Read`. The first version moved only
+the literals and was bound by the sequence stage (about 15 s); moving the table build (1.3 s) and the checksum (1.4 s) out of it
+brought wall time to klauspost's. Async costs about 35% more CPU for both libraries, mostly Go scheduler handoffs (wakeups and
+spinning per block hop); batching several blocks per message would cut it. Locally (arm64, no assembly in the sequence stage)
+the split is worth 1.46x, klauspost's finer split 1.9x.
+
+Contract (tests: `TestAsync*`, 43800 mutated streams per run): output identical to the synchronous Reader for valid streams,
+identical errors for damaged ones, never more output than the synchronous reader can deliver before an error. The synchronous
+Reader itself is not canonical on damaged input (a small frame that fits the caller's buffer takes a one-shot shortcut with other
+errors; what is delivered before an error in the failing block depends on input chunking), so the tests compare with the
+streaming reader fed byte by byte.
+
+Zero-copy and batching: decode hands out slices of the history ring (consecutive blocks of a lap are contiguous: up to 4 blocks per
+message, a partial batch goes out at once when no input is queued) and waits before overwriting ring space an unread message
+still occupies. Locally (arm64) this saved about 6% of the async CPU. Ablation there: capping GOMAXPROCS does not change CPU
+(not scheduler spinning); checksums off removes about 0.04 s of the 0.12 s async overhead per 492 MB; the rest is cache misses
+from data crossing cores (hashing and the final copy read cold data) and the input copies. Tests: `TestAsyncRingStress` (tiny
+windows, slow erratic consumer; with the wait disabled it corrupts output and trips the race detector).
+
+## Compression size vs klauspost on catp's real output (8,204,730 bytes of log lines)
+
+catp's `-output x.zst` with this library (`Writer{FrameSize: 16 MiB, Level: 1}`) wrote 665,339 bytes, klauspost
+(`SpeedFastest`, which uses a 4 MiB window and 64 KiB blocks) 625,948; libzstd level 1 has a 512 KiB window and a small hash
+table, so the port (byte-exact to libzstd) is 6.3% larger. Sizes of the same data (`TestCompressionSweep`, `ZSTD_DATA=file.zst`):
+level 1 665,335; level 1 + windowLog 22 + hashLog 17 592,159; level 3 607,612; level 5 545,192; level 6 520,198; level 9 501,341
+(56 ms for the 8 MB); level 12 496,431; level 15 490,630; level 19 439,321 (2 s); klauspost SpeedDefault 597,366, SpeedBetter
+525,894. Compression CPU is negligible for catp's output, so level 9 (-20% against klauspost's choice) is the practical setting;
+`Writer.Params` sets window/hash logs explicitly. On a 59 MB sample the same pattern holds (hash table size matters as much as
+the window: level 1 with windowLog 22 and hashLog 18 is 8.9% smaller than SpeedFastest at the same speed).
+
+Fast end of the frontier (`BenchmarkCompressFrontier`, repeated runs, M3, MB/s and compressed/input; 8 MB = catp's output, 59 MB =
+the DEBUG# lines of the sample): klauspost SpeedFastest 873 / 0.0763 and 567 / 0.1491 (1 goroutine; default concurrency 949 and
+646), SpeedDefault 1035 / 0.0728 and 717 / 0.1421; port level 1 849 / 0.0811 and 577 / 0.1544; port level 1 with windowLog 22 and
+hashLog 17 976 / 0.0722 and 559 / 0.1378 (same speed as SpeedFastest, 5-8% smaller); port level 2 windowLog 22 984 / 0.0735 and
+579 / 0.1437; port level 3 765 / 0.0741 and 455 / 0.1453. Level 9 (about 140 MB/s) only makes sense for small outputs.
+Single-shot timings are noisy (a first run put klauspost at 1062 MB/s); use -benchtime Nx.
+
+`ProfileFastest()` (level 1, windowLog 22, hashLog 17; `Writer.Params` / `Encoder.SetParams`) is the preset for high-volume
+logs: the speed of klauspost SpeedFastest and 5-8% smaller output; verified byte-identical to libzstd with the same parameters
+(`TestProfileFastestExact`, libzstd tag). A 64 KiB or 32 KiB maxBlockSize (klauspost's block size) does not help (ratio 0.0728 and 0.0744
+against 0.0722 at 128 KiB on catp's output).
+
+## Presets named after klauspost levels (`Profile*`, BenchmarkProfiles, M3, single goroutine, MB/s and compressed/input)
+
+| input | SpeedFastest port / klauspost | SpeedDefault | SpeedBestCompression |
+|---|---|---|---|
+| 8 MB (catp output) | 825 / 1123, 0.0722 / 0.0763 | 953 / 992, 0.0718 / 0.0728 | 174 / 155, 0.0608 / 0.0618 |
+| 59 MB (DEBUG# lines) | 571 / 823, 0.1378 / 0.1491 | 551 / 719, 0.1341 / 0.1421 | 102 / 70, 0.1247 / 0.1263 |
+| 5.4 MB (LabelWithID lines) | 673 / 806, 0.1019 / 0.1052 | 699 / 694, 0.1020 / 0.1062 | 105 / 106, 0.0945 / 0.0914 |
+
+Presets (all plain libzstd parameters, byte-identical to ZSTD_compress2, `TestProfilesExact`): Fastest = level 1, windowLog 22,
+hashLog 17; Default = level 1, windowLog 23, hashLog 18; SpeedBestCompression = lazy, minMatch 6, searchLog 4, windowLog 23, hashLog 20,
+chainLog 22. They were found by a grid search (`TestProfileSearch`, PROFILE_GRID=fast|mid|slow|custom|final)
+on the 8 MB output and checked on the other two inputs. A longer minimum match (6) is what makes greedy/lazy competitive on logs.
+Reading: Fastest and Default are 1.5-8% smaller at 0.7-1.0x klauspost's speed (the 59 MB input is the slowest case); Best is
+about equal in both. klauspost's SpeedBetterCompression has no counterpart and the port has no better-compression preset: its two-table
+matcher does 385-620 MB/s at a ratio where libzstd's greedy matcher does 120-215 MB/s, and in the port greedy -> lazy (Best) costs
+only 15-30% speed for 4-5% smaller output, so a separate middle tier would mislead. Timings vary about 15% between runs.
+
+## Parallel Writer (`Writer.Concurrency`), 59 MB of log lines (the DEBUG# lines of the sample), M3 with 14 cores
+
+Wall MB/s of input and compressed/input ratio. Output is byte-identical to the synchronous Writer (`TestWriterConcurrentMatchesSync`:
+320 configurations including dictionary, seekable, Flush at random points); frames are compressed by `Concurrency` workers (one
+Encoder each) and written in order by one goroutine.
+
+| preset, frame size | conc 1 | conc 2 | conc 4 | conc 8 | ratio |
+|---|---|---|---|---|---|
+| Fastest, 1 MiB | 437 | 872 | 1697 | 2967 | 0.1513 |
+| Fastest, 4 MiB | 474 | 961 | 1669 | 2888 | 0.1416 |
+| Fastest, 16 MiB | 489 | 846 | 1583 | 1592 | 0.1387 |
+| BestCompression, 1 MiB | 89 | 180 | 342 | 601 | 0.1450 |
+| BestCompression, 4 MiB | 89 | 174 | 295 | 457 | 0.1340 |
+| BestCompression, 16 MiB | 84 | 147 | 273 | 275 | 0.1270 |
+
+Scaling is linear to 8 workers while there are enough frames (16 MiB frames give 4 frames of 59 MB: nothing to gain beyond 4
+workers). The price of parallelism through independent frames is the history each frame loses: 4 MiB frames are 2% and 1 MiB
+frames 9% larger than 16 MiB frames. Splitting one frame into jobs that share an overlap with the previous job (libzstd's
+ZSTD_c_nbWorkers) would keep the ratio; that is not implemented.
+
+## Multithreaded Compress2 (`Params.NbWorkers`, libzstd's job layout), 59 MB of log lines, M3 (14 cores)
+
+One frame, byte-identical to libzstd with the same nbWorkers/jobSize/overlapLog (`TestExactMT*`); wall MB/s and compressed/input
+ratio. Single-threaded: Fastest 574 MB/s, 0.1378; BestCompression 96 MB/s, 0.1247. `job0M` is the default job size
+(`1 << max(20, windowLog + 2)`: 16 MiB for Fastest, so 59 MB are only 4 jobs).
+
+| preset, job size | 1 worker | 2 | 4 | 8 | ratio (vs one thread) |
+|---|---|---|---|---|---|
+| Fastest, default (16 MiB) | 559 | 961 | 1788 | 1785 | 0.1382 (+0.3%) |
+| Fastest, 4 MiB | 512 | 992 | 1731 | 3134 | 0.1395 (+1.2%) |
+| Fastest, 2 MiB | 473 | 921 | 1723 | 2942 | 0.1414 (+2.6%) |
+| Fastest, 1 MiB | 428 | 819 | 1568 | 2831 | 0.1434 (+4.1%) |
+| BestCompression, 4 MiB | 94 | 182 | 306 | 539 | 0.1295 (+3.8%) |
+| BestCompression, 1 MiB | 81 | 159 | 289 | 506 | 0.1333 (+6.9%) |
+
+Against independent frames (`Writer.Concurrency`) at the same size and speed: Fastest 4 MiB 0.1395 against 0.1416 (frames),
+1 MiB 0.1434 against 0.1513; BestCompression 4 MiB 0.1295 against 0.1340. The overlap (default: a window/8 prefix for fast to lazy,
+window/4 for lazy2, up to the whole window for btultra2; `OverlapLog` 1-9) keeps about half of the history that independent
+frames lose. A `Writer` whose `Params` set `NbWorkers` multithreads every frame of `FrameSize` bytes (`TestWriterParamsMT`).
+
+## Multithreaded streaming (`StreamWriter`, `Params.NbWorkers`, 4 MiB jobs), ProfileFastest, M3 (14 cores)
+
+`BenchmarkStreamMT`: 2 GiB written in 64 KiB calls from the lines of the sample (the `a` filter, about 1 GB, so the ratio is
+compressed/input over repeats of it), output discarded. One frame, bytes identical to libzstd's `nbWorkers` stream.
+
+| workers | MB/s | ratio | peak heap beyond the input |
+|---|---|---|---|
+| 0 (single thread) | 373 | 0.1754 | 6.1 GB (the whole frame is kept) |
+| 2 | 862 | 0.1791 (+2.1%) | about 1 GB |
+| 4 | 1697 | 0.1791 | about 1 GB |
+| 8 | 2685-3030 | 0.1791 | 0.8-1.3 GB |
+
+The heap figure of the MT rows is the garbage the GC lets accumulate beside a 1 GB live input (GOGC 100); the live set is `workers`
+jobs (4 MiB input, prefix and output each). With a small input (250 KB, repeated to 4 GiB) the Xeon Silver 4210 peaked at 73 MB
+(2 workers), 250 MB (8) and 322 MB (32) beyond the input, against 14 GB for the single-threaded stream; that input is so
+repetitive that its MB/s (1.4 GB/s at 2 workers, 3.4 GB/s at 32) says little about log data.
+
+## Multithreaded compression on the Xeon Silver 4210 (2.2 GHz, 20 cores / 40 threads), 59 MB of log lines (DEBUG#), ProfileFastest
+
+Ratios equal the M3's digit for digit (the bytes are platform independent). MB/s by number of workers.
+
+| `Compress2`, one frame | 1 | 2 | 4 | 8 | 16 | 32 | ratio |
+|---|---|---|---|---|---|---|---|
+| Fastest, 4 MiB jobs (15 jobs) | 157 | 305 | 460 | 765 | 1032 | 939 | 0.1395 |
+| Fastest, 1 MiB jobs (59 jobs) | 147 | 291 | 536 | 753 | 1197 | 1335 | 0.1434 |
+| BestCompression, 4 MiB jobs | 18 | 36 | 61 | 103 | 154 | 157 | 0.1295 |
+| `Writer.Concurrency`, 4 MiB frames | 173 | 341 | 537 | 702 | 759 | 746 | 0.1416 |
+| `Writer.Concurrency`, 1 MiB frames | 180 | 364 | 675 | 909 | 1231 | 1308 | 0.1513 |
+
+`StreamWriter` with `NbWorkers`, 4 MiB jobs, a 4 GiB stream (the same lines repeated), 64 KiB writes (`BenchmarkStreamMT`):
+
+| workers | MB/s | ratio | peak heap beyond the input |
+|---|---|---|---|
+| 0 (single thread) | 89 | 0.1376 | 11.8 GB (the whole frame is kept) |
+| 2 | 268 | 0.1393 | 142 MB |
+| 4 | 495 | 0.1393 | 252 MB |
+| 8 | 747 | 0.1393 | 318 MB |
+| 16 | 1088 | 0.1393 | 598 MB |
+| 32 | 1347 | 0.1393 | 1.1 GB |
+
+The stream scales 15x at 32 workers for +1.2% size; the speed gain flattens past 16 workers (20 physical cores). The heap grows
+with the workers (about 17 MB live per worker: job input, encoder window copy, output; roughly twice that measured with GC slack).
+
+### Against klauspost's concurrent Encoder (`WithEncoderConcurrency`), the same 59 MB, Xeon Silver 4210, MB/s
+
+| workers | klauspost SpeedFastest (0.1491) | klauspost SpeedDefault (0.1421) | port `Compress2`, 4 MiB jobs (0.1395) | port `Writer.Concurrency`, 4 MiB frames (0.1416) |
+|---|---|---|---|---|
+| 1 | 281 | 171 | 149 | 172 |
+| 2 | 357 | 205 | 312 | 291 |
+| 4 | 293 | 200 | 500 | 458 |
+| 8 | 334 | 170 | 781 | 630 |
+| 16 | 293 | 165 | 959 | 747 |
+| 32 | 345 | 196 | 993 | 794 |
+
+klauspost's concurrency does not scale (the match finder is serial: each block needs the history of the previous one; M3: 784 MB/s
+at 1 worker, 1033 at 16). The port is slower on one thread (about 150 MB/s against 281 for SpeedFastest) and 1.7x faster at 4 workers,
+2.9x at 32, with 6.5% smaller output than SpeedFastest and also smaller than SpeedDefault.
+
+## Single-thread compression speed work (ProfileFastest, 59 MB of log lines, MB/s, ratio 0.1378 throughout)
+
+| step | M3 Max | Xeon Silver 4210 |
+|---|---|---|
+| start of the work | 574 | about 155 |
+| Huffman literals: one flush per four symbols into a pre-sized buffer; `count` 16 bytes per step | 737 | 185 |
+| fast table entries carry the four bytes of their position (`fast_val.go`) | 800 | 243 |
+| `Compress2` reads the source in place instead of copying it | 845 | 265 |
+| hash with the shift, multiplier and result shift resolved per block (`hasher`) | 900 | 301-306 |
+| libzstd with the same parameters (cgo, `BenchmarkRefFastest`) | 920 | not measured |
+| klauspost SpeedFastest (ratio 0.1491) | 784 | 307-310 |
+
+The Xeon profile found what the M3 hid: checking a hash candidate read four bytes at a random place of the 4 MiB window, which
+missed a 1 MiB L2 on every probe (29% of the time on the Xeon, 14% on the M3 with its 16 MB L2). klauspost's entries carry those bytes
+for the same reason. The bytes of a position never change while it is in the table, so the decisions and the output are those of
+libzstd's loop (`TestExact*` against libzstd). Tried and dropped: single-bounds-check word reads (slower, the compiler does not merge the
+byte loads), four interleaved histogram tables (no gain).
+
+## Multithreaded compression after the single-thread speedup, Xeon Silver 4210, 59 MB of log lines (supersedes the Xeon tables above)
+
+MB/s by workers; ratio in the first column.
+
+| | 1 | 2 | 4 | 8 | 16 | 32 |
+|---|---|---|---|---|---|---|
+| `Compress2` Fastest, 4 MiB jobs (0.1395) | 224 | 420 | 716 | 1314 | 1617 | 1500 |
+| `Compress2` Fastest, 1 MiB jobs (0.1434) | 181 | 346 | 600 | 874 | 1385 | 1395 |
+| `Compress2` BestCompression, 4 MiB jobs (0.1295) | 29 | 47 | 82 | 143 | 212 | 186 |
+| `Writer.Concurrency` 4 MiB frames (0.1416) | 255 | 469 | 791 | 1069 | 1150 | 1132 |
+| `Writer.Concurrency` 1 MiB frames (0.1513) | 239 | 476 | 901 | 1370 | 1367 | 1544 |
+| klauspost SpeedFastest (0.1491) | 311 | 441 | 415 | 438 | 405 | 409 |
+| klauspost SpeedDefault (0.1421) | 230 | 251 | 227 | 207 | 267 | 238 |
+
+The 4 MiB jobs of 59 MB are 15 jobs, so that row stops scaling at 16 workers. `StreamWriter` with `NbWorkers`, a 4 GiB stream of the
+same lines, 4 MiB jobs: 105 MB/s single-threaded (0.1376, the whole frame in memory: 11.8 GB over the input), then 389 (2 workers),
+760 (4), 1215 (8), 1719 (16), 2131 (32) at 0.1393, with 144 MB to 1.06 GB of heap beyond the input.
+
+Against klauspost's concurrent Encoder: level at 2 workers, 1.7x at 4, 3.0x at 8 and 4.0x at 16 with 6% smaller output than
+SpeedFastest; klauspost does not get past about 440 MB/s. `Compress2` with 1 worker and 4 MiB jobs (224) is slower than the plain
+single-threaded path (about 303): each later job loads its overlap prefix into fresh tables.
+
+### Pooled job buffers in the multithreaded stream (Xeon Silver 4210, `BenchmarkStreamMT`, 4 GiB, 4 MiB jobs)
+
+Input, output and overlap-prefix buffers are recycled, and the fast-strategy prefix fill reads the content in place.
+
+| workers | MB/s | heap beyond the input | allocated over the stream |
+|---|---|---|---|
+| 0 (single thread, whole frame kept) | 109 | 11.8 GB | 25.4 GB |
+| 2 | 436 | 71 MB | 86 MB |
+| 4 | 910 | 112 MB | 124 MB |
+| 8 | 1550 | 168 MB | 206 MB |
+| 16 | 2117 | 338 MB | 366 MB |
+| 32 | 2554 | 588 MB | 634 MB |
+
+Ratio 0.1393 throughout (0.1376 single frame without jobs). About 18 MB per worker is live: job input, output, overlap prefix and the
+worker's encoder tables. `Compress2` with one worker and 4 MiB jobs: 242 MB/s (was 224).

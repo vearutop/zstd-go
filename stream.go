@@ -16,13 +16,17 @@ import (
 // Memory: the whole frame stays in the history buffer (the match finders index it by position; libzstd's ring buffer is
 // modelled only as index bookkeeping), so memory grows with the frame length; call End to release it.
 //
-// Not modelled: ZSTD_c_stableInBuffer / stableOutBuffer, multithreading, index overflow correction (streams of more
+// Multithreaded frames (nbWorkers > 0, source over 512 KiB or of unknown size) go through mtstream.go instead and keep only a
+// bounded number of jobs in memory.
+//
+// Not modelled: ZSTD_c_stableInBuffer / stableOutBuffer, rsyncable, index overflow correction (streams of more
 // than 3.5 GB), long distance matching, and output buffers smaller than ZSTD_compressBound of the pending input
 // (libzstd then goes through its internal output buffer and the block layout of ZSTD_e_end may differ).
 
 // Directive is ZSTD_EndDirective.
 type Directive uint8
 
+// Directives of CompressStream2.
 const (
 	Continue Directive = iota // ZSTD_e_continue: collect data, emit complete blocks
 	Flush                     // ZSTD_e_flush: emit everything buffered as blocks
@@ -84,6 +88,14 @@ func (e *Encoder) initStream(op Directive, inSize uint64) error {
 	if err != nil {
 		return err
 	}
+	if r.nbWorkers > 0 && pledged > mtJobSizeMin { // small known sizes are single-threaded in libzstd too
+		if r.dict != nil && r.cd == nil {
+			return ErrUnsupported // a RefPrefix becomes a CDict in libzstd's multithreaded mode: not ported
+		}
+		*s = streamState{active: true, pledged1: s.pledged1, pledged: pledged}
+		e.mt = newMTStream(r, pledged)
+		return nil
+	}
 	L := e.begin(nil, r)
 	windowSize := max(1, min(uint64(1)<<e.cp.windowLog, pledged))
 	bs := int(min(uint64(e.blockMax), windowSize))
@@ -107,6 +119,13 @@ func (e *Encoder) CompressStream2(dst, src []byte, op Directive) ([]byte, error)
 		if err := e.initStream(op, uint64(len(src))); err != nil {
 			return dst, err
 		}
+	}
+	if e.mt != nil {
+		dst, err := e.mt.compress(dst, src, op)
+		if err != nil || op == End {
+			e.endSession()
+		}
+		return dst, err
 	}
 	ip := 0
 	for {
@@ -151,6 +170,10 @@ func (e *Encoder) ResetSession() { e.endSession() }
 
 // endSession is ZSTD_CCtx_reset(session_only) after a finished frame.
 func (e *Encoder) endSession() {
+	if e.mt != nil {
+		e.mt.abort()
+		e.mt = nil
+	}
 	e.st.active = false
 	e.st.pledged1 = 0
 	e.st.staged = nil

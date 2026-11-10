@@ -29,11 +29,21 @@ seed 5, 10 seeds by the worker, and fresh seeds 11-13 in my re-runs (1-4 sequenc
 Known limitations of the compressor:
 - **Long-distance matching** (libzstd turns it on automatically for strategy >= btopt with windowLog >= 27, e.g. levels 21/22 with
   unknown size) is not ported; frames where libzstd would use it return `ErrUnsupported` in the configuration API and streaming.
-- **Not ported:** `targetCBlockSize` and `enableDedicatedDictSearch` (both return `ErrUnsupported`), `forceMaxWindow`, multithreaded
-  compression (`nbWorkers > 0`), `stableInBuffer` / `stableOutBuffer`, index overflow correction (streams over 3.5 GB), streaming with
+- **Multithreaded compression** (`nbWorkers`, `jobSize`, `overlapLog`; `Params.NbWorkers/JobSize/OverlapLog`) is ported for
+  `Compress2`: the job layout of `zstdmt_compress.c` (jobs of `targetSectionSize` bytes, the previous job's tail as a raw prefix,
+  fresh entropy tables and invalidated repeat offsets per job, in-order checksum), byte-identical to libzstd for every worker count
+  (`TestExactMT*`: 1500 random configurations, 3136 boundary cases, every dictionary loading method). Not ported in this mode:
+  `RefPrefix` with a raw prefix (libzstd turns it into a CDict; returns `ErrUnsupported`), `rsyncable`, LDM.
+  The streaming API (`CompressStream2` / `StreamWriter`, `mtstream.go`) is ported too: a full section becomes a job at once, `Flush`
+  turns a partial section into a job, `End` makes the last job (empty when the input ended on a section boundary of an earlier call);
+  frames with a pledged size of at most 512 KiB stay single-threaded as in libzstd. The bytes of the whole frame equal libzstd's
+  (`TestExactMTStream`: random call sequences, `TestExactMTStreamEdges`: 648 job-boundary cases), while libzstd's per-call output
+  timing (jobs are emitted when finished) is not mirrored: the finished jobs are appended in order as calls go by, Flush and End wait.
+  Memory is bounded by `nbWorkers` jobs, not by the frame length.
+- **Not ported:** `targetCBlockSize` and `enableDedicatedDictSearch` (both return `ErrUnsupported`), `stableInBuffer` / `stableOutBuffer`, index overflow correction (streams over 3.5 GB), streaming with
   output buffers smaller than `ZSTD_compressBound` of the pending input, the external-sequence API (`ZSTD_compressSequences`,
   `ZSTD_generateSequences`) and the block-level API (`ZSTD_compressBlock`).
-- **Streaming memory:** the whole frame stays in `Encoder.buf` until `End`, so memory grows with frame length (libzstd keeps a window).
+- **Streaming memory:** (single-threaded) the whole frame stays in `Encoder.buf` until `End`, so memory grows with frame length (libzstd keeps a window).
 - The simple `Writer` in `streaming.go` writes independent frames and is not libzstd's streaming mode (use `StreamWriter` for that).
 - **Trained dictionary FSE tables whose symbol range is below the maximum:** libzstd reads uninitialised memory when seeding the
   optimal parser's statistics from them; the port treats the missing entries as cost 0, which cannot be checked byte for byte.
@@ -73,6 +83,14 @@ Known limitations of the decoder:
 6. **Build tag:** `internal/ref/ref_dec.go` links internal libzstd symbols (`HUF_readStats` and similar) that only the Homebrew
    dylib exports, so the differential decoder tests do not build against a stock libzstd.
 7. `TestKlauspostBad` skips one fixture (`7008e808...zst`) because libzstd also accepts it (12.5 MB output).
+
+8. **Huffman decoder selection (default differs from libzstd, opt-out `Decoder.StrictHuffman`):** by default every four-stream
+   literals block is decoded with the single-symbol table; libzstd's `HUF_selectDecoder` sometimes picks the double-symbol one.
+   Valid streams give identical output either way (checked: 28 frames over 7 levels in one-shot, streaming and strict mode;
+   the differential suites run strict). Corrupt streams may be accepted or rejected differently (the double-symbol decoder
+   tolerates a missing last symbol, and the fast loops skip a bit-count check). In 36,000 randomly corrupted frames no
+   accept/reject difference was observed, and every accepted frame decoded to the original bytes or to what strict mode produces.
+   Set `StrictHuffman` for libzstd's exact behavior.
 
 ## How to re-check
 

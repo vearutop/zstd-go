@@ -3,6 +3,7 @@ package zstd
 import (
 	"encoding/binary"
 	"math/bits"
+	"unsafe"
 )
 
 // FSE decoding table (libzstd FSE_DTable): sym, nbBits and the next-state base per state.
@@ -64,24 +65,46 @@ func (dt *dTable) build(norm []int16, log uint8, kind int) {
 			next[s] = uint16(n)
 		}
 	}
+	e := dt.e
 	pos := 0
 	for s, n := range norm {
 		for i := 0; i < int(n); i++ {
-			dt.e[pos].sym = uint8(s)
+			e[pos].sym = uint8(s)
 			pos = (pos + step) & mask
 			for pos > high {
 				pos = (pos + step) & mask
 			}
 		}
 	}
-	for u := 0; u < size; u++ {
-		s := dt.e[u].sym
-		n := uint32(next[s])
-		next[s]++
-		nb := uint8(log) - uint8(bits.Len32(n)-1)
-		dt.e[u].nb = nb
-		dt.e[u].ns = uint16(n<<nb) - uint16(size)
-		dt.e[u].fuse(kind)
+	// one pass per kind: next state, bits and the symbol's baseline in a single store
+	switch kind {
+	case kindLL:
+		for u := range e {
+			s := e[u].sym
+			n := uint32(next[s])
+			next[s]++
+			nb := log - uint8(bits.Len32(n)-1)
+			d := &e[u] // field stores: a struct literal is built on the stack and reloaded wide (store-forwarding stall on amd64)
+			d.ns, d.nb, d.base, d.xb = uint16(n<<nb)-uint16(size), nb, llBase[s], llBits[s]
+		}
+	case kindML:
+		for u := range e {
+			s := e[u].sym
+			n := uint32(next[s])
+			next[s]++
+			nb := log - uint8(bits.Len32(n)-1)
+			d := &e[u]
+			d.ns, d.nb, d.base, d.xb = uint16(n<<nb)-uint16(size), nb, mlBase[s]+3, mlBits[s]
+		}
+	default:
+		for u := range e {
+			s := e[u].sym
+			n := uint32(next[s])
+			next[s]++
+			nb := log - uint8(bits.Len32(n)-1)
+			d := &e[u]
+			d.ns, d.nb, d.base, d.xb = uint16(n<<nb)-uint16(size), nb, 1<<s, s
+		}
 	}
 }
 
@@ -97,6 +120,9 @@ var (
 	ofPredefD = buildDTable(ofDefaultNorm, 5, kindOF)
 )
 
+// strictHufDefault makes every decoder strict (tests: the libzstd differential suites compare corrupt-stream behavior).
+var strictHufDefault bool
+
 type decState struct {
 	bm            int     // max block size in the current frame (compressed block and literals limit)
 	litDirect     bool    // the block's raw literals are read in place from the input
@@ -104,6 +130,7 @@ type decState struct {
 	sel           dictSel // dictionary override of the current call
 	oneShot       bool    // ZSTD_decompress semantics (not streaming)
 	limited       bool    // Decoder.MaxSize is set: the destination capacity is maxEnd
+	strictHuf     bool    // Decoder.StrictHuffman
 	outLim        int     // limit on the bytes a block may generate: bm when streaming, unbounded for ZSTD_decompress
 	blockStart    int     // output length at the start of the current block
 	maxEnd        int
@@ -118,7 +145,7 @@ type decState struct {
 }
 
 func (d *Decoder) get() *decState {
-	if s, _ := d.pool.Get().(*decState); s != nil {
+	if s, ok := d.pool.Get().(*decState); ok && s != nil {
 		return s
 	}
 	return &decState{}
@@ -139,49 +166,67 @@ func (st *decState) block(in, out []byte, base int, dc []byte) ([]byte, error) {
 			st.outLim = st.bm + wildOverlength
 		}
 	}
+	return st.blockSeq(lits, in, out, base, dc)
+}
+
+// blockSeq is the rest of a compressed block after its literals: in is the sequences section.
+func (st *decState) blockSeq(lits, in, out []byte, base int, dc []byte) ([]byte, error) {
+	nb, in, err := st.seqPrep(in)
+	if err != nil {
+		return out, err
+	}
+	if nb == 0 {
+		return append(out, lits...), nil
+	}
+	return st.sequences(in, nb, lits, out, base, dc)
+}
+
+// seqPrep parses the sequences section header and resolves or builds the three decoding tables (st.pll, st.pof, st.pml);
+// it returns the number of sequences and the bitstream. The tables depend on the previous block's (repeat mode) but not on
+// any output, so the pipeline runs it ahead.
+func (st *decState) seqPrep(in []byte) (nb int, rest []byte, err error) {
 	if len(in) < 1 {
-		return out, errSrcSize
+		return 0, in, errSrcSize
 	}
 	// number of sequences
-	var nb int
 	switch b0 := int(in[0]); {
 	case b0 < 128:
 		nb, in = b0, in[1:]
 	case b0 < 255:
 		if len(in) < 2 {
-			return out, errSrcSize
+			return 0, in, errSrcSize
 		}
 		nb, in = (b0-128)<<8+int(in[1]), in[2:]
 	default:
 		if len(in) < 3 {
-			return out, errSrcSize
+			return 0, in, errSrcSize
 		}
 		nb, in = int(in[1])+int(in[2])<<8+0x7F00, in[3:]
 	}
 	if nb == 0 {
 		if len(in) != 0 {
-			return out, corrupt() // bytes after an empty sequences section
+			return 0, in, corrupt() // bytes after an empty sequences section
 		}
-		return append(out, lits...), nil
+		return 0, in, nil
 	}
 	if len(in) < 1 {
-		return out, errSrcSize
+		return 0, in, errSrcSize
 	}
 	modes := in[0]
 	in = in[1:]
 	if modes&3 != 0 {
-		return out, corrupt()
+		return 0, in, corrupt()
 	}
 	if in, err = st.table(&st.ll, &st.pll, llPredefD, kindLL, int(modes>>6), 35, 9, in); err != nil {
-		return out, err
+		return 0, in, err
 	}
 	if in, err = st.table(&st.of, &st.pof, ofPredefD, kindOF, int(modes>>4&3), 31, 8, in); err != nil {
-		return out, err
+		return 0, in, err
 	}
 	if in, err = st.table(&st.ml, &st.pml, mlPredefD, kindML, int(modes>>2&3), 52, 9, in); err != nil {
-		return out, err
+		return 0, in, err
 	}
-	return st.sequences(in, nb, lits, out, base, dc)
+	return nb, in, nil
 }
 
 // table resolves one stream's decoding table by mode: 0 predefined, 1 RLE, 2 new FSE table, 3 repeat.
@@ -306,13 +351,15 @@ func (st *decState) hufLits(data []byte, regen int, four, newTable bool) ([]byte
 	st.lits = growB(st.lits, regen)
 	dst := st.lits[:cap(st.lits)]
 	if newTable {
-		// one stream always uses the single-symbol decoder, four streams the likely faster one
+		// one stream always uses the single-symbol decoder; four streams too unless StrictHuffman asks for libzstd's choice
 		kind := uint8(hufX1)
 		if four {
 			if regen == 0 || len(data) == 0 {
 				return nil, corrupt()
 			}
-			kind = hufSelectDecoder(regen, len(data))
+			if st.strictHuf {
+				kind = hufSelectDecoder(regen, len(data))
+			}
 		}
 		sz, _, err := st.hown.read(data, kind)
 		if err != nil || sz >= len(data) {
@@ -365,20 +412,6 @@ func newRbits(buf []byte, last byte) rbits {
 	return rbits{v: binary.LittleEndian.Uint64(buf[off:]), br: uint(9 - bits.Len8(last)), off: off, buf: buf}
 }
 
-// fill makes at least 33 bits available.
-func (r *rbits) fill() {
-	if r.br >= 32 {
-		if r.off >= 4 {
-			r.off -= 4
-			r.v = r.v<<32 | uint64(binary.LittleEndian.Uint32(r.buf[r.off:]))
-		} else {
-			r.v <<= 32
-			r.bad = true
-		}
-		r.br -= 32
-	}
-}
-
 // refill makes at least 57 bits available with one unaligned load: the window moves down by the consumed whole bytes.
 // Running below the start of the (padded) buffer marks the stream bad.
 func (r *rbits) refill() {
@@ -415,7 +448,28 @@ func (st *decState) sequences(in []byte, nb int, lits, out []byte, base int, dc 
 	li := 0
 	litFull := lits[:cap(lits)] // reading past len is safe and lets us copy 16 bytes at a time
 	offT, seqT := offTrace, seqTrace
+	asmAt := 0 // first sequence the assembly fast path may start at (seqdec.go)
+	if offT != nil || seqT != nil {
+		asmAt = nb
+	}
 	for i := 0; i < nb; i++ {
+		if useSeqAsm && i >= asmAt && i < nb-1 {
+			c := seqCtx{
+				v: r.v, br: uint64(r.br), off: r.off, buf: unsafe.SliceData(r.buf),
+				llt: unsafe.SliceData(ll.e), oft: unsafe.SliceData(of.e), mlt: unsafe.SliceData(ml.e),
+				sl: uint64(sl), so: uint64(so), sm: uint64(sm), reps: st.reps,
+				out: unsafe.SliceData(out), n: len(out), ocap: cap(out),
+				lits: unsafe.SliceData(lits), litLen: len(lits), litCap: cap(lits), li: li,
+				base: base, blockStart: st.blockStart, outLim: st.outLim, rem: nb - 1 - i,
+			}
+			seqDecAsm(&c)
+			r.v, r.br, r.off = c.v, uint(c.br), c.off
+			sl, so, sm, st.reps, li, out = uint32(c.sl), uint32(c.so), uint32(c.sm), c.reps, c.li, out[:c.n]
+			k := nb - 1 - i - c.rem
+			if i += k; k == 0 {
+				asmAt = i + seqAsmBackoff // ponytail: fixed back-off after a non-simple sequence, so runs of them don't pay the call
+			}
+		}
 		le, oe, me := &ll.e[sl], &of.e[so], &ml.e[sm]
 		r.refill() // >= 57 bits: offset extra (<= 31) + match length extra (<= 16)
 		offBase := oe.base + r.get(oe.xb)

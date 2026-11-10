@@ -3,16 +3,18 @@ package zstd
 import (
 	"encoding/binary"
 	"math/bits"
-
-	"github.com/klauspost/compress/huff0"
 )
 
 const blockMax = 128 << 10
 
 // Encoder is a reusable single-shot encoder, not safe for concurrent use.
 type Encoder struct {
-	hufOut []byte // scratch for the Huffman-compressed literals of one block
-	dict   *Dict
+	hufOut   []byte     // scratch for the Huffman-compressed literals of one block
+	mtEnc    []*Encoder // job encoders of the multithreaded Compress2, kept between calls
+	mt       *mtStream  // multithreaded frame in progress (mtstream.go)
+	fast     []uint64   // fast strategy table with the bytes of each position (fast_val.go); authoritative while fastLive
+	fastLive bool
+	dict     *Dict
 	// NoChecksum drops the content checksum from frames.
 	NoChecksum bool
 	// Level is the compression level; 0 means 3 (libzstd's default). Byte-exact with libzstd for every level.
@@ -42,7 +44,6 @@ type Encoder struct {
 	lazySkipping     bool
 	useRow           bool   // row based match finder (greedy..lazy2 with windowLog > 14)
 	dms              *cdict // attached dictionary (lazy dictMatchState mode)
-	lit              huff0.Scratch
 	llc, ofc, mlc    []uint8
 	prevFse, nextFse fseTables
 	slots            [2][3]cTable // storage for tables built per block; e.slot is the one in use
@@ -272,23 +273,26 @@ func updateRep(r *[3]uint32, offBase uint32, ll0 bool) {
 	r[1], r[0] = r[0], cur
 }
 
-func le64(b []byte, i int) uint64 { return binary.LittleEndian.Uint64(b[i : i+8]) }
-func le32(b []byte, i int) uint32 { return binary.LittleEndian.Uint32(b[i : i+4]) }
-
 // count returns the common prefix length of a and b (b no longer than a is not required).
 func count(a, b []byte) int {
 	n := min(len(a), len(b))
-	a, b = a[:n], b[:n]
+	a, b = a[:n:n], b[:n:n]
 	i := 0
-	for len(a) >= 8 && len(b) >= 8 {
-		if x := binary.LittleEndian.Uint64(a) ^ binary.LittleEndian.Uint64(b); x != 0 {
+	for ; i+16 <= n; i += 16 {
+		if x := binary.LittleEndian.Uint64(a[i:]) ^ binary.LittleEndian.Uint64(b[i:]); x != 0 {
 			return i + bits.TrailingZeros64(x)>>3
 		}
-		a, b = a[8:], b[8:]
+		if x := binary.LittleEndian.Uint64(a[i+8:]) ^ binary.LittleEndian.Uint64(b[i+8:]); x != 0 {
+			return i + 8 + bits.TrailingZeros64(x)>>3
+		}
+	}
+	if i+8 <= n {
+		if x := binary.LittleEndian.Uint64(a[i:]) ^ binary.LittleEndian.Uint64(b[i:]); x != 0 {
+			return i + bits.TrailingZeros64(x)>>3
+		}
 		i += 8
 	}
-	for j := 0; j < len(a) && j < len(b) && a[j] == b[j]; j++ {
-		i++
+	for ; i < n && a[i] == b[i]; i++ {
 	}
 	return i
 }
@@ -322,9 +326,13 @@ func (e *Encoder) matchFind(L, base, n int) {
 	case stratFast:
 		switch {
 		case e.lowLimit < e.dictLimit: // ZSTD_window_hasExtDict
+			e.fastSyncBack()
 			e.fastExtDict(e.cp, start, end, e.lowMatchIndex(end, maxDist), e.dictLimit)
 		case attached:
+			e.fastSyncBack()
 			e.fastDict(e.cd, e.cp, L, start, end)
+		case e.fastLoad():
+			e.fastNoDictV(e.cp, start, end, e.dictLimit, false)
 		default:
 			e.fastNoDict(e.cp, start, end, e.dictLimit, false)
 		}
@@ -372,6 +380,7 @@ func (e *Encoder) lowMatchIndex(end int, maxDist uint32) uint32 {
 // growTables clears the working tables sized by the parameters (the fast strategy has no second table; the row
 // match finder has a tag table instead of the chain table).
 func (e *Encoder) growTables() {
+	e.fastLive = false
 	e.long = grow(e.long, 1<<e.cp.hashLog)
 	e.short = e.short[:0]
 	switch {

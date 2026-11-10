@@ -1,7 +1,9 @@
 package zstd
 
 import (
+	"encoding/binary"
 	"math/bits"
+	"slices"
 	"sync"
 )
 
@@ -361,7 +363,7 @@ func hufCompressWeights(dst []byte, weights []byte) ([]byte, int) {
 	}
 	start := len(dst)
 	dst = writeNCount(dst, norm[:maxSym+1], log)
-	ct := wtPool.Get().(*cTable) // reused storage: ct escapes through fseCompressUsingCTable
+	ct := wtPool.Get().(*cTable) //nolint:errcheck // reused storage: ct escapes through fseCompressUsingCTable
 	defer wtPool.Put(ct)
 	ct.build(norm[:maxSym+1], log)
 	var w bitWriter
@@ -439,23 +441,46 @@ func (t *hufTable) write(dst []byte) (out []byte, ok bool) {
 	return dst, true
 }
 
-// hufEncode appends the Huffman bitstream of src (symbols coded last to first), with end mark.
+// hufEncode appends the Huffman bitstream of src (symbols coded last to first), with end mark. Codes are at most 12 bits, so
+// four symbols and the up to 7 pending bits fit the 64-bit accumulator between flushes (HUF_FLUSHBITS_2 in libzstd).
 func (t *hufTable) encode(dst, src []byte) []byte {
-	var w bitWriter
-	w.buf = dst
-	for i := len(src) - 1; i >= 0; i-- {
-		s := src[i]
-		w.add(uint32(t.val[s]), t.nb[s])
-		if w.n >= 32 {
-			w.flush()
-		}
+	base := len(dst)
+	need := len(src)*3/2 + 16 // 12 bits per symbol at worst, and the 8-byte flush stores
+	dst = slices.Grow(dst, need)[:base+need]
+	out := dst[base:]
+	var acc uint64
+	var n uint
+	pos := 0
+	i := len(src)
+	for ; i >= 4; i -= 4 {
+		s0, s1, s2, s3 := src[i-1], src[i-2], src[i-3], src[i-4]
+		acc |= uint64(t.val[s0]) << n
+		n += uint(t.nb[s0])
+		acc |= uint64(t.val[s1]) << n
+		n += uint(t.nb[s1])
+		acc |= uint64(t.val[s2]) << n
+		n += uint(t.nb[s2])
+		acc |= uint64(t.val[s3]) << n
+		n += uint(t.nb[s3])
+		binary.LittleEndian.PutUint64(out[pos:], acc)
+		pos += int(n >> 3)
+		acc >>= n &^ 7
+		n &= 7
 	}
-	w.add(1, 1)
-	w.flush()
-	if w.n > 0 {
-		w.buf = append(w.buf, byte(w.acc))
+	for ; i > 0; i-- {
+		s := src[i-1]
+		acc |= uint64(t.val[s]) << n
+		n += uint(t.nb[s])
 	}
-	return w.buf
+	acc |= 1 << n // end mark
+	n++
+	binary.LittleEndian.PutUint64(out[pos:], acc)
+	pos += int(n >> 3)
+	if n&7 != 0 {
+		out[pos] = byte(acc >> (n &^ 7))
+		pos++
+	}
+	return dst[:base+pos]
 }
 
 // compress1X is HUF_compress1X_usingCTable; ok is false when libzstd would return 0 (not compressible).
@@ -556,7 +581,7 @@ func hufCompress(dst, src []byte, single bool, preferRepeat, optimalDepth, suspe
 	if srcSize == 0 {
 		return nil, false
 	}
-	compressWith := func(prefix []byte, t *hufTable) ([]byte, bool) {
+	compressWith := func(prefix []byte, t *hufTable) []byte {
 		var o []byte
 		var ok bool
 		if single {
@@ -565,12 +590,12 @@ func hufCompress(dst, src []byte, single bool, preferRepeat, optimalDepth, suspe
 			o, ok = t.compress4X(prefix, src)
 		}
 		if !ok || len(o)-len(dst) >= srcSize-1 {
-			return nil, false
+			return nil
 		}
-		return o, true
+		return o
 	}
 	if preferRepeat && *repeat == hufRepeatValid {
-		o, _ := compressWith(dst, old)
+		o := compressWith(dst, old)
 		return o, false
 	}
 	var count [256]uint32
@@ -593,7 +618,7 @@ func hufCompress(dst, src []byte, single bool, preferRepeat, optimalDepth, suspe
 		*repeat = hufRepeatNone
 	}
 	if preferRepeat && *repeat != hufRepeatNone {
-		o, _ := compressWith(dst, old)
+		o := compressWith(dst, old)
 		return o, false
 	}
 	huffLog := hufOptimalTableLog(hufTableLogDefault, srcSize, maxSym, count[:], optimalDepth)
@@ -612,7 +637,7 @@ func hufCompress(dst, src []byte, single bool, preferRepeat, optimalDepth, suspe
 		oldSize := old.estimate(count[:], maxSym)
 		newSize := nt.estimate(count[:], maxSym)
 		if oldSize <= hSize+newSize || hSize+12 >= srcSize {
-			o, _ := compressWith(dst, old)
+			o := compressWith(dst, old)
 			return o, false
 		}
 	}
@@ -621,8 +646,7 @@ func hufCompress(dst, src []byte, single bool, preferRepeat, optimalDepth, suspe
 	}
 	*repeat = hufRepeatNone
 	*old = nt
-	o, ok := compressWith(withHdr, &nt)
-	return o, false
+	return compressWith(withHdr, &nt), false
 }
 
 // fseDecodeWeights is FSE_decompress_wksp for the weight table (max table log 6, at most maxOut symbols).

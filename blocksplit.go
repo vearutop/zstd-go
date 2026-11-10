@@ -9,7 +9,7 @@ const (
 	maxNbBlockSplits           = 196 // ZSTD_MAX_NB_BLOCK_SPLITS
 	cblockHeaderSize           = 3   // ZSTD_blockHeaderSize
 
-	// SymbolEncodingType_e
+	// SymbolEncodingType_e.
 	setBasic      = 0
 	setRLE        = 1
 	setCompressed = 2

@@ -72,8 +72,10 @@ func BenchmarkPureCompress(b *testing.B) {
 					})
 				})
 				b.Run(name+"/klauspost", func(b *testing.B) {
-					opts := []kz.EOption{kz.WithEncoderLevel(kz.EncoderLevelFromZstd(level)), kz.WithEncoderCRC(false),
-						kz.WithEncoderConcurrency(runtime.GOMAXPROCS(0))}
+					opts := []kz.EOption{
+						kz.WithEncoderLevel(kz.EncoderLevelFromZstd(level)), kz.WithEncoderCRC(false),
+						kz.WithEncoderConcurrency(runtime.GOMAXPROCS(0)),
+					}
 					if in.dict != nil {
 						opts = append(opts, kz.WithEncoderDict(in.dict))
 					}

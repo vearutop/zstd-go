@@ -1,6 +1,7 @@
 package zstd
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 )
@@ -61,7 +62,8 @@ func codeOf(err error) ErrorCode {
 	if err == nil {
 		return 0
 	}
-	if e, ok := err.(*Error); ok {
+	var e *Error
+	if errors.As(err, &e) {
 		return e.Code
 	}
 	return ErrGeneric

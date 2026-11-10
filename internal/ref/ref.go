@@ -10,7 +10,6 @@ package ref
 #include <zstd.h>
 */
 import "C"
-
 import "unsafe"
 
 // Decompressor wraps a prepared DDict and a reused context.

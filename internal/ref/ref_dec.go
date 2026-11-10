@@ -48,7 +48,6 @@ static sres streamStep(ZSTD_DCtx* d, const void* in, size_t inLen, void* out, si
 }
 */
 import "C"
-
 import "unsafe"
 
 func ptr(b []byte) unsafe.Pointer {

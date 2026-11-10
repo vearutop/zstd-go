@@ -117,6 +117,11 @@ func (p paramSet) calls() []setCall {
 	add(ref.PostBlockSplitter, int(z.PostBlockSplitter))
 	add(ref.BlockSplitterLevel, z.PreBlockSplitLevel)
 	add(ref.MaxBlockSize, z.MaxBlockSize)
+	if z.NbWorkers != 0 {
+		add(ref.NbWorkers, z.NbWorkers)
+		add(ref.JobSize, z.JobSize)
+		add(ref.OverlapLog, z.OverlapLog)
+	}
 	return cs
 }
 

@@ -8,17 +8,19 @@ import (
 // Switch is ZSTD_ParamSwitch_e (ZSTD_ps_auto, ZSTD_ps_enable, ZSTD_ps_disable).
 type Switch uint8
 
+// Values of Switch.
 const (
-	SwitchAuto Switch = iota
-	SwitchEnable
-	SwitchDisable
+	SwitchAuto    Switch = iota // ZSTD_ps_auto
+	SwitchEnable                // ZSTD_ps_enable
+	SwitchDisable               // ZSTD_ps_disable
 )
 
 // AttachPref is ZSTD_dictAttachPref_e (ZSTD_c_forceAttachDict).
 type AttachPref uint8
 
+// Values of AttachPref.
 const (
-	AttachDefault AttachPref = iota // ZSTD_dictDefaultAttach
+	AttachDefault AttachPref = iota // ZSTD_dictDefaultAttach (the default)
 	AttachForce                     // ZSTD_dictForceAttach
 	CopyForce                       // ZSTD_dictForceCopy
 	LoadForce                       // ZSTD_dictForceLoad
@@ -27,6 +29,7 @@ const (
 // DictContentType is ZSTD_dictContentType_e.
 type DictContentType uint8
 
+// Values of DictContentType.
 const (
 	DictAuto DictContentType = iota // ZSTD_dct_auto: zstd-format when the magic matches, raw content otherwise
 	DictRaw                         // ZSTD_dct_rawContent
@@ -56,6 +59,20 @@ type Params struct {
 	PreBlockSplitLevel int    // ZSTD_c_blockSplitterLevel (0 auto, 1 only full blocks, 2-6)
 	MaxBlockSize       int    // ZSTD_c_maxBlockSize (0: 128 KiB)
 	TargetCBlockSize   int    // ZSTD_c_targetCBlockSize
+
+	// NbWorkers > 0 is ZSTD_c_nbWorkers: Compress2 cuts the input into jobs that are compressed in parallel and joined into
+	// one frame, byte-identical to libzstd with the same nbWorkers parameters (the output depends on JobSize and OverlapLog, not
+	// on NbWorkers). Inputs of 512 KiB or less are compressed as with 0. Each job after the first sees only the last OverlapLog
+	// share of the window of the previous job as history, and starts with fresh entropy tables and no repeat offsets, so it
+	// compresses a little worse than one thread. The streaming API (CompressStream2, StreamWriter) makes the same frame with at
+	// most NbWorkers jobs in memory (unlike the single-threaded stream, which keeps the whole frame), for any length. Not
+	// supported with a raw RefPrefix or LDM.
+	NbWorkers int
+	// JobSize is ZSTD_c_jobSize: the bytes of input per job (0: 1 << max(20, windowLog + 2), at most 1 GiB; at least 512 KiB).
+	JobSize int
+	// OverlapLog is ZSTD_c_overlapLog: how much of the previous job a job reloads, as 9 - OverlapLog shifts of the window size
+	// (0: by strategy, 6 for fast to lazy = window/8, 9 for btultra2 = the whole window; 1 = none).
+	OverlapLog int
 }
 
 // ctxParams is the resolved subset of ZSTD_CCtx_params the encoder works with.
@@ -105,9 +122,6 @@ func (p *Params) validate() error {
 			return err
 		}
 	}
-	if p.TargetCBlockSize != 0 && p.TargetCBlockSize < 1340 {
-		// ZSTD_c_targetCBlockSize: raised to the minimum
-	}
 	if p.TargetCBlockSize > 128<<10 {
 		return bound("targetCBlockSize", p.TargetCBlockSize, 1340, 128<<10)
 	}
@@ -126,6 +140,12 @@ func (p *Params) resolved() (ctxParams, error) {
 	if c.TargetCBlockSize != 0 {
 		c.TargetCBlockSize = max(c.TargetCBlockSize, 1340)
 	}
+	// ZSTD_cParam_clampBounds: the multithreading parameters are clamped, not rejected
+	c.NbWorkers = max(0, min(c.NbWorkers, mtWorkersMax))
+	if c.JobSize != 0 {
+		c.JobSize = max(mtJobSizeMin, min(c.JobSize, mtJobSizeMax))
+	}
+	c.OverlapLog = max(0, min(c.OverlapLog, 9))
 	return c, nil
 }
 
@@ -217,6 +237,8 @@ type request struct {
 	dict      *Dict  // parsed dictionary (content, entropy tables), nil if none
 	cd        *cdict // the CDict, nil when the dictionary is loaded directly (prefix)
 	targetCB  int
+
+	nbWorkers, jobSize, overlapLog int // multithreading (ZSTD_c_nbWorkers, jobSize, overlapLog), clamped
 }
 
 // frame params and common fields of a request from the user parameters.
@@ -227,6 +249,7 @@ func (c *ctxParams) fill(r *request) {
 	if r.maxBlock == 0 {
 		r.maxBlock = blockMax
 	}
+	r.nbWorkers, r.jobSize, r.overlapLog = c.NbWorkers, c.JobSize, c.OverlapLog
 }
 
 // rowUsed is ZSTD_rowMatchFinderUsed.

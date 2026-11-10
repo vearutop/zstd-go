@@ -9,11 +9,11 @@ import (
 
 // Streaming decompression, a port of ZSTD_decompressStream (zstd_decompress.c) with ZSTD_decompressContinue's state
 // machine. Consumption, production and the returned hints follow libzstd for every chunking of input and output. Memory is
-// bounded by the frame's window: the history is a sliding buffer instead of libzstd's ring buffer.
+// bounded by the frame's window: the history is a ring of window + 2 blocks (see prepRing), like klauspost's.
 //
 // Not covered: ZSTD_d_stableOutBuffer, ZSTD_DCtx_refPrefix, legacy formats, and matches reaching further back than the
-// window size (libzstd reads whatever its ring buffer still holds there; the Go decoder rejects them once the history has
-// been trimmed). Frames whose content is entirely in the input and fits the output are decoded in one pass like libzstd's
+// window size (libzstd reads whatever its ring buffer still holds there; the Go decoder rejects them once the ring has
+// wrapped past them). Frames whose content is entirely in the input and fits the output are decoded in one pass like libzstd's
 // single-pass shortcut (and then follow ZSTD_decompress semantics instead of the streaming ones).
 
 type dsStage uint8
@@ -61,11 +61,15 @@ type DStream struct {
 	decoded    uint64
 	xx         *xxhash.Digest
 	validate   bool
-	dc         []byte
-	trimmed    bool
+	dc         []byte // what precedes hist: the dictionary in the first lap, the tail of the previous lap after a wrap
 	inBuf      []byte
 	inPos      int
-	hist       []byte
+	hist       []byte // the current lap of the ring: ring[:pos:pos+space], block output is appended to it
+	ring       []byte
+	ringL      int  // logical ring size: window + 2 blocks of room (less when the content is smaller)
+	lapped     bool // the ring has wrapped: dc is ring[max(end, extLo):extHi]
+	extLo      int
+	extHi      int
 	outStart   int
 	outEnd     int
 	ringSize   int // libzstd's outBuffSize: the capacity its ring buffer would have
@@ -73,12 +77,17 @@ type DStream struct {
 	lastN      int
 	hostage    bool
 	noProgress int
+
+	pre        *litJob          // async pipeline: literals of the block about to be decoded, decoded ahead (see decoder_async.go)
+	noShortcut bool             // async pipeline: never take the single-pass shortcut (the pipeline feeds block-sized chunks)
+	noHash     bool             // async pipeline: the checksum is verified elsewhere
+	waitRoom   func(lo, hi int) // async pipeline: called before block output is written into ring[lo:hi]
 }
 
 // NewDStream returns a stream decoder using the dictionaries, Magicless and IgnoreChecksum settings of dec (nil: defaults).
 func NewDStream(dec *Decoder) *DStream {
 	if dec == nil {
-		dec, _ = NewDecoder()
+		dec, _ = NewDecoder() //nolint:errcheck // never fails without dictionaries
 	}
 	return &DStream{dec: dec, st: &decState{}, xx: xxhash.New()}
 }
@@ -148,7 +157,7 @@ func (s *DStream) nextSrc(avail int) int {
 // Decompress is ZSTD_decompressStream: it consumes input from in and writes to out, returning the bytes consumed and
 // produced and libzstd's hint (a suggested size of the next input; 0 when a frame is completely decoded and flushed).
 // On error nIn and nOut are 0 (libzstd does not update the positions then), except for the early header errors.
-func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) {
+func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) { //nolint:unparam // hint is libzstd's
 	wl := s.WindowLogMax
 	if wl == 0 {
 		wl = windowLogDefault
@@ -168,7 +177,7 @@ func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) {
 			s.lhSize, s.inPos, s.outStart, s.outEnd = 0, 0, 0, 0
 			s.hist = s.hist[:0]
 			s.hostage = false
-			s.trimmed = false
+			s.lapped, s.extLo, s.extHi = false, 0, 0
 			fallthrough
 		case dsLoadHeader:
 			h, need, e := getFrameHeader(s.hdr[:s.lhSize], s.dec.Magicless)
@@ -193,7 +202,7 @@ func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) {
 			}
 			s.fp = h
 			// single-pass shortcut
-			if h.hasSize && !h.skippable && uint64(len(out)-op) >= h.size {
+			if h.hasSize && !h.skippable && !s.noShortcut && uint64(len(out)-op) >= h.size {
 				if fi := findFrameSizeInfo(in, s.dec.Magicless); fi.err == nil && fi.compressed <= len(in) {
 					res, e := s.dec.decodeAll(in[:fi.compressed], nil, len(out)-op, true, s.MaxBlockSize, s.takeDict())
 					if e != nil {
@@ -228,7 +237,7 @@ func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) {
 					}
 				}
 				s.dc = s.st.begin(dict)
-				s.validate = h.checksum && !s.dec.IgnoreChecksum
+				s.validate = h.checksum && !s.dec.IgnoreChecksum && !s.noHash
 				if s.validate {
 					s.xx.Reset()
 				}
@@ -247,12 +256,17 @@ func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) {
 			s.st.bm = int(s.fp.blockMax)
 			s.st.outLim = s.st.bm
 			s.st.oneShot = false
+			s.st.strictHuf = s.dec.StrictHuffman || strictHufDefault
 			s.st.limited = false
 			if need := max(int(s.fp.blockMax), 4); cap(s.inBuf) < need {
 				s.inBuf = make([]byte, need)
 			}
 			s.inBuf = s.inBuf[:max(int(s.fp.blockMax), 4)]
 			s.ringSize, s.ringPos = ringBufferSize(s.fp.window, s.fp.size, int(s.fp.blockMax)), 0
+			s.ringL = s.ringLen()
+			if s.fp.size != ContentSizeUnknown { // known content: allocate the ring once instead of growing it by append
+				s.ensureRing(s.ringL+wildPad, 0)
+			}
 			s.stage = dsRead
 			fallthrough
 		case dsRead:
@@ -374,16 +388,71 @@ func (s *DStream) continueStream(src []byte) error {
 	return nil
 }
 
-// trim drops history older than the window once enough is buffered.
-func (s *DStream) trim() {
+// ringExtra is room added to the ring beyond window + 2 blocks (a test knob). ringFloor is the minimum ring size for windows
+// of at least ringFloorMinWindow: right after a wrap, matches reaching back past the lap start take the slower
+// dictionary-style copy, so a ring that wraps less often is faster (amd64, real log, 512 KiB window: minimal ring 1445 MB/s,
+// +1 MiB 1548, 2 MiB floor 1560, trim-based history 1530).
+var (
+	ringExtra = 0
+	ringFloor = 2 << 20
+)
+
+const ringFloorMinWindow = 256 << 10
+
+// ringLen is the logical size of the history ring: the window plus two blocks of room (block + wild-copy overrun), or just
+// the content plus one block when the frame is smaller than that (no wrap then).
+func (s *DStream) ringLen() int {
 	w := int(min(s.fp.window, uint64(1)<<31))
-	if len(s.hist) > w+3*s.st.bm && s.outStart == len(s.hist) {
-		keep := s.hist[len(s.hist)-w:]
-		n := copy(s.hist, keep)
-		s.hist = s.hist[:n]
-		s.outStart, s.outEnd = n, n
+	space := s.st.bm + wildPad
+	n := w + 2*space
+	if w >= ringFloorMinWindow {
+		n = max(n, ringFloor)
+	}
+	n += ringExtra
+	if s.fp.size != ContentSizeUnknown && s.fp.size < uint64(n-space) {
+		n = int(s.fp.size) + space
+	}
+	return n
+}
+
+// ensureRing makes the backing array at least need bytes long, keeping the first keep bytes (the current lap). Unknown-size
+// frames grow it geometrically up to the full ring.
+func (s *DStream) ensureRing(need, keep int) {
+	if len(s.ring) >= need {
+		return
+	}
+	n := max(need, min(s.ringL+wildPad, 2*len(s.ring)))
+	nr := make([]byte, n)
+	copy(nr, s.ring[:keep])
+	s.ring = nr
+}
+
+// prepRing makes room for the next block without moving any history, as klauspost does. hist is a window onto the ring
+// with room for one block; when a block no longer fits, the lap written so far becomes the "previous lap" and writing
+// restarts at the front. The part of the previous lap that block space ahead of hist has not overwritten yet is dc, which
+// the sequence code already treats as the bytes preceding hist (it is how dictionaries work), so no match copy changes. The
+// ring holds window + 2 blocks, so hist and dc together always hold at least a full window.
+func (s *DStream) prepRing() {
+	pos := len(s.hist)
+	space := s.st.bm + wildPad
+	if pos+space > s.ringL && s.outStart == pos { // wrap (only between flushes: the previous output is fully copied out)
+		s.ensureRing(s.ringL+wildPad, pos)
+		s.lapped, s.extLo, s.extHi = true, 0, pos
+		pos = 0
+		s.outStart, s.outEnd = 0, 0
+	} else {
+		s.ensureRing(pos+space+wildPad, pos)
+	}
+	end := pos + space
+	if s.waitRoom != nil {
+		s.waitRoom(pos, end)
+	}
+	s.hist = s.ring[:pos:end]
+	if s.lapped {
 		s.dc = nil
-		s.trimmed = true
+		if lo := max(end, s.extLo); lo < s.extHi {
+			s.dc = s.ring[lo:s.extHi:min(s.extHi+wildPad, len(s.ring))] // wild copies may read wildPad bytes past the end
+		}
 	}
 }
 
@@ -417,13 +486,30 @@ func (s *DStream) cont(src []byte) (int, error) {
 		}
 		return 0, nil
 	case dcBlock, dcLastBlock:
-		s.trim()
+		s.prepRing()
 		start := len(s.hist)
 		capacity := s.ringSize - s.ringPos // ZSTD_decompressContinue's dstCapacity in libzstd's ring buffer
 		switch s.bType {
 		case 2:
 			var err error
-			if s.hist, err = s.st.block(src, s.hist, 0, s.dc); err != nil {
+			if pre := s.pre; pre != nil && len(src) > 0 && len(src) == len(pre.body) && &src[0] == &pre.body[0] {
+				// the literals were decoded ahead from exactly these bytes
+				s.pre = nil
+				switch {
+				case pre.err != nil:
+					err = pre.err
+				case pre.nb == 0:
+					s.hist = append(s.hist, pre.lits...)
+				default:
+					s.st.blockStart = len(s.hist)
+					s.st.pll, s.st.pof, s.st.pml = pre.pll, pre.pof, pre.pml
+					s.hist, err = s.st.sequences(pre.rest, pre.nb, pre.lits, s.hist, 0, s.dc)
+					s.st.pll, s.st.pof, s.st.pml = nil, nil, nil // pool storage: never read after the block
+				}
+			} else {
+				s.hist, err = s.st.block(src, s.hist, 0, s.dc)
+			}
+			if err != nil {
 				s.hist = s.hist[:start]
 				return 0, err
 			}
@@ -491,13 +577,21 @@ func (s *DStream) cont(src []byte) (int, error) {
 // Reader is a streaming decompressor over a sequence of frames (skippable frames, such as a seek table, are skipped).
 // Memory is bounded by the window size of the frame being decoded.
 type Reader struct {
-	r   io.Reader
-	s   *DStream
-	in  []byte
-	pos int
-	end int
-	eof bool
-	err error
+	// Concurrency >= 2 (set before the first Read) decodes with a pipeline of goroutines: Huffman literals are decoded ahead
+	// of the sequence stage and the caller copies from finished blocks, so wall time drops while CPU time rises a little.
+	// Output and errors are the same as the synchronous Reader's. It holds up to Concurrency blocks in flight (a few hundred
+	// KiB each) on top of the history, and the Stream() parameters must not be changed while reading. 0 or 1: synchronous.
+	Concurrency int
+
+	r     io.Reader
+	s     *DStream
+	in    []byte
+	pos   int
+	end   int
+	eof   bool
+	err   error
+	began bool
+	async *asyncPipe
 }
 
 // NewReader returns a Reader decoding frames from r with dec (nil: no dictionaries).
@@ -511,6 +605,15 @@ func (z *Reader) Stream() *DStream { return z.s }
 func (z *Reader) Read(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, z.err
+	}
+	if !z.began {
+		z.began = true
+		if z.Concurrency >= 2 && z.s.dictMode == 0 && z.err == nil { // a RefPrefix on the stream is not supported by the pipeline
+			z.startAsync()
+		}
+	}
+	if z.async != nil {
+		return z.readAsync(p)
 	}
 	for {
 		if z.err != nil {

@@ -211,8 +211,10 @@ func (w *posWriter) encode(st *fseState, sym uint8) {
 }
 
 // 64-entry copies of the code tables so that indexing with code&63 needs no bounds check.
-var llBase64, mlBase64 [64]uint32
-var llBits64, mlBits64 [64]uint8
+var (
+	llBase64, mlBase64 [64]uint32
+	llBits64, mlBits64 [64]uint8
+)
 
 func init() {
 	copy(llBase64[:], llBase[:])

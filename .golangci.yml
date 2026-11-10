@@ -5,6 +5,15 @@ run:
 linters:
   default: all
   disable:
+    - modernize
+    - nestif
+    - gocognit
+    - funlen
+    - misspell
+    - gocyclo
+    - nlreturn
+    - cyclop
+    - wsl
     - exhaustruct_v5
     - embeddedstructfieldcheck
     - nilnil
@@ -32,12 +41,36 @@ linters:
     - testifylint
     - varnamelen
     - wrapcheck
+    - err113 # sentinel errors are only worth it where callers match them
+    - exhaustive # strategy and mode switches are intentionally partial
+    - gochecknoinits # init builds lookup tables
+    - maintidx # ported libzstd functions keep their shape
   settings:
     dupl:
       threshold: 100
     errcheck:
       check-type-assertions: true
       check-blank: true
+      exclude-functions:
+        - (*github.com/cespare/xxhash/v2.Digest).Write # never fails
+    gosec:
+      excludes:
+        - G104 # hash writes never fail
+        - G103 # unsafe is used deliberately, only to pass pointers to assembly
+        - G115 # integer conversions in a codec are range-checked by construction
+        - G602 # slice bounds hints in hot loops
+    nakedret:
+      max-func-lines: 150
+    gocritic:
+      disabled-checks:
+        - captLocal # L, as in libzstd
+        - ifElseChain
+    staticcheck:
+      checks: [all, -QF1001, -QF1006]
+    nolintlint:
+      allow-unused: true # some directives apply to one GOARCH only
+    predeclared:
+      ignore: [min, max]
     gocyclo:
       min-complexity: 20
     misspell:
@@ -56,6 +89,15 @@ linters:
           - noctx
           - unparam
           - unused
+          - errcheck
+          - errorlint
+          - thelper
+          - prealloc
+          - makezero
+          - perfsprint
+          - unconvert
+          - godot
+          - testpackage
         path: _test.go
       - linters:
           - errcheck
@@ -63,7 +105,7 @@ linters:
         path: example_
       - linters:
           - revive
-        text: 'unused-parameter: parameter'
+        text: 'unused-parameter: parameter|redefines-builtin-id|empty-block'
     paths:
       - third_party$
       - builtin$
