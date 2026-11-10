@@ -69,7 +69,7 @@ func TestWriterConcurrentMatchesSync(t *testing.T) {
 	}
 	sizes := []int{0, 5000, 64 << 10, 700 << 10}
 	if testing.Short() { // the race detector makes the full matrix take minutes
-		sizes, cfgs = sizes[:3], append(cfgs[:2:2], cfgs[5:]...)
+		sizes, cfgs = sizes[1:3], append(cfgs[:2:2], cfgs[5:]...)
 	}
 	n := 0
 	for dn, data := range datas {

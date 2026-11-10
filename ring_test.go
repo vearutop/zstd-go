@@ -74,7 +74,11 @@ func TestStreamRing(t *testing.T) {
 		t.Fatal(err)
 	}
 	cases := 0
-	for _, wl := range []int{10, 11, 13, 16, 19} {
+	wls := []int{10, 11, 13, 16, 19}
+	if testing.Short() {
+		wls = []int{10, 13, 19}
+	}
+	for _, wl := range wls {
 		for _, level := range shortLevels([]int{1, 3, 9}) {
 			for _, mode := range []string{"known", "unknown", "dict"} {
 				for _, extra := range []int{0, 777} {

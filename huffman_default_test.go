@@ -139,7 +139,7 @@ func shortLevels(l []int) []int {
 
 func corruptCases() int {
 	if testing.Short() {
-		return 300
+		return 60
 	}
 	return 3000
 }

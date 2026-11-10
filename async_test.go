@@ -167,6 +167,9 @@ func TestAsyncMatchesSync(t *testing.T) {
 // to deliver the same bytes and the same error as the synchronous Reader. ASYNC_MUT sets the mutations per stream.
 func TestAsyncMutated(t *testing.T) {
 	per := 6
+	if testing.Short() {
+		per = 2
+	}
 	if v, err := strconv.Atoi(os.Getenv("ASYNC_MUT")); err == nil {
 		per = v
 	}

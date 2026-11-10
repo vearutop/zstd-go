@@ -13,8 +13,12 @@ import (
 // bytes for every worker count, and the plain single-threaded frame for inputs up to 512 KiB.
 func TestCompress2MT(t *testing.T) {
 	rng := rand.New(rand.NewSource(41))
-	data := ringData(rng, 5<<20, 1<<19)
-	for _, base := range []zstd.Params{{Level: 1}, {Level: 3, Checksum: true}, {Level: 7}, {Level: 12, WindowLog: 21}, zstd.ProfileFastest()} {
+	size, params := 5<<20, []zstd.Params{{Level: 1}, {Level: 3, Checksum: true}, {Level: 7}, {Level: 12, WindowLog: 21}, zstd.ProfileFastest()}
+	if testing.Short() { // -race -covermode=atomic makes the full set take minutes
+		size, params = 2<<20, params[:2]
+	}
+	data := ringData(rng, size, 1<<19)
+	for _, base := range params {
 		base.JobSize, base.OverlapLog = 600<<10, 0
 		var first []byte
 		for _, w := range []int{1, 2, 7} {

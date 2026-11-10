@@ -14,6 +14,9 @@ import (
 // TestFrameSizeLoss prints the compressed size of log-like data for the independent-frame Writer at several frame sizes
 // against one frame (EncodeAll) and klauspost's streaming encoder (go test -run FrameSizeLoss -v).
 func TestFrameSizeLoss(t *testing.T) {
+	if testing.Short() {
+		t.Skip("log-only report")
+	}
 	data := repetitiveLogs(250000)
 	t.Logf("input %d bytes", len(data))
 	for _, level := range []int{1, 3} {
