@@ -15,7 +15,7 @@ func TestWriterParams(t *testing.T) {
 	p := zstd.Params{Level: 1, WindowLog: 20, HashLog: 17, Checksum: true}
 	const fs = 256 << 10
 	var out bytes.Buffer
-	w := zstd.NewWriter(&out, nil)
+	w := zstd.NewWriter(&out)
 	w.FrameSize, w.Params = fs, p
 	for i := 0; i < len(data); i += 1000 {
 		if _, err := w.Write(data[i:min(i+1000, len(data))]); err != nil {
@@ -39,12 +39,12 @@ func TestWriterParams(t *testing.T) {
 	if !bytes.Equal(out.Bytes(), want) {
 		t.Fatalf("Writer output differs from Compress2 frames (%d vs %d bytes)", out.Len(), len(want))
 	}
-	got, err := io.ReadAll(zstd.NewReader(&out, nil))
+	got, err := io.ReadAll(zstd.NewReader(&out))
 	if err != nil || !bytes.Equal(got, data) {
 		t.Fatalf("round trip: %v, %d bytes", err, len(got))
 	}
 	// a bad parameter set is reported by the first Write/Flush
-	bad := zstd.NewWriter(io.Discard, nil)
+	bad := zstd.NewWriter(io.Discard)
 	bad.Params = zstd.Params{WindowLog: 99}
 	bad.Write([]byte("x"))
 	if err := bad.Flush(); err == nil {
@@ -71,7 +71,7 @@ func TestWriterParamsMT(t *testing.T) {
 	}
 	for _, conc := range []int{3} {
 		var out bytes.Buffer
-		w := zstd.NewWriter(&out, nil)
+		w := zstd.NewWriter(&out)
 		w.FrameSize, w.Params, w.Concurrency = fs, p, conc
 		if _, err := w.Write(data); err != nil {
 			t.Fatal(err)
@@ -82,7 +82,7 @@ func TestWriterParamsMT(t *testing.T) {
 		if !bytes.Equal(out.Bytes(), want) {
 			t.Fatalf("Concurrency %d: output differs from Compress2 frames (%d vs %d bytes)", conc, out.Len(), len(want))
 		}
-		got, err := io.ReadAll(zstd.NewReader(&out, nil))
+		got, err := io.ReadAll(zstd.NewReader(&out))
 		if err != nil || !bytes.Equal(got, data) {
 			t.Fatalf("Concurrency %d: round trip: %v", conc, err)
 		}
@@ -96,7 +96,7 @@ func TestWriterStreamMT(t *testing.T) {
 	p := zstd.Params{Level: 1, Checksum: true, NbWorkers: 3, JobSize: 600 << 10}
 	const fs = 3 << 20
 	var out bytes.Buffer
-	w := zstd.NewWriter(&out, nil)
+	w := zstd.NewWriter(&out)
 	w.FrameSize, w.Params, w.Seekable = fs, p, true
 	for i := 0; i < len(data); i += 100000 {
 		if _, err := w.Write(data[i:min(i+100000, len(data))]); err != nil {
@@ -119,7 +119,7 @@ func TestWriterStreamMT(t *testing.T) {
 	if err != nil || !bytes.Equal(got, data) {
 		t.Fatalf("round trip: %v, %d bytes", err, len(got))
 	}
-	s, err := zstd.OpenSeekable(bytes.NewReader(out.Bytes()), int64(out.Len()), func(dst, frame []byte) ([]byte, error) { return d.DecodeAll(frame, dst) })
+	s, err := zstd.OpenSeekableForTest(out.Bytes(), d)
 	if err != nil || s.Size() != int64(len(data)) {
 		t.Fatalf("seekable: %v", err)
 	}

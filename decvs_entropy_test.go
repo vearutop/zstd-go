@@ -275,7 +275,7 @@ func TestStreamBoundedMemory(t *testing.T) {
 		data[i] = byte(r.Intn(4)) + byte(i>>14)
 	}
 	f := ref.CompressAdv(data, nil, ref.CParam{Level: 3, WindowLog: 13})
-	s := NewDStream(nil)
+	s := newDStream(nil)
 	out := make([]byte, 100000)
 	pos, total := 0, 0
 	for pos < len(f) || total < len(data) {

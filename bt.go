@@ -4,20 +4,20 @@ package zstd
 // ZSTD_insertDUBT1, ZSTD_DUBT_findBetterDictMatch, ZSTD_DUBT_findBestMatch, ZSTD_BtFindBestMatch) and the sorted tree
 // used to load dictionaries (zstd_opt.c: ZSTD_insertBt1, ZSTD_updateTree_internal).
 //
-// Same buffer model as dfast.go (positions are offsets into Encoder.buf, libzstd indices are position+2). Because the
+// Same buffer model as dfast.go (positions are offsets into encoder.buf, libzstd indices are position+2). Because the
 // dictionary sits right below the source in buf, the extDict / dictMatchState variants of ZSTD_count_2segments and of
 // the base-pointer selections are plain accesses to buf.
 
 const dubtUnsortedMark = 1 // ZSTD_DUBT_UNSORTED_MARK
 
 // ix converts a position in buf to a libzstd index (ms->window.base shifts by idxShift after ZSTD_initStats_ultra).
-func (e *Encoder) ix(p int) uint32 { return uint32(p) + windowStartIndex + e.idxShift }
+func (e *encoder) ix(p int) uint32 { return uint32(p) + windowStartIndex + e.idxShift }
 
 // px is the inverse of ix.
-func (e *Encoder) px(i uint32) int { return int(i) - windowStartIndex - int(e.idxShift) }
+func (e *encoder) px(i uint32) int { return int(i) - windowStartIndex - int(e.idxShift) }
 
 // btUpdateDUBT is ZSTD_updateDUBT: link every position up to ip into the hash table, as unsorted candidates.
-func (e *Encoder) btUpdateDUBT(ip int, mls uint32) {
+func (e *encoder) btUpdateDUBT(ip int, mls uint32) {
 	buf, hashTable, bt := e.buf, e.long, e.short
 	hashLog := e.cp.hashLog
 	btMask := uint32(1)<<(e.cp.chainLog-1) - 1
@@ -33,7 +33,7 @@ func (e *Encoder) btUpdateDUBT(ip int, mls uint32) {
 }
 
 // btInsertDUBT1 is ZSTD_insertDUBT1: sort one candidate into the tree. inputEnd is a position.
-func (e *Encoder) btInsertDUBT1(curr uint32, inputEnd int, nbCompares, btLow uint32) {
+func (e *encoder) btInsertDUBT1(curr uint32, inputEnd int, nbCompares, btLow uint32) {
 	buf, bt := e.buf, e.short
 	btMask := uint32(1)<<(e.cp.chainLog-1) - 1
 	var commonSmaller, commonLarger int
@@ -84,7 +84,7 @@ func (e *Encoder) btInsertDUBT1(curr uint32, inputEnd int, nbCompares, btLow uin
 }
 
 // btFindBetterDictMatch is ZSTD_DUBT_findBetterDictMatch (attached dictionary).
-func (e *Encoder) btFindBetterDictMatch(ip, iend int, offBase *uint32, bestLength int, nbCompares, mls uint32) int {
+func (e *encoder) btFindBetterDictMatch(ip, iend int, offBase *uint32, bestLength int, nbCompares, mls uint32) int {
 	dms := e.dms
 	buf := e.buf
 	hashLog := dms.cp.hashLog
@@ -136,7 +136,7 @@ func (e *Encoder) btFindBetterDictMatch(ip, iend int, offBase *uint32, bestLengt
 }
 
 // btFindBestMatch is ZSTD_BtFindBestMatch: update the tree up to ip, then ZSTD_DUBT_findBestMatch.
-func (e *Encoder) btFindBestMatch(ip, iend int, mls uint32, mode int, offBase *uint32) int {
+func (e *encoder) btFindBestMatch(ip, iend int, mls uint32, mode int, offBase *uint32) int {
 	if idxOf(ip) < e.nextToUpdate { // skipped area
 		return 0
 	}
@@ -237,7 +237,7 @@ func (e *Encoder) btFindBestMatch(ip, iend int, mls uint32, mode int, offBase *u
 }
 
 // btInsertBt1 is ZSTD_insertBt1: add the position at ip to the sorted tree, returning the number of positions to skip.
-func (e *Encoder) btInsertBt1(ip, iend int, target, mls uint32) uint32 {
+func (e *encoder) btInsertBt1(ip, iend int, target, mls uint32) uint32 {
 	buf, hashTable, bt := e.buf, e.long, e.short
 	h := hashPtr(rd64(buf, ip), e.cp.hashLog, mls)
 	btMask := uint32(1)<<(e.cp.chainLog-1) - 1
@@ -298,7 +298,7 @@ func (e *Encoder) btInsertBt1(ip, iend int, target, mls uint32) uint32 {
 }
 
 // btUpdateTree is ZSTD_updateTree: sorted insertion of every position below ip (a position).
-func (e *Encoder) btUpdateTree(ip, iend int, mls uint32) {
+func (e *encoder) btUpdateTree(ip, iend int, mls uint32) {
 	target := e.ix(ip)
 	for idx := e.nextToUpdate; idx < target; {
 		idx += e.btInsertBt1(e.px(idx), iend, target, mls)
@@ -308,7 +308,7 @@ func (e *Encoder) btUpdateTree(ip, iend int, mls uint32) {
 
 // loadBtDict is the table part of ZSTD_loadDictionaryContent for btlazy2 (and the optimal strategies): the dictionary
 // is buf[:L]; only the last maxDictSize bytes are indexed when it is larger than the tables.
-func (e *Encoder) loadBtDict(L int) {
+func (e *encoder) loadBtDict(L int) {
 	start := dictStart(e.cp, L)
 	e.nextToUpdate = idxOf(start)
 	if L-start <= hashReadSize {

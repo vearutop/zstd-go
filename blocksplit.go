@@ -81,7 +81,7 @@ func seqStoreResolveOffCodes(dRep, cRep *[3]uint32, seqs []seq) {
 
 // buildLitStats is ZSTD_buildBlockEntropyStats_literals: the literals encoding type, the size of the table description
 // and the table that would follow (nextHuf). ok is false when libzstd returns an error.
-func (e *Encoder) buildLitStats(lits []byte) (hType int, desSize uint64, next hufState, ok bool) {
+func (e *encoder) buildLitStats(lits []byte) (hType int, desSize uint64, next hufState, ok bool) {
 	prev := e.prevHuf
 	next = prev
 	n := len(lits)
@@ -188,7 +188,7 @@ func estSymbolTypeSize(mode int, codes []uint8, maxCode int, ct *cTable, addBits
 
 // estimateSubBlockSize is ZSTD_buildEntropyStatisticsAndEstimateSubBlockSize: it builds the entropy statistics of the
 // chunk against the state at the start of the block and returns the estimated compressed size of the chunk.
-func (e *Encoder) estimateSubBlockSize(seqs []seq, lits []byte) (uint64, bool) {
+func (e *encoder) estimateSubBlockSize(seqs []seq, lits []byte) (uint64, bool) {
 	hType, desSize, nextHuf, ok := e.buildLitStats(lits)
 	if !ok {
 		return 0, false
@@ -224,7 +224,7 @@ func (e *Encoder) estimateSubBlockSize(seqs []seq, lits []byte) (uint64, bool) {
 
 // deriveBlockSplitsHelper is ZSTD_deriveBlockSplitsHelper: it estimates the cost of the sequences [startIdx, endIdx)
 // before the split and of the split in halves and recurses when splitting is advantageous.
-func (e *Encoder) deriveBlockSplitsHelper(splits *[]uint32, startIdx, endIdx int, seqs []seq, lits []byte) {
+func (e *encoder) deriveBlockSplitsHelper(splits *[]uint32, startIdx, endIdx int, seqs []seq, lits []byte) {
 	midIdx := (startIdx + endIdx) / 2
 	if endIdx-startIdx < minSequencesBlockSplitting || len(*splits) >= maxNbBlockSplits {
 		return
@@ -246,7 +246,7 @@ func (e *Encoder) deriveBlockSplitsHelper(splits *[]uint32, startIdx, endIdx int
 }
 
 // deriveBlockSplits is ZSTD_deriveBlockSplits: the sequence indices where the block splits (without the final nbSeq).
-func (e *Encoder) deriveBlockSplits(nbSeq int) []uint32 {
+func (e *encoder) deriveBlockSplits(nbSeq int) []uint32 {
 	if nbSeq <= 4 { // refuse to try and split anything with less than 4 sequences
 		return nil
 	}
@@ -256,7 +256,7 @@ func (e *Encoder) deriveBlockSplits(nbSeq int) []uint32 {
 }
 
 // splitBlock is ZSTD_compressBlock_splitBlock_internal for the sequences in e.seqs / e.lits covering s.
-func (e *Encoder) splitBlock(dst, s []byte, last bool, savedReps [3]uint32) []byte {
+func (e *encoder) splitBlock(dst, s []byte, last bool, savedReps [3]uint32) []byte {
 	seqs, lits := e.seqs, e.lits
 	splits := e.deriveBlockSplits(len(seqs))
 	if len(splits) == 0 {

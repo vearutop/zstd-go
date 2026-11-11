@@ -11,7 +11,7 @@ import (
 
 func BenchmarkRefFastest(b *testing.B) {
 	data := compData(b)
-	p := zstd.ProfileFastest()
+	p := zstd.ProfileFastestParams()
 	cc := ref.NewCCtx()
 	defer cc.Close()
 	for _, c := range (paramSet{p}).calls() {

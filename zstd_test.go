@@ -2,6 +2,7 @@ package zstd_test
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -119,8 +120,7 @@ func BenchmarkEncode(b *testing.B) {
 }
 
 func TestSeekable(t *testing.T) {
-	d, raw := loadDict(t)
-	dec, _ := kz.NewReader(nil, kz.WithDecoderDicts(raw), kz.WithDecoderConcurrency(1))
+	d, _ := loadDict(t)
 	src := bytes.Join(corpus(500, 3), nil)
 	e := zstd.NewEncoder(d)
 	st := e.EncodeSeekable(src, nil, 10000)
@@ -135,7 +135,8 @@ func TestSeekable(t *testing.T) {
 			t.Fatal("empty")
 		}
 	}
-	s, err := zstd.OpenSeekable(bytes.NewReader(st), int64(len(st)), func(dst, f []byte) ([]byte, error) { return dec.DecodeAll(f, dst) })
+	zdec, _ := zstd.NewDecoder(d)
+	s, err := zstd.OpenSeekableForTest(st, zdec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,6 +151,28 @@ func TestSeekable(t *testing.T) {
 		if !bytes.Equal(p[:n], src[off:min(off+len(p), len(src))]) {
 			t.Fatal("mismatch at", off)
 		}
+	}
+	// cursor: sequential reads, forward skips, rewinds, seek from the end
+	for _, off := range []int64{0, 25000, 25100, 3, int64(len(src)) - 5} {
+		if _, err := s.Seek(off, io.SeekStart); err != nil {
+			t.Fatal(err)
+		}
+		p := make([]byte, 40000)
+		n, err := io.ReadFull(s, p)
+		if err != nil && n != len(src)-int(off) || !bytes.Equal(p[:n], src[off:int(off)+n]) {
+			t.Fatal("cursor mismatch at", off, n, err)
+		}
+	}
+	s.Seek(-7, io.SeekEnd)
+	if b, _ := io.ReadAll(s); !bytes.Equal(b, src[len(src)-7:]) {
+		t.Fatal("seek end")
+	}
+	rd := zstd.NewReader(bytes.NewReader(src))
+	if _, err := rd.ReadSeeker(); !errors.Is(err, zstd.ErrNotSeekable) {
+		t.Fatal("plain stream:", err)
+	}
+	if _, err := zstd.NewReader(struct{ io.Reader }{bytes.NewReader(st)}).ReadSeeker(); !errors.Is(err, zstd.ErrNotSeekable) {
+		t.Fatal("not a ReaderAt:", err)
 	}
 }
 
@@ -208,7 +231,7 @@ func TestPooledAndDecoder(t *testing.T) {
 	for g := 0; g < 8; g++ {
 		go func() {
 			for _, c := range cs {
-				got, err := dec.DecodeAll(d.Compress(nil, c), nil)
+				got, err := dec.DecodeAll(d.Encode(nil, c), nil)
 				if err != nil || !bytes.Equal(got, c) {
 					done <- fmt.Errorf("mismatch: %v", err)
 					return
@@ -385,7 +408,7 @@ func TestStreaming(t *testing.T) {
 		{"tiny", []byte("x"), 0, 1, false},
 	} {
 		var buf bytes.Buffer
-		w := zstd.NewWriter(&buf, d)
+		w := zstd.NewWriter(&buf, zstd.WithWriterDict(d))
 		w.FrameSize, w.Seekable = c.fs, c.seekable
 		for p := c.data; len(p) > 0; {
 			n := min(c.chunk, len(p))
@@ -399,7 +422,7 @@ func TestStreaming(t *testing.T) {
 		}
 		frames := buf.Bytes()
 
-		got, err := io.ReadAll(iotest.OneByteReader(zstd.NewReader(bytes.NewReader(frames), dec)))
+		got, err := io.ReadAll(iotest.OneByteReader(zstd.NewReader(bytes.NewReader(frames), zstd.WithDecoder(dec))))
 		if err != nil || !bytes.Equal(got, c.data) {
 			t.Fatalf("%s: reader: %v (len %d want %d)", c.name, err, len(got), len(c.data))
 		}
@@ -411,14 +434,14 @@ func TestStreaming(t *testing.T) {
 			}
 		}
 		if c.seekable {
-			s, err := zstd.OpenSeekable(bytes.NewReader(frames), int64(len(frames)), func(dst, f []byte) ([]byte, error) { return dec.DecodeAll(f, dst) })
+			s, err := zstd.OpenSeekableForTest(frames, dec)
 			if err != nil || s.Size() != int64(len(c.data)) {
 				t.Fatalf("%s: seekable: %v", c.name, err)
 			}
 		}
-		if _, err := zstd.NewReader(bytes.NewReader(frames[:len(frames)/2]), dec).Read(make([]byte, 1<<20)); len(c.data) > 100 && err == nil {
+		if _, err := zstd.NewReader(bytes.NewReader(frames[:len(frames)/2]), zstd.WithDecoder(dec)).Read(make([]byte, 1<<20)); len(c.data) > 100 && err == nil {
 			// a cut stream must not decode silently to the end
-			all, err := io.ReadAll(zstd.NewReader(bytes.NewReader(frames[:len(frames)/2]), dec))
+			all, err := io.ReadAll(zstd.NewReader(bytes.NewReader(frames[:len(frames)/2]), zstd.WithDecoder(dec)))
 			if err == nil && len(all) == len(c.data) {
 				t.Fatalf("%s: truncated stream read fully", c.name)
 			}

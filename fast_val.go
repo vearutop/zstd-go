@@ -12,7 +12,7 @@ package zstd
 
 // fastLoad makes e.fast the table of the frame: e.long's entries with their bytes. It reports false (and leaves e.long in charge)
 // when an entry points outside the buffer.
-func (e *Encoder) fastLoad() bool {
+func (e *encoder) fastLoad() bool {
 	if e.fastLive {
 		return true
 	}
@@ -37,7 +37,7 @@ func (e *Encoder) fastLoad() bool {
 }
 
 // fastSyncBack returns the table to e.long.
-func (e *Encoder) fastSyncBack() {
+func (e *encoder) fastSyncBack() {
 	if !e.fastLive {
 		return
 	}
@@ -66,7 +66,7 @@ func newHasher(hBits, mls uint32) hasher {
 func (h hasher) of(v uint64) uint32 { return uint32((v << (h.shl & 63) * h.mul) >> (h.shr & 63)) }
 
 // fastNoDictV is fastNoDict over e.fast.
-func (e *Encoder) fastNoDictV(cp cParams, start, iend int, lowestValid uint32, isDict bool) {
+func (e *encoder) fastNoDictV(cp cParams, start, iend int, lowestValid uint32, isDict bool) {
 	buf := e.buf
 	tab, hlog, mls := e.fast, cp.hashLog, cp.minMatch
 	hs := newHasher(hlog, mls)

@@ -1,27 +1,28 @@
 # zstd-go
 
-Pure-Go (no cgo) zstd encoder for small values with dictionaries, ported from libzstd (BSD-3).
-Built for clients that compress each record separately with one shared dictionary (see vearutop/aerust-dev#341).
+Pure-Go (no cgo) zstd encoder and decoder ported from libzstd (BSD-3): small values with dictionaries, streaming
+readers and writers, seekable archives. Built for clients that compress each record separately with one shared dictionary (see vearutop/aerust-dev#341).
 
 ```go
 d, _ := zstd.LoadDict(dictBytes)          // zstd-format or raw-content dictionary, immutable, shared
-frame := d.Compress(nil, value)           // pooled encoders, safe for concurrent use
+frame := d.Encode(nil, value)             // pooled encoders, safe for concurrent use
 dec, _ := zstd.NewDecoder(d)              // own single-shot decoder, concurrency-safe
-value, _ = dec.DecodeAll(frame, nil)
-
-e := zstd.NewEncoder(d)                   // or own an Encoder (not concurrency-safe, zero allocs per call)
-seekable := e.EncodeSeekable(big, nil, 64<<10) // independent frames + seek table
-r, _ := zstd.OpenSeekable(bytes.NewReader(seekable), int64(len(seekable)), decodeFrame) // ReadAt
+value, _ = dec.Decode(nil, frame)
 ```
 
-Frames are single-segment with content size, an optional checksum (`Encoder.NoChecksum`) and the dictionary id.
+Frames are single-segment with content size, a checksum and the dictionary id.
 
 Streaming (independent frames, bounded memory, optional seek table):
 
 ```go
-w := zstd.NewWriter(out, d); w.FrameSize = 64 << 10; w.Seekable = true
+w := zstd.NewWriter(out, zstd.WithWriterDict(d), zstd.ProfileFastest()) // ProfileFastest / ProfileDefault / ProfileBestCompression
+w.FrameSize = 64 << 10; w.Seekable = true                               // also w.Level, w.Params, w.Concurrency (set before the first Write)
 io.Copy(w, in); w.Close()
-io.Copy(dst, zstd.NewReader(out, dec))    // holds one frame at a time
+r := zstd.NewReader(out, zstd.WithReaderDict(d))                     // r.Concurrency, r.WindowLogMax, r.MaxBlockSize: set before the first Read
+io.Copy(dst, r)                                                       // holds one frame at a time
+
+rs, err := zstd.NewReader(file, zstd.WithReaderDict(d)).ReadSeeker() // io.ReadSeeker (+ io.ReaderAt, Size) over a seekable file; zstd.ErrNotSeekable otherwise
+rs.Seek(off, io.SeekStart)                                          // decodes only the touched frame, and only up to the bytes read
 ```
 
 ## Status
@@ -45,14 +46,14 @@ function-by-function port of the C sources (match finders, Huffman, FSE selectio
   the suffix), the dedicated dictionary search, the "loaded dictionary" API path (`ZSTD_CCtx_loadDictionary`), streaming compression
   semantics, the dictionary trainer. The row match finder's hash salt (`ms->hashSalt`, history of the CCtx) is not
   modelled: it permutes rows and tags bijectively and does not change the output.
-- Decoder: own FSE / sequence / Huffman code (12-bit tables included). `DecodeAll` follows `ZSTD_decompress`: window, offset, block-size,
+- Decoder: own FSE / sequence / Huffman code (12-bit tables included). `Decode` follows `ZSTD_decompress`: window, offset, block-size,
   dictionary and checksum rules, magicless format, multi-dictionary selection, destination-capacity rules; verified against libzstd on
   millions of valid and mutated frames (PARITY.md has the numbers and the limitations).
-- Configuration API: `Encoder.SetParams` / `Compress2` (ZSTD_c_* subset), `LoadDictionary`, `RefPrefix`, `RefCDict`; streaming compression
+- Configuration API (unexported, exercised by the tests; users reach it through `Writer.Params`): `Encoder.SetParams` / `Compress2` (ZSTD_c_* subset), `LoadDictionary`, `RefPrefix`, `RefCDict`; streaming compression
   `CompressStream2` / `StreamWriter` with libzstd's exact bytes. Multithreaded `Compress2` and `CompressStream2` / `StreamWriter` (`Params.NbWorkers`) are byte-identical to libzstd's `nbWorkers`. Not ported: targetCBlockSize, dedicated dictionary search, LDM (PARITY.md).
-- Streaming: `Writer` writes independent frames (not libzstd's streaming compression mode). `DStream`/`Reader` follow
-  `ZSTD_decompressStream` with a sliding window (hints, ring-buffer capacity errors, `RefPrefix`); frame utility API
-  (`GetFrameHeader`, `FindFrameCompressedSize`, `DecompressBound`, ...). Verified in lockstep against libzstd. See PARITY.md for
+- Streaming: `Writer` writes independent frames (not libzstd's streaming compression mode). `Reader` (over the unexported `DStream`) follows
+  `ZSTD_decompressStream` with a sliding window (hints, ring-buffer capacity errors, `RefPrefix`); the frame utility functions
+  (`GetFrameHeader`, `FindFrameCompressedSize`, `DecompressBound`, ...) are unexported too. Verified in lockstep against libzstd. See PARITY.md for
   the known limitations (legacy v0.5-0.7, stable-output mode, bufferless/block API, offsets beyond the window).
 
 ## Benchmarks

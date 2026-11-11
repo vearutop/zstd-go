@@ -5,7 +5,7 @@ import "encoding/binary"
 // Port of libzstd's double-fast match finder (zstd_double_fast.c): the dictMatchState (attached dictionary)
 // and noDict loops, plus the dictionary table loading (ZSTD_fillDoubleHashTableForCDict).
 //
-// Positions are offsets into Encoder.buf = dictionary content ++ source. libzstd indices are position+2
+// Positions are offsets into encoder.buf = dictionary content ++ source. libzstd indices are position+2
 // (ZSTD_WINDOW_START_INDEX), and with an attached dictionary the dictionary sits right below the source,
 // so dictIndexDelta is 0 and a two-segment count equals a count over the contiguous buffer.
 
@@ -39,7 +39,7 @@ type cdict struct {
 	long, short []uint32 // fast, dfast: (index << 8) | tag; greedy..lazy2: hash table, chain table
 	// greedy..lazy2
 	tag          []uint8 // row match finder tag table
-	row          bool    // the CDict was built for the row match finder (useRowMatchFinder)
+	row          bool    // the preparedDict was built for the row match finder (useRowMatchFinder)
 	dictLen      int     // dictionary content length
 	nextToUpdate uint32
 }
@@ -74,8 +74,8 @@ func buildCDict(content []byte, dictSize uint64, cp cParams, row bool) *cdict {
 		} else {
 			cd.short = make([]uint32, 1<<cd.cp.chainLog)
 		}
-		// ZSTD_loadDictionaryContent on the CDict's own match state (salt 0)
-		ms := &Encoder{buf: content, cp: cd.cp, long: cd.long, short: cd.short, tag: cd.tag, useRow: cd.row}
+		// ZSTD_loadDictionaryContent on the preparedDict's own match state (salt 0)
+		ms := &encoder{buf: content, cp: cd.cp, long: cd.long, short: cd.short, tag: cd.tag, useRow: cd.row}
 		ms.loadLazyDict(len(content))
 		cd.nextToUpdate = ms.nextToUpdate
 		return cd
@@ -83,7 +83,7 @@ func buildCDict(content []byte, dictSize uint64, cp cParams, row bool) *cdict {
 		cd.dictLen = len(content)
 		cd.long = make([]uint32, 1<<cd.cp.hashLog)
 		cd.short = make([]uint32, 1<<cd.cp.chainLog)
-		ms := &Encoder{buf: content, cp: cd.cp, long: cd.long, short: cd.short, lowLimit: windowStartIndex, dictLimit: windowStartIndex, loadedDictEnd: idxOf(len(content))}
+		ms := &encoder{buf: content, cp: cd.cp, long: cd.long, short: cd.short, lowLimit: windowStartIndex, dictLimit: windowStartIndex, loadedDictEnd: idxOf(len(content))}
 		ms.loadBtDict(len(content))
 		cd.nextToUpdate = ms.nextToUpdate
 		return cd
@@ -117,7 +117,7 @@ func dictStart(cp cParams, size int) int {
 	return max(0, size-maxDictSize)
 }
 
-func (e *Encoder) storeSeq(anchor, ll int, offBase uint32, ml int) {
+func (e *encoder) storeSeq(anchor, ll int, offBase uint32, ml int) {
 	e.lits = append(e.lits, e.buf[anchor:anchor+ll]...)
 	e.seqs = append(e.seqs, seq{uint32(ll), uint32(ml), offBase})
 }
@@ -137,7 +137,7 @@ func overlapOK(prefixLowest, repIndex uint32) bool { return (prefixLowest-1)-rep
 
 // dfastDict is ZSTD_compressBlock_doubleFast_dictMatchState_generic for the block buf[start:iend].
 // The in-block tables e.long/e.short persist across blocks of one frame; cp are the working parameters.
-func (e *Encoder) dfastDict(cd *cdict, cp cParams, L, start, iend int) {
+func (e *encoder) dfastDict(cd *cdict, cp cParams, L, start, iend int) {
 	buf := e.buf
 	hBitsL, hBitsS, mls := cp.hashLog, cp.chainLog, cp.minMatch
 	hashLong, hashSmall := e.long, e.short
@@ -316,7 +316,7 @@ func getLowestPrefixIndex(lowestValid, curr, windowLog uint32, isDictionary bool
 
 // dfastNoDict is ZSTD_compressBlock_doubleFast_noDict_generic for the block buf[start:iend].
 // lowestValid is the window start index; isDict is set when a dictionary is part of the window (copy mode).
-func (e *Encoder) dfastNoDict(cp cParams, start, iend int, lowestValid uint32, isDict bool) {
+func (e *encoder) dfastNoDict(cp cParams, start, iend int, lowestValid uint32, isDict bool) {
 	buf := e.buf
 	hBitsL, hBitsS, mls := cp.hashLog, cp.chainLog, cp.minMatch
 	hashLong, hashSmall := e.long, e.short
@@ -479,7 +479,7 @@ func (e *Encoder) dfastNoDict(cp cParams, start, iend int, lowestValid uint32, i
 
 // dfastExtDict is ZSTD_compressBlock_doubleFast_extDict_generic: the dictionary sits below the prefix in the window
 // (copy mode). lowLimit is ZSTD_getLowestMatchIndex, dictLimit the index where the source starts.
-func (e *Encoder) dfastExtDict(cp cParams, start, iend int, lowLimit, dictLimit uint32) {
+func (e *encoder) dfastExtDict(cp cParams, start, iend int, lowLimit, dictLimit uint32) {
 	buf := e.buf
 	hBitsL, hBitsS, mls := cp.hashLog, cp.chainLog, cp.minMatch
 	hashLong, hashSmall := e.long, e.short

@@ -42,7 +42,7 @@ func TestDefaultHuffmanValidStreams(t *testing.T) {
 			if err != nil || !bytes.Equal(a, b) {
 				t.Fatalf("%s L%d: strict decode differs (err %v)", name, level, err)
 			}
-			r := zstd.NewReader(bytes.NewReader(frame), fast)
+			r := zstd.NewReader(bytes.NewReader(frame), zstd.WithDecoder(fast))
 			c, err := io.ReadAll(r)
 			if err != nil || !bytes.Equal(c, data) {
 				t.Fatalf("%s L%d: default streaming decode wrong (err %v)", name, level, err)

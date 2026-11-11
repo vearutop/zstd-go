@@ -6,7 +6,7 @@ package zstd
 // (ZSTD_initStats_ultra). The long-distance-matching interplay (ZSTD_optLdm_*) is not ported: libzstd enables LDM
 // automatically only for windowLog >= 27 (sources above 64 MiB).
 //
-// Same buffer model as bt.go: positions are offsets into Encoder.buf = dictionary ++ source, libzstd indices are
+// Same buffer model as bt.go: positions are offsets into encoder.buf = dictionary ++ source, libzstd indices are
 // ix(position) = position + 2 + idxShift, and the dictionary of the extDict / dictMatchState modes sits right below the
 // source, so ZSTD_count_2segments is a plain count over buf.
 
@@ -128,7 +128,7 @@ func fseMaxNbBits(ct *cTable, s int) uint32 {
 }
 
 // rescaleFreqs is ZSTD_rescaleFreqs: src is the block.
-func (e *Encoder) rescaleFreqs(src []byte, optLevel int) {
+func (e *encoder) rescaleFreqs(src []byte, optLevel int) {
 	o := e.opt
 	o.priceType = zopDynamic
 	if o.litLengthSum == 0 { // no literals stats collected -> first block assumed -> init
@@ -288,7 +288,7 @@ func hash3Ptr(buf []byte, p int, h uint32) uint32 {
 }
 
 // insertAndFindFirstIndexHash3 is ZSTD_insertAndFindFirstIndexHash3: update hashTable3 up to ip (excluded).
-func (e *Encoder) insertAndFindFirstIndexHash3(nextToUpdate3 *uint32, ip int) uint32 {
+func (e *encoder) insertAndFindFirstIndexHash3(nextToUpdate3 *uint32, ip int) uint32 {
 	hashLog3 := e.hashLog3
 	idx := *nextToUpdate3
 	target := e.ix(ip)
@@ -302,7 +302,7 @@ func (e *Encoder) insertAndFindFirstIndexHash3(nextToUpdate3 *uint32, ip int) ui
 }
 
 // optInsertBtAndGetAllMatches is ZSTD_insertBtAndGetAllMatches.
-func (e *Encoder) optInsertBtAndGetAllMatches(matches []optMatch, nextToUpdate3 *uint32, ip, iLimit int, mode int, rep *[3]uint32, ll0, lengthToBeat, mls uint32) uint32 {
+func (e *encoder) optInsertBtAndGetAllMatches(matches []optMatch, nextToUpdate3 *uint32, ip, iLimit int, mode int, rep *[3]uint32, ll0, lengthToBeat, mls uint32) uint32 {
 	cp := &e.cp
 	buf := e.buf
 	sufficientLen := min(cp.targetLength, optNum-1)
@@ -515,7 +515,7 @@ func (e *Encoder) optInsertBtAndGetAllMatches(matches []optMatch, nextToUpdate3 
 }
 
 // optGetAllMatches is ZSTD_btGetAllMatches_internal.
-func (e *Encoder) optGetAllMatches(matches []optMatch, nextToUpdate3 *uint32, ip, iHighLimit int, mode int, rep *[3]uint32, ll0, lengthToBeat uint32) uint32 {
+func (e *encoder) optGetAllMatches(matches []optMatch, nextToUpdate3 *uint32, ip, iHighLimit int, mode int, rep *[3]uint32, ll0, lengthToBeat uint32) uint32 {
 	mls := min(max(e.cp.minMatch, 3), 6)
 	if e.ix(ip) < e.nextToUpdate {
 		return 0 // skipped area
@@ -530,7 +530,7 @@ func newRep(rep [3]uint32, offBase uint32, ll0 bool) [3]uint32 {
 }
 
 // optGeneric is ZSTD_compressBlock_opt_generic for the block buf[start:iend]; rep is the repcode history, updated.
-func (e *Encoder) optGeneric(start, iend int, rep *[3]uint32, optLevel int, mode int) {
+func (e *encoder) optGeneric(start, iend int, rep *[3]uint32, optLevel int, mode int) {
 	o := e.opt
 	buf := e.buf
 	istart := start
@@ -827,7 +827,7 @@ func (e *Encoder) optGeneric(start, iend int, rep *[3]uint32, optLevel int, mode
 
 // optBlock selects the optimal parser for the strategy and dictionary mode (ZSTD_compressBlock_btopt / btultra /
 // btultra2 and their _dictMatchState / _extDict variants) and runs it on buf[start:iend].
-func (e *Encoder) optBlock(start, iend int, mode int) {
+func (e *encoder) optBlock(start, iend int, mode int) {
 	rep := e.reps
 	switch e.cp.strategy {
 	case stratBtOpt:
@@ -851,7 +851,7 @@ func (e *Encoder) optBlock(start, iend int, mode int) {
 
 // initStatsUltra is ZSTD_initStats_ultra: a first compression pass just to seed the statistics; the window is then
 // rewound (base -= srcSize, so every index of the frame shifts by srcSize) so that the first scan is forgotten.
-func (e *Encoder) initStatsUltra(start, iend int, rep [3]uint32) {
+func (e *encoder) initStatsUltra(start, iend int, rep [3]uint32) {
 	e.optGeneric(start, iend, &rep, 2, lazyNoDict) // generate stats into ms->opt
 	// invalidate first scan from history, only keep entropy stats
 	e.seqs, e.lits = e.seqs[:0], e.lits[:0] // ZSTD_resetSeqStore

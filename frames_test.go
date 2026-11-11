@@ -22,7 +22,7 @@ func TestFrameSizeLoss(t *testing.T) {
 	for _, level := range []int{1, 3} {
 		for _, fs := range []int{128 << 10, 1 << 20, 8 << 20} {
 			var out bytes.Buffer
-			w := zstd.NewWriter(&out, nil)
+			w := zstd.NewWriter(&out)
 			w.FrameSize = fs
 			w.Level = level
 			io.Copy(w, bytes.NewReader(data))
@@ -66,7 +66,7 @@ func BenchmarkLogsStreamDecode(b *testing.B) {
 		b.SetBytes(int64(len(data)))
 		buf := make([]byte, 64<<10)
 		for i := 0; i < b.N; i++ {
-			r := zstd.NewReader(bytes.NewReader(frame), nil)
+			r := zstd.NewReader(bytes.NewReader(frame))
 			for {
 				if _, err := r.Read(buf); err != nil {
 					break
@@ -103,7 +103,7 @@ func BenchmarkRingExtra(b *testing.B) {
 			b.SetBytes(int64(len(data)))
 			buf := make([]byte, 64<<10)
 			for i := 0; i < b.N; i++ {
-				r := zstd.NewReader(bytes.NewReader(frame), nil)
+				r := zstd.NewReader(bytes.NewReader(frame))
 				for {
 					if _, err := r.Read(buf); err != nil {
 						break
@@ -127,7 +127,7 @@ func BenchmarkSeqBackoff(b *testing.B) {
 			b.SetBytes(int64(len(data)))
 			buf := make([]byte, 64<<10)
 			for i := 0; i < b.N; i++ {
-				r := zstd.NewReader(bytes.NewReader(frame), nil)
+				r := zstd.NewReader(bytes.NewReader(frame))
 				for {
 					if _, err := r.Read(buf); err != nil {
 						break

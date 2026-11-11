@@ -7,10 +7,10 @@ import (
 
 const blockMax = 128 << 10
 
-// Encoder is a reusable single-shot encoder, not safe for concurrent use.
-type Encoder struct {
+// encoder is a reusable single-shot encoder, not safe for concurrent use.
+type encoder struct {
 	hufOut   []byte     // scratch for the Huffman-compressed literals of one block
-	mtEnc    []*Encoder // job encoders of the multithreaded Compress2, kept between calls
+	mtEnc    []*encoder // job encoders of the multithreaded Compress2, kept between calls
 	mt       *mtStream  // multithreaded frame in progress (mtstream.go)
 	fast     []uint64   // fast strategy table with the bytes of each position (fast_val.go); authoritative while fastLive
 	fastLive bool
@@ -65,16 +65,16 @@ type Encoder struct {
 	st       streamState
 	// Compress2 configuration
 	params  Params
-	refCD   *CDict // ZSTD_CCtx_refCDict
-	local   *Dict  // ZSTD_CCtx_loadDictionary
-	localCD *CDict
+	refCD   *preparedDict // ZSTD_CCtx_refCDict
+	local   *Dict         // ZSTD_CCtx_loadDictionary
+	localCD *preparedDict
 	prefix  *Dict // ZSTD_CCtx_refPrefix: next frame only
 }
 
 type seq struct{ ll, ml, off uint32 } // off is offBase: 1..3 repcode, else offset+3
 // copyCDictTables is ZSTD_resetCCtx_byCopyingCDict's table copy: the tagged (fast, dfast) tables lose their tags
 // (ZSTD_copyCDictTableIntoCCtx), the others are copied as they are, with the tag table.
-func (e *Encoder) copyCDictTables() {
+func (e *encoder) copyCDictTables() {
 	cd := e.cd
 	if e.cp.strategy <= stratDFast {
 		e.long = growCopy(e.long, cd.long)
@@ -112,7 +112,7 @@ func grow(b []uint32, n int) []uint32 {
 
 // header is ZSTD_writeFrameHeader (content size always recorded). The frame is single-segment only when the
 // window covers the whole content.
-func (e *Encoder) header(dst []byte, size uint64) []byte {
+func (e *encoder) header(dst []byte, size uint64) []byte {
 	id := e.dictID
 	idCode := 0
 	if id > 0 {
@@ -188,7 +188,7 @@ func blockHeader(dst []byte, last bool, typ, size int) []byte {
 
 // block is ZSTD_compress_frameChunk's per-block flow: ZSTD_compressBlock_internal (or, for the strategies with the post
 // block splitter, ZSTD_compressBlock_splitBlock) plus the raw / RLE fallbacks.
-func (e *Encoder) block(dst, s []byte, L, base int, last bool) []byte {
+func (e *encoder) block(dst, s []byte, L, base int, last bool) []byte {
 	n := len(s)
 	if n == 0 {
 		return blockHeader(dst, last, 0, 0)
@@ -213,7 +213,7 @@ func (e *Encoder) block(dst, s []byte, L, base int, last bool) []byte {
 
 // singleBlock is ZSTD_compressSeqStore_singleBlock (and the tail of ZSTD_compressBlock_internal) for the sequences and
 // literals in e.seqs / e.lits covering s. confirmed reports ZSTD_blockState_confirmRepcodesAndEntropyTables.
-func (e *Encoder) singleBlock(dst, s []byte, last bool) (out []byte, confirmed bool) {
+func (e *encoder) singleBlock(dst, s []byte, last bool) (out []byte, confirmed bool) {
 	n := len(s)
 	e.body = e.body[:0]
 	e.writeLiterals()
@@ -306,7 +306,7 @@ func offRepeatAfterBlock(r fseRepeat) fseRepeat {
 }
 
 // matchFind runs the match finder libzstd would pick for this block (ZSTD_selectBlockCompressor).
-func (e *Encoder) matchFind(L, base, n int) {
+func (e *encoder) matchFind(L, base, n int) {
 	start, end := L+base, L+base+n
 	maxDist := uint32(1) << e.cp.windowLog
 	if blockEnd := e.ix(end); blockEnd > maxDist+e.loadedDictEnd || e.loadedDictEnd != e.dictLimit { // ZSTD_checkDictValidity (a non contiguous update also invalidates)
@@ -368,7 +368,7 @@ func (e *Encoder) matchFind(L, base, n int) {
 }
 
 // lowMatchIndex is ZSTD_getLowestMatchIndex.
-func (e *Encoder) lowMatchIndex(end int, maxDist uint32) uint32 {
+func (e *encoder) lowMatchIndex(end int, maxDist uint32) uint32 {
 	endIndex := e.ix(end)
 	low := e.lowLimit
 	if e.loadedDictEnd == 0 && endIndex-low > maxDist {
@@ -379,7 +379,7 @@ func (e *Encoder) lowMatchIndex(end int, maxDist uint32) uint32 {
 
 // growTables clears the working tables sized by the parameters (the fast strategy has no second table; the row
 // match finder has a tag table instead of the chain table).
-func (e *Encoder) growTables() {
+func (e *encoder) growTables() {
 	e.fastLive = false
 	e.long = grow(e.long, 1<<e.cp.hashLog)
 	e.short = e.short[:0]
@@ -397,7 +397,7 @@ func (e *Encoder) growTables() {
 }
 
 // fillDictTables loads the dictionary into the context tables (ZSTD_loadDictionaryContent, ZSTD_dtlm_fast).
-func (e *Encoder) fillDictTables(content []byte) {
+func (e *encoder) fillDictTables(content []byte) {
 	switch e.cp.strategy {
 	case stratFast:
 		e.fillCCtxFast(content)

@@ -15,10 +15,10 @@ import (
 //
 //	parse    owns the io.Reader: walks frames and blocks, decodes the Huffman literals of every compressed block ahead and
 //	         builds its FSE tables (both depend on the previous block's tables but on no output);
-//	decode   the Reader's DStream, fed with exactly the bytes parse read, in order; where it reaches a block whose literals
+//	decode   the Reader's dStream, fed with exactly the bytes parse read, in order; where it reaches a block whose literals
 //	         and tables were prepared ahead (the same bytes, checked by pointer) it skips those steps; everything else is the
 //	         synchronous decoder, so output, errors and the history ring are identical to the synchronous Reader's;
-//	verify   the xxhash checksum of each frame over the decoded blocks (DStream does not hash in the pipeline);
+//	verify   the xxhash checksum of each frame over the decoded blocks (dStream does not hash in the pipeline);
 //	Read     copies the decoded blocks to the caller.
 //
 // parse never decides anything on its own: when it meets something the synchronous decoder would reject (a bad frame header,
@@ -26,15 +26,15 @@ import (
 // The Huffman state that block decoding keeps between blocks (the table of treeless literals) lives in parse only; it is
 // reset at every frame start like the synchronous decoder's.
 //
-// Decoded blocks are not copied on their way to Read: decode hands out slices of the DStream's history ring (consecutive
+// Decoded blocks are not copied on their way to Read: decode hands out slices of the dStream's history ring (consecutive
 // blocks of a lap are contiguous, so several travel in one message; a partial batch is sent as soon as decode would have to
 // wait for input). Before decode writes a block into ring space that an unread message still occupies it waits for Read to
-// finish with that message (DStream.waitRoom); the ring holds a window plus two blocks (2 MiB at least for large windows), so
+// finish with that message (dStream.waitRoom); the ring holds a window plus two blocks (2 MiB at least for large windows), so
 // this only stalls decode when the consumer is slower than the decoder anyway.
 
 // litJob is what parse prepared for one compressed block.
 type litJob struct {
-	body []byte // the block's compressed bytes (what DStream will be handed)
+	body []byte // the block's compressed bytes (what dStream will be handed)
 	lits []byte // decoded literals (aliases body for raw literals)
 	rest []byte // the block's sequence bitstream
 	nb   int    // number of sequences (0: the block is its literals)
@@ -170,7 +170,7 @@ const asyncChunkCap = blockMax + 8 // block header + largest block (frame header
 
 var errReaderClosed = errors.New("zstd: reader closed")
 
-func startAsync(r io.Reader, s *DStream, depth int) *asyncPipe {
+func startAsync(r io.Reader, s *dStream, depth int) *asyncPipe {
 	n := depth + 2
 	p := &asyncPipe{
 		chunks: make(chan asyncChunk, depth),
@@ -261,7 +261,7 @@ func (p *asyncPipe) forward(br *bufio.Reader, n uint64) bool {
 	return true
 }
 
-func (p *asyncPipe) parse(r io.Reader, s *DStream) {
+func (p *asyncPipe) parse(r io.Reader, s *dStream) {
 	br := bufio.NewReaderSize(r, 256<<10)
 	magicless := s.dec.Magicless
 	wl := s.WindowLogMax
@@ -270,7 +270,7 @@ func (p *asyncPipe) parse(r io.Reader, s *DStream) {
 	}
 	st := &decState{strictHuf: s.dec.StrictHuffman || strictHufDefault}
 	for {
-		// frame header, fed exactly like DStream does (incrementally)
+		// frame header, fed exactly like dStream does (incrementally)
 		var hdr [18]byte
 		n := 0
 		var h frameHeader
@@ -407,7 +407,7 @@ type zcMsg struct {
 	lo, hi int
 }
 
-func (p *asyncPipe) decode(s *DStream) {
+func (p *asyncPipe) decode(s *dStream) {
 	defer close(p.mid)
 	s.noShortcut = true
 	s.noHash = true
@@ -448,7 +448,7 @@ func (p *asyncPipe) decode(s *DStream) {
 		bN++
 		return true
 	}
-	// Before DStream writes a block into ring[lo:hi]: the pending batch must not be overwritten (send it), and every unread
+	// Before dStream writes a block into ring[lo:hi]: the pending batch must not be overwritten (send it), and every unread
 	// message that lives there must have been read.
 	s.waitRoom = func(lo, hi int) {
 		if bHi != bLo && lo < bHi && hi > bLo && !flush() {

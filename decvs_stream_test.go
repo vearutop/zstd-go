@@ -240,7 +240,7 @@ func TestStreamLargeVsLibzstd(t *testing.T) {
 		}
 		// the whole output equals the input
 		dec, _ := zstd.NewDecoder(c.decDicts()...)
-		rd := zstd.NewReader(bytes.NewReader(f), dec)
+		rd := zstd.NewReader(bytes.NewReader(f), zstd.WithDecoder(dec))
 		got, err := io.ReadAll(rd)
 		if err != nil || !bytes.Equal(got, data) {
 			bad++

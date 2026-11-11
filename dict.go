@@ -24,21 +24,21 @@ type Dict struct {
 	cdicts        map[int]*cdict // prepared per level
 	cdAdv         map[cdictKey]*cdict
 	raw           []byte
-	pool          sync.Pool // *Encoder
+	pool          sync.Pool // *encoder
 }
 
 // LoadDict parses a dictionary. Without the zstd magic, b is used as raw content (id 0).
-func LoadDict(b []byte) (*Dict, error) { return LoadDictType(b, DictAuto) }
+func LoadDict(b []byte) (*Dict, error) { return loadDictType(b, dictAuto) }
 
-// LoadDictType is LoadDict with the ZSTD_dictContentType_e of ZSTD_CCtx_loadDictionary_advanced: DictRaw uses b as raw
-// content even when it carries the zstd magic, DictFull requires a zstd-format dictionary.
-func LoadDictType(b []byte, typ DictContentType) (*Dict, error) {
+// loadDictType is LoadDict with the ZSTD_dictContentType_e of ZSTD_CCtx_loadDictionary_advanced: dictRaw uses b as raw
+// content even when it carries the zstd magic, dictFull requires a zstd-format dictionary.
+func loadDictType(b []byte, typ dictContentType) (*Dict, error) {
 	d := &Dict{reps: [3]uint32{1, 4, 8}, raw: b}
 	isZstd := len(b) >= 8 && binary.LittleEndian.Uint32(b) == dictMagic
-	if typ == DictFull && !isZstd {
+	if typ == dictFull && !isZstd {
 		return nil, errors.New("zstd: not a zstd-format dictionary")
 	}
-	if isZstd && typ != DictRaw {
+	if isZstd && typ != dictRaw {
 		d.id = binary.LittleEndian.Uint32(b[4:])
 		var rem []byte
 		ht, hsz, hasZero, ok := hufReadCTable(b[8:])
@@ -152,11 +152,11 @@ func (d *Dict) loadable() bool { return len(d.raw) >= 8 && len(d.content) >= 8 }
 // ID returns the dictionary id (0 for raw content).
 func (d *Dict) ID() uint32 { return d.id }
 
-// Compress appends a frame of src to dst, using a pooled Encoder; safe for concurrent use.
-func (d *Dict) Compress(dst, src []byte) []byte {
-	e, ok := d.pool.Get().(*Encoder)
+// Encode appends a frame of src to dst, using a pooled encoder; safe for concurrent use.
+func (d *Dict) Encode(dst, src []byte) []byte {
+	e, ok := d.pool.Get().(*encoder)
 	if !ok {
-		e = NewEncoder(d)
+		e = newEncoder(d)
 	}
 	dst = e.EncodeAll(src, dst)
 	d.pool.Put(e)

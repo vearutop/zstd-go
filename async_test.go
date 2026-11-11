@@ -136,7 +136,7 @@ func errString(err error) string {
 func compareAsync(t *testing.T, name string, stream []byte, dec func() *zstd.Decoder, rng *rand.Rand) {
 	t.Helper()
 	conc := 2 + rng.Intn(4)
-	a := zstd.NewReader(&chunkReader{bytes.NewReader(stream), rand.New(rand.NewSource(rng.Int63())), 1 + rng.Intn(100000)}, dec()) // own rng: the pipeline reads in another goroutine
+	a := zstd.NewReader(&chunkReader{bytes.NewReader(stream), rand.New(rand.NewSource(rng.Int63())), 1 + rng.Intn(100000)}, zstd.WithDecoder(dec())) // own rng: the pipeline reads in another goroutine
 	a.Concurrency = conc
 	got, gerr := readChunked(a, rng)
 	a.Close()
@@ -239,7 +239,7 @@ func TestAsyncGoroutines(t *testing.T) {
 	rng := rand.New(rand.NewSource(3))
 
 	// read to the end
-	a := zstd.NewReader(bytes.NewReader(big.stream), big.dec())
+	a := zstd.NewReader(bytes.NewReader(big.stream), zstd.WithDecoder(big.dec()))
 	a.Concurrency = 3
 	if _, err := readChunked(a, rng); err != io.EOF {
 		t.Fatal(err)
@@ -247,7 +247,7 @@ func TestAsyncGoroutines(t *testing.T) {
 	waitGoroutines(t, base, "after EOF")
 
 	// Close in the middle
-	a = zstd.NewReader(bytes.NewReader(big.stream), big.dec())
+	a = zstd.NewReader(bytes.NewReader(big.stream), zstd.WithDecoder(big.dec()))
 	a.Concurrency = 3
 	buf := make([]byte, 1000)
 	if _, err := a.Read(buf); err != nil {
@@ -261,7 +261,7 @@ func TestAsyncGoroutines(t *testing.T) {
 
 	// dropped without Close or EOF: the garbage collector stops the pipeline
 	func() {
-		a := zstd.NewReader(bytes.NewReader(big.stream), big.dec())
+		a := zstd.NewReader(bytes.NewReader(big.stream), zstd.WithDecoder(big.dec()))
 		a.Concurrency = 3
 		if _, err := a.Read(buf); err != nil {
 			t.Fatal(err)
@@ -271,7 +271,7 @@ func TestAsyncGoroutines(t *testing.T) {
 
 	// a reader blocked in Read does not hold Close hostage for the decoder goroutine
 	pr, pw := io.Pipe()
-	a = zstd.NewReader(pr, nil)
+	a = zstd.NewReader(pr)
 	a.Concurrency = 2
 	go func() { pw.Write(big.stream[:len(big.stream)/2]) }()
 	if _, err := a.Read(buf); err != nil {
@@ -287,7 +287,7 @@ func TestAsyncReadError(t *testing.T) {
 	c := cases[len(cases)-1]
 	boom := errors.New("boom")
 	r := io.MultiReader(bytes.NewReader(c.stream[:len(c.stream)/2]), &errReader{boom})
-	a := zstd.NewReader(r, c.dec())
+	a := zstd.NewReader(r, zstd.WithDecoder(c.dec()))
 	a.Concurrency = 2
 	_, err := readChunked(a, rand.New(rand.NewSource(4)))
 	if !errors.Is(err, boom) {
@@ -317,7 +317,7 @@ func TestAsyncRingStress(t *testing.T) {
 			}
 			for _, conc := range []int{2, 3, 6} {
 				zstd.SetRingExtraForTest(rng.Intn(3000))
-				r := zstd.NewReader(bytes.NewReader(frame), nil)
+				r := zstd.NewReader(bytes.NewReader(frame))
 				r.Concurrency = conc
 				var got bytes.Buffer
 				buf := make([]byte, 1+rng.Intn(3000))

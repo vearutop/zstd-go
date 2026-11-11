@@ -14,7 +14,7 @@ import (
 // ring buffer (inBuff) wrap-around that turns the previous lap into the extDict.
 //
 // Memory: the whole frame stays in the history buffer (the match finders index it by position; libzstd's ring buffer is
-// modelled only as index bookkeeping), so memory grows with the frame length; call End to release it.
+// modelled only as index bookkeeping), so memory grows with the frame length; call eEnd to release it.
 //
 // Multithreaded frames (nbWorkers > 0, source over 512 KiB or of unknown size) go through mtstream.go instead and keep only a
 // bounded number of jobs in memory.
@@ -23,14 +23,14 @@ import (
 // than 3.5 GB), long distance matching, and output buffers smaller than ZSTD_compressBound of the pending input
 // (libzstd then goes through its internal output buffer and the block layout of ZSTD_e_end may differ).
 
-// Directive is ZSTD_EndDirective.
-type Directive uint8
+// directive is ZSTD_EndDirective.
+type directive uint8
 
 // Directives of CompressStream2.
 const (
-	Continue Directive = iota // ZSTD_e_continue: collect data, emit complete blocks
-	Flush                     // ZSTD_e_flush: emit everything buffered as blocks
-	End                       // ZSTD_e_end: finish the frame
+	eContinue directive = iota // ZSTD_e_continue: collect data, emit complete blocks
+	eFlush                     // ZSTD_e_flush: emit everything buffered as blocks
+	eEnd                       // ZSTD_e_end: finish the frame
 )
 
 type streamState struct {
@@ -57,12 +57,12 @@ type streamState struct {
 	extRing    bool // the extDict is a previous lap of the ring buffer (and not dictionary memory)
 }
 
-// ErrPledgedSize is returned when the data does not match ZSTD_CCtx_setPledgedSrcSize.
-var ErrPledgedSize = errors.New("zstd: source size does not match the pledged size")
+// errPledgedSize is returned when the data does not match ZSTD_CCtx_setPledgedSrcSize.
+var errPledgedSize = errors.New("zstd: source size does not match the pledged size")
 
 // SetPledgedSrcSize is ZSTD_CCtx_setPledgedSrcSize; it applies to the next frame (contentSizeUnknown, i.e. ^uint64(0),
 // is "unknown"). It must be called before the first byte of the frame.
-func (e *Encoder) SetPledgedSrcSize(n uint64) error {
+func (e *encoder) SetPledgedSrcSize(n uint64) error {
 	if e.st.active {
 		return errors.New("zstd: cannot set the pledged size after the frame started")
 	}
@@ -75,9 +75,9 @@ func (e *Encoder) SetPledgedSrcSize(n uint64) error {
 }
 
 // initStream is ZSTD_CCtx_init_compressStream2 + ZSTD_compressBegin_internal (buffered).
-func (e *Encoder) initStream(op Directive, inSize uint64) error {
+func (e *encoder) initStream(op directive, inSize uint64) error {
 	s := &e.st
-	if op == End {
+	if op == eEnd {
 		s.pledged1 = inSize + 1 // auto-determine pledgedSrcSize
 	}
 	pledged := s.pledged1 - 1
@@ -90,7 +90,7 @@ func (e *Encoder) initStream(op Directive, inSize uint64) error {
 	}
 	if r.nbWorkers > 0 && pledged > mtJobSizeMin { // small known sizes are single-threaded in libzstd too
 		if r.dict != nil && r.cd == nil {
-			return ErrUnsupported // a RefPrefix becomes a CDict in libzstd's multithreaded mode: not ported
+			return ErrUnsupported // a RefPrefix becomes a preparedDict in libzstd's multithreaded mode: not ported
 		}
 		*s = streamState{active: true, pledged1: s.pledged1, pledged: pledged}
 		e.mt = newMTStream(r, pledged)
@@ -112,8 +112,8 @@ func (e *Encoder) initStream(op Directive, inSize uint64) error {
 }
 
 // CompressStream2 is ZSTD_compressStream2 with an output buffer that always has room: it consumes all of src and
-// appends the produced bytes to dst. Frames are finished by End; the next call starts a new frame.
-func (e *Encoder) CompressStream2(dst, src []byte, op Directive) ([]byte, error) {
+// appends the produced bytes to dst. Frames are finished by eEnd; the next call starts a new frame.
+func (e *encoder) CompressStream2(dst, src []byte, op directive) ([]byte, error) {
 	s := &e.st
 	if !s.active {
 		if err := e.initStream(op, uint64(len(src))); err != nil {
@@ -122,14 +122,14 @@ func (e *Encoder) CompressStream2(dst, src []byte, op Directive) ([]byte, error)
 	}
 	if e.mt != nil {
 		dst, err := e.mt.compress(dst, src, op)
-		if err != nil || op == End {
+		if err != nil || op == eEnd {
 			e.endSession()
 		}
 		return dst, err
 	}
 	ip := 0
 	for {
-		if op == End && s.inBuffPos == 0 { // shortcut: ZSTD_compressEnd_public(ip..iend) straight from the caller's memory
+		if op == eEnd && s.inBuffPos == 0 { // shortcut: ZSTD_compressEnd_public(ip..iend) straight from the caller's memory
 			var err error
 			dst, err = e.streamChunk(dst, src[ip:], false, true)
 			e.endSession()
@@ -139,13 +139,13 @@ func (e *Encoder) CompressStream2(dst, src []byte, op Directive) ([]byte, error)
 		s.staged = append(s.staged, src[ip:ip+loaded]...)
 		s.inBuffPos += loaded
 		ip += loaded
-		if op == Continue && s.inBuffPos < s.inBuffTgt {
+		if op == eContinue && s.inBuffPos < s.inBuffTgt {
 			return dst, nil // not enough input to fill a full block
 		}
-		if op == Flush && s.inBuffPos == s.inToComp {
+		if op == eFlush && s.inBuffPos == s.inToComp {
 			return dst, nil // empty
 		}
-		last := op == End && ip == len(src)
+		last := op == eEnd && ip == len(src)
 		var err error
 		dst, err = e.streamChunk(dst, s.staged, true, last)
 		if err != nil {
@@ -166,10 +166,10 @@ func (e *Encoder) CompressStream2(dst, src []byte, op Directive) ([]byte, error)
 }
 
 // ResetSession is ZSTD_CCtx_reset(ZSTD_reset_session_only): it abandons the current frame (the parameters and dictionary stay).
-func (e *Encoder) ResetSession() { e.endSession() }
+func (e *encoder) ResetSession() { e.endSession() }
 
 // endSession is ZSTD_CCtx_reset(session_only) after a finished frame.
-func (e *Encoder) endSession() {
+func (e *encoder) endSession() {
 	if e.mt != nil {
 		e.mt.abort()
 		e.mt = nil
@@ -182,7 +182,7 @@ func (e *Encoder) endSession() {
 // streamChunk is ZSTD_compressContinue_internal (last: ZSTD_compressEnd_public) in frame mode: the header (first call),
 // the window update and the blocks of data (which sits in the ring buffer when inRing), and for the last chunk the
 // epilogue.
-func (e *Encoder) streamChunk(dst, data []byte, inRing, last bool) ([]byte, error) {
+func (e *encoder) streamChunk(dst, data []byte, inRing, last bool) ([]byte, error) {
 	s := &e.st
 	if !s.started {
 		before := len(dst)
@@ -218,7 +218,7 @@ func (e *Encoder) streamChunk(dst, data []byte, inRing, last bool) ([]byte, erro
 		}
 		s.first = false
 		if s.pledged1 != 0 && s.consumed+uint64(len(data)) > s.pledged {
-			return dst, ErrPledgedSize
+			return dst, errPledgedSize
 		}
 		if e.fp.checksum {
 			s.sum.Write(data)
@@ -240,29 +240,29 @@ func (e *Encoder) streamChunk(dst, data []byte, inRing, last bool) ([]byte, erro
 			dst = binary.LittleEndian.AppendUint32(dst, uint32(s.sum.Sum64()))
 		}
 		if s.pledged1 != 0 && s.pledged != s.consumed {
-			return dst, ErrPledgedSize
+			return dst, errPledgedSize
 		}
 	}
 	return dst, nil
 }
 
-// StreamWriter is an io.Writer over an Encoder configured like a ZSTD_CCtx: bytes written are compressed into one frame
-// the way ZSTD_compressStream2 does for the same calls (Write: ZSTD_e_continue, Flush: ZSTD_e_flush, Close: ZSTD_e_end).
-type StreamWriter struct {
-	e   *Encoder
+// streamWriter is an io.Writer over an encoder configured like a ZSTD_CCtx: bytes written are compressed into one frame
+// the way ZSTD_compressStream2 does for the same calls (Write: ZSTD_e_continue, eFlush: ZSTD_e_flush, Close: ZSTD_e_end).
+type streamWriter struct {
+	e   *encoder
 	w   io.Writer
 	out []byte
 	err error
 }
 
-// NewStreamWriter returns a writer producing one frame (and a new one after each Close) on w with the parameters and the
-// dictionary of e (see Encoder.SetParams, RefCDict, LoadDictionary). e must not be used for anything else meanwhile.
-func NewStreamWriter(w io.Writer, e *Encoder) *StreamWriter { return &StreamWriter{e: e, w: w} }
+// newStreamWriter returns a writer producing one frame (and a new one after each Close) on w with the parameters and the
+// dictionary of e (see encoder.SetParams, RefCDict, LoadDictionary). e must not be used for anything else meanwhile.
+func newStreamWriter(w io.Writer, e *encoder) *streamWriter { return &streamWriter{e: e, w: w} }
 
 // SetPledgedSize is ZSTD_CCtx_setPledgedSrcSize for the next frame; call before the first Write of the frame.
-func (z *StreamWriter) SetPledgedSize(n uint64) error { return z.e.SetPledgedSrcSize(n) }
+func (z *streamWriter) SetPledgedSize(n uint64) error { return z.e.SetPledgedSrcSize(n) }
 
-func (z *StreamWriter) do(p []byte, op Directive) (int, error) {
+func (z *streamWriter) do(p []byte, op directive) (int, error) {
 	if z.err != nil {
 		return 0, z.err
 	}
@@ -279,10 +279,10 @@ func (z *StreamWriter) do(p []byte, op Directive) (int, error) {
 }
 
 // Write compresses p (ZSTD_e_continue).
-func (z *StreamWriter) Write(p []byte) (int, error) { return z.do(p, Continue) }
+func (z *streamWriter) Write(p []byte) (int, error) { return z.do(p, eContinue) }
 
-// Flush emits the buffered data as blocks (ZSTD_e_flush).
-func (z *StreamWriter) Flush() error { _, err := z.do(nil, Flush); return err }
+// eFlush emits the buffered data as blocks (ZSTD_e_flush).
+func (z *streamWriter) Flush() error { _, err := z.do(nil, eFlush); return err }
 
 // Close finishes the frame (ZSTD_e_end).
-func (z *StreamWriter) Close() error { _, err := z.do(nil, End); return err }
+func (z *streamWriter) Close() error { _, err := z.do(nil, eEnd); return err }

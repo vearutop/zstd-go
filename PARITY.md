@@ -58,7 +58,7 @@ single-shot tests never produced such blocks; the streaming tests did. Verified 
 
 ## Decoder (master, merged from the decoder-parity branch, last decoder commit `8760d20`)
 
-- `DecodeAll` follows `ZSTD_decompress`: window, offset, block-size, dictionary and checksum rules, magicless format,
+- `Decode` follows `ZSTD_decompress`: window, offset, block-size, dictionary and checksum rules, magicless format,
   multi-dictionary selection, libzstd's destination-capacity rules, X1 and X2 Huffman decoders and the fast path.
 - `DStream` / `Reader` follow `ZSTD_decompressStream` (hints, ring-buffer capacity errors, `RefPrefix`, sliding window with
   bounded memory), frame utility API (`GetFrameHeader`, `FindFrameCompressedSize`, `DecompressBound`, `IsFrame`, ...), error codes.

@@ -37,8 +37,8 @@ const (
 	dcSkip
 )
 
-// DStream is a streaming decompressor (ZSTD_DStream). The zero value is not usable; see NewDStream.
-type DStream struct {
+// dStream is a streaming decompressor (ZSTD_DStream). The zero value is not usable; see newDStream.
+type dStream struct {
 	// WindowLogMax is ZSTD_d_windowLogMax: frames with a larger window are rejected (0 means 27, the maximum is 31).
 	WindowLogMax int
 	// MaxBlockSize is ZSTD_d_maxBlockSize (0 = 128 KiB, otherwise 1 KiB..128 KiB).
@@ -84,17 +84,17 @@ type DStream struct {
 	waitRoom   func(lo, hi int) // async pipeline: called before block output is written into ring[lo:hi]
 }
 
-// NewDStream returns a stream decoder using the dictionaries, Magicless and IgnoreChecksum settings of dec (nil: defaults).
-func NewDStream(dec *Decoder) *DStream {
+// newDStream returns a stream decoder using the dictionaries, Magicless and IgnoreChecksum settings of dec (nil: defaults).
+func newDStream(dec *Decoder) *dStream {
 	if dec == nil {
 		dec, _ = NewDecoder() //nolint:errcheck // never fails without dictionaries
 	}
-	return &DStream{dec: dec, st: &decState{}, xx: xxhash.New()}
+	return &dStream{dec: dec, st: &decState{}, xx: xxhash.New()}
 }
 
 // RefPrefix makes the next frame use prefix as raw-content dictionary (ZSTD_DCtx_refPrefix); frames after it get no
 // dictionary. It fails unless the stream is between frames.
-func (s *DStream) RefPrefix(prefix []byte) error {
+func (s *dStream) RefPrefix(prefix []byte) error {
 	if s.stage != dsInit {
 		return newErr(ErrStageWrong, "RefPrefix in the middle of a frame")
 	}
@@ -108,7 +108,7 @@ func (s *DStream) RefPrefix(prefix []byte) error {
 }
 
 // takeDict is ZSTD_getDDict: a pending prefix is handed out once.
-func (s *DStream) takeDict() dictSel {
+func (s *dStream) takeDict() dictSel {
 	switch s.dictMode {
 	case 1:
 		s.dictMode = 2
@@ -128,18 +128,18 @@ func ringBufferSize(window, contentSize uint64, blockSizeMax int) int {
 }
 
 // midFrame reports whether a frame has been started and not completed.
-func (s *DStream) midFrame() bool {
+func (s *dStream) midFrame() bool {
 	return s.stage != dsInit && !(s.stage == dsLoadHeader && s.lhSize == 0)
 }
 
 // Reset aborts the current frame (ZSTD_DCtx_reset with ZSTD_reset_session_only).
-func (s *DStream) Reset() {
+func (s *dStream) Reset() {
 	s.stage = dsInit
 	s.noProgress = 0
 	s.cstage = dcEnd
 }
 
-func (s *DStream) minHeader() int {
+func (s *dStream) minHeader() int {
 	if s.dec.Magicless {
 		return 2
 	}
@@ -147,7 +147,7 @@ func (s *DStream) minHeader() int {
 }
 
 // nextSrc is ZSTD_nextSrcSizeToDecompressWithInputSize.
-func (s *DStream) nextSrc(avail int) int {
+func (s *dStream) nextSrc(avail int) int {
 	if (s.cstage != dcBlock && s.cstage != dcLastBlock) || s.bType != 0 {
 		return s.expected
 	}
@@ -157,7 +157,7 @@ func (s *DStream) nextSrc(avail int) int {
 // Decompress is ZSTD_decompressStream: it consumes input from in and writes to out, returning the bytes consumed and
 // produced and libzstd's hint (a suggested size of the next input; 0 when a frame is completely decoded and flushed).
 // On error nIn and nOut are 0 (libzstd does not update the positions then), except for the early header errors.
-func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) { //nolint:unparam // hint is libzstd's
+func (s *dStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) { //nolint:unparam // hint is libzstd's
 	wl := s.WindowLogMax
 	if wl == 0 {
 		wl = windowLogDefault
@@ -264,7 +264,7 @@ func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) { 
 			s.inBuf = s.inBuf[:max(int(s.fp.blockMax), 4)]
 			s.ringSize, s.ringPos = ringBufferSize(s.fp.window, s.fp.size, int(s.fp.blockMax)), 0
 			s.ringL = s.ringLen()
-			if s.fp.size != ContentSizeUnknown { // known content: allocate the ring once instead of growing it by append
+			if s.fp.size != contentSizeUnknown { // known content: allocate the ring once instead of growing it by append
 				s.ensureRing(s.ringL+wildPad, 0)
 			}
 			s.stage = dsRead
@@ -371,7 +371,7 @@ func (s *DStream) Decompress(in, out []byte) (nIn, nOut, hint int, err error) { 
 }
 
 // continueStream is ZSTD_decompressContinueStream (buffered output mode).
-func (s *DStream) continueStream(src []byte) error {
+func (s *dStream) continueStream(src []byte) error {
 	skip := s.cstage == dcSkip
 	n, err := s.cont(src)
 	if err != nil {
@@ -401,7 +401,7 @@ const ringFloorMinWindow = 256 << 10
 
 // ringLen is the logical size of the history ring: the window plus two blocks of room (block + wild-copy overrun), or just
 // the content plus one block when the frame is smaller than that (no wrap then).
-func (s *DStream) ringLen() int {
+func (s *dStream) ringLen() int {
 	w := int(min(s.fp.window, uint64(1)<<31))
 	space := s.st.bm + wildPad
 	n := w + 2*space
@@ -409,7 +409,7 @@ func (s *DStream) ringLen() int {
 		n = max(n, ringFloor)
 	}
 	n += ringExtra
-	if s.fp.size != ContentSizeUnknown && s.fp.size < uint64(n-space) {
+	if s.fp.size != contentSizeUnknown && s.fp.size < uint64(n-space) {
 		n = int(s.fp.size) + space
 	}
 	return n
@@ -417,7 +417,7 @@ func (s *DStream) ringLen() int {
 
 // ensureRing makes the backing array at least need bytes long, keeping the first keep bytes (the current lap). Unknown-size
 // frames grow it geometrically up to the full ring.
-func (s *DStream) ensureRing(need, keep int) {
+func (s *dStream) ensureRing(need, keep int) {
 	if len(s.ring) >= need {
 		return
 	}
@@ -432,7 +432,7 @@ func (s *DStream) ensureRing(need, keep int) {
 // restarts at the front. The part of the previous lap that block space ahead of hist has not overwritten yet is dc, which
 // the sequence code already treats as the bytes preceding hist (it is how dictionaries work), so no match copy changes. The
 // ring holds window + 2 blocks, so hist and dc together always hold at least a full window.
-func (s *DStream) prepRing() {
+func (s *dStream) prepRing() {
 	pos := len(s.hist)
 	space := s.st.bm + wildPad
 	if pos+space > s.ringL && s.outStart == pos { // wrap (only between flushes: the previous output is fully copied out)
@@ -457,7 +457,7 @@ func (s *DStream) prepRing() {
 }
 
 // cont is ZSTD_decompressContinue for the stages the stream API reaches; it returns the number of bytes appended to hist.
-func (s *DStream) cont(src []byte) (int, error) {
+func (s *dStream) cont(src []byte) (int, error) {
 	switch s.cstage {
 	case dcBlockHeader:
 		cs, last, typ, orig, err := getcBlockSize(src)
@@ -580,11 +580,15 @@ type Reader struct {
 	// Concurrency >= 2 (set before the first Read) decodes with a pipeline of goroutines: Huffman literals are decoded ahead
 	// of the sequence stage and the caller copies from finished blocks, so wall time drops while CPU time rises a little.
 	// Output and errors are the same as the synchronous Reader's. It holds up to Concurrency blocks in flight (a few hundred
-	// KiB each) on top of the history, and the Stream() parameters must not be changed while reading. 0 or 1: synchronous.
+	// KiB each) on top of the history, and the parameters must not be changed while reading. 0 or 1: synchronous.
 	Concurrency int
+	// WindowLogMax is ZSTD_d_windowLogMax: frames with a larger window are rejected (0 means 27, the maximum is 31). Set before the first Read.
+	WindowLogMax int
+	// MaxBlockSize is ZSTD_d_maxBlockSize (0 = 128 KiB, otherwise 1 KiB..128 KiB). Set before the first Read.
+	MaxBlockSize int
 
 	r     io.Reader
-	s     *DStream
+	s     *dStream
 	in    []byte
 	pos   int
 	end   int
@@ -594,13 +598,31 @@ type Reader struct {
 	async *asyncPipe
 }
 
-// NewReader returns a Reader decoding frames from r with dec (nil: no dictionaries).
-func NewReader(r io.Reader, dec *Decoder) *Reader {
-	return &Reader{r: r, s: NewDStream(dec), in: make([]byte, 128<<10+3)}
+// ReaderOption configures a Reader in NewReader.
+type ReaderOption func(*Reader)
+
+// WithDecoder sets the Decoder holding the dictionaries (nil: none).
+func WithDecoder(d *Decoder) ReaderOption {
+	return func(z *Reader) {
+		if d != nil {
+			z.s.dec = d
+		}
+	}
 }
 
-// Stream returns the underlying DStream, whose parameters (WindowLogMax, MaxBlockSize) may be set before the first Read.
-func (z *Reader) Stream() *DStream { return z.s }
+// WithReaderDict makes the Reader know the given dictionaries.
+func WithReaderDict(dicts ...*Dict) ReaderOption {
+	return func(z *Reader) { z.s.dec, _ = NewDecoder(dicts...) }
+}
+
+// NewReader returns a Reader decoding frames from r configured by opts.
+func NewReader(r io.Reader, opts ...ReaderOption) *Reader {
+	z := &Reader{r: r, s: newDStream(nil), in: make([]byte, 128<<10+3)}
+	for _, o := range opts {
+		o(z)
+	}
+	return z
+}
 
 func (z *Reader) Read(p []byte) (int, error) {
 	if len(p) == 0 {
@@ -608,6 +630,7 @@ func (z *Reader) Read(p []byte) (int, error) {
 	}
 	if !z.began {
 		z.began = true
+		z.s.WindowLogMax, z.s.MaxBlockSize = z.WindowLogMax, z.MaxBlockSize
 		if z.Concurrency >= 2 && z.s.dictMode == 0 && z.err == nil { // a RefPrefix on the stream is not supported by the pipeline
 			z.startAsync()
 		}

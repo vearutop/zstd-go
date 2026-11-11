@@ -92,7 +92,7 @@ func seqAsmDecode(dec *Decoder, frame []byte, size int) []seqAsmResult {
 	dec.MaxSize = size + 1
 	add(dec.DecodeAll(frame, nil))
 	dec.MaxSize = 0
-	out, err := io.ReadAll(NewReader(bytes.NewReader(frame), dec))
+	out, err := io.ReadAll(NewReader(bytes.NewReader(frame), WithDecoder(dec)))
 	add(out, err)
 	return res
 }
@@ -136,7 +136,7 @@ func TestSeqAsmDiff(t *testing.T) {
 							continue // keep the run time reasonable under emulation
 						}
 						src := seqAsmData(r, kind, size)
-						e := NewEncoder(d)
+						e := newEncoder(d)
 						e.Level, e.NoChecksum = lvl, r.Intn(2) == 0
 						frame := e.EncodeAll(src, nil)
 						frames++

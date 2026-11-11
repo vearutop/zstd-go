@@ -6,13 +6,13 @@ import (
 	"github.com/cespare/xxhash/v2"
 )
 
-// NewEncoder returns an encoder; d may be nil.
-func NewEncoder(d *Dict) *Encoder { return &Encoder{dict: d} }
+// newEncoder returns an encoder; d may be nil.
+func newEncoder(d *Dict) *encoder { return &encoder{dict: d} }
 
 // EncodeAll appends a complete frame of src to dst. Frame has content size (single segment) and checksum.
-// It is ZSTD_compress_usingCDict (ZSTD_compressCCtx without a dictionary) at Encoder.Level; see Compress2 for the
+// It is ZSTD_compress_usingCDict (ZSTD_compressCCtx without a dictionary) at encoder.Level; see Compress2 for the
 // ZSTD_compress2 configuration.
-func (e *Encoder) EncodeAll(src, dst []byte) []byte {
+func (e *encoder) EncodeAll(src, dst []byte) []byte {
 	r := e.legacyRequest(src)
 	r.alias = true
 	out := e.frame(src, dst, e.begin(src, r))
@@ -24,7 +24,7 @@ func (e *Encoder) EncodeAll(src, dst []byte) []byte {
 
 // legacyRequest is ZSTD_compressBegin_usingCDict_internal (ZSTD_compress_usingCDict), or ZSTD_compressCCtx without
 // a dictionary.
-func (e *Encoder) legacyRequest(src []byte) *request {
+func (e *encoder) legacyRequest(src []byte) *request {
 	n := uint64(len(src))
 	r := &request{pledged: n, maxBlock: blockMax, fp: frameParams{contentSize: true, checksum: !e.NoChecksum}}
 	level := e.level()
@@ -57,7 +57,7 @@ func (e *Encoder) legacyRequest(src []byte) *request {
 	return r
 }
 
-func (e *Encoder) level() int {
+func (e *encoder) level() int {
 	if e.Level == 0 {
 		return defaultLevel
 	}
@@ -73,7 +73,7 @@ func shouldAttachDict(cd *cdict, pref AttachPref, pledged uint64) bool {
 }
 
 // frame is ZSTD_compressEnd_public after begin: header, the blocks of src, epilogue. L is the dictionary length.
-func (e *Encoder) frame(src, dst []byte, L int) []byte {
+func (e *encoder) frame(src, dst []byte, L int) []byte {
 	dst = e.header(dst, uint64(len(src)))
 	if len(src) == 0 {
 		dst = blockHeader(dst, true, 0, 0)
@@ -88,7 +88,7 @@ func (e *Encoder) frame(src, dst []byte, L int) []byte {
 
 // chunk is ZSTD_compress_frameChunk: the blocks of data, which starts at position base of the frame; savings is
 // consumedSrcSize - producedCSize.
-func (e *Encoder) chunk(dst, data []byte, L, base0 int, last bool, savings int64) []byte {
+func (e *encoder) chunk(dst, data []byte, L, base0 int, last bool, savings int64) []byte {
 	bsMax := e.blockSizeMax()
 	for base := 0; ; {
 		bs := optimalBlockSize(data[base:], bsMax, savings, e.preSplit, e.cp.strategy)
@@ -105,7 +105,7 @@ func (e *Encoder) chunk(dst, data []byte, L, base0 int, last bool, savings int64
 }
 
 // blockSizeMax is cctx->blockSizeMax: min(maxBlockSize, windowSize) with windowSize = max(1, min(1 << windowLog, pledged)).
-func (e *Encoder) blockSizeMax() int {
+func (e *encoder) blockSizeMax() int {
 	windowSize := max(1, min(uint64(1)<<e.cp.windowLog, e.pledged))
 	return int(min(uint64(e.blockMax), windowSize))
 }
@@ -113,7 +113,7 @@ func (e *Encoder) blockSizeMax() int {
 // begin loads dictionary and source into e.buf, derives the working parameters (ZSTD_compressBegin_internal:
 // ZSTD_resetCCtx_usingCDict by attaching or copying, or the full dictionary load) and sets up the tables. It returns
 // the dictionary length in e.buf.
-func (e *Encoder) begin(src []byte, r *request) (L int) {
+func (e *encoder) begin(src []byte, r *request) (L int) {
 	n := r.pledged
 	e.pledged = n
 	e.copyMode, e.loadedDictEnd, e.dictLimit, e.lowLimit = false, 0, windowStartIndex, windowStartIndex
@@ -156,10 +156,10 @@ func (e *Encoder) begin(src []byte, r *request) (L int) {
 		e.loadedDictEnd = uint32(L + windowStartIndex)
 		e.dictLimit = e.loadedDictEnd
 		if shouldAttachDict(cd, r.attach, n) {
-			e.useRow = cd.row // the CDict overrides
+			e.useRow = cd.row // the preparedDict overrides
 			e.cp = adjustCParams(cd.cp, n, cd.dictSize, cpmAttachDict, r.useRow)
 			e.cp.windowLog = r.cp.windowLog
-			e.lowLimit = e.dictLimit // the attached dictionary lives in the CDict: the window starts at the source
+			e.lowLimit = e.dictLimit // the attached dictionary lives in the preparedDict: the window starts at the source
 			if L > 0 {
 				e.dms = cd
 			} else {

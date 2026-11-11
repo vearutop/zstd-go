@@ -10,7 +10,7 @@ import (
 )
 
 // Parallel Writer (Writer.Concurrency >= 2). Frames are independent, so compressing them concurrently produces exactly the
-// bytes the synchronous Writer produces: Write cuts frames and submits them in order to a pool of workers (one Encoder each),
+// bytes the synchronous Writer produces: Write cuts frames and submits them in order to a pool of workers (one encoder each),
 // and one output goroutine takes the jobs in submission order, waits for each to finish and writes it. The number of frames in
 // flight is bounded (Concurrency), which is also the backpressure on Write. Each in-flight frame holds up to FrameSize bytes of
 // input, its output and its worker's encoder tables.
@@ -23,8 +23,8 @@ type wcfg struct {
 	seekable bool
 }
 
-func (c wcfg) newEncoder() (*Encoder, error) {
-	e := NewEncoder(c.dict)
+func (c wcfg) newEncoder() (*encoder, error) {
+	e := newEncoder(c.dict)
 	if c.params != (Params{}) {
 		return e, e.SetParams(c.params)
 	}
@@ -34,7 +34,7 @@ func (c wcfg) newEncoder() (*Encoder, error) {
 	return e, nil
 }
 
-func (c wcfg) compress(e *Encoder, in, out []byte) ([]byte, error) {
+func (c wcfg) compress(e *encoder, in, out []byte) ([]byte, error) {
 	if c.params != (Params{}) {
 		return e.Compress2(out[:0], in)
 	}

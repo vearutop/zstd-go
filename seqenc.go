@@ -13,7 +13,7 @@ type hufState struct {
 
 // writeLiterals is ZSTD_compressLiterals for dfast: prevHuf is the table state before this block, the result
 // state goes to nextHuf (committed by block() only when the block ends up compressed).
-func (e *Encoder) writeLiterals() {
+func (e *encoder) writeLiterals() {
 	lits := e.lits
 	n := len(lits)
 	e.nextHuf = e.prevHuf
@@ -440,7 +440,7 @@ type seqStats struct {
 
 // buildSeqStats is ZSTD_buildSequencesStatistics: it fills e.llc/ofc/mlc with the codes of seqs, selects the encoding
 // types against prev (updating the repeat modes of next), builds the tables in slots and appends their headers to hdr.
-func (e *Encoder) buildSeqStats(seqs []seq, slots *[3]cTable, hdr []byte, prev, next *fseTables) ([]byte, seqStats) {
+func (e *encoder) buildSeqStats(seqs []seq, slots *[3]cTable, hdr []byte, prev, next *fseTables) ([]byte, seqStats) {
 	n := len(seqs)
 	e.llc, e.ofc, e.mlc = e.llc[:0], e.ofc[:0], e.mlc[:0]
 	for _, q := range seqs {
@@ -487,7 +487,7 @@ func (e *Encoder) buildSeqStats(seqs []seq, slots *[3]cTable, hdr []byte, prev, 
 
 // writeSequences is the sequences part of ZSTD_entropyCompressSeqStore_internal. It returns false when libzstd
 // would emit the block uncompressed (the "bug in 1.3.4" rule).
-func (e *Encoder) writeSequences() bool {
+func (e *encoder) writeSequences() bool {
 	n := len(e.seqs)
 	switch {
 	case n < 128:

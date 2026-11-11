@@ -17,7 +17,7 @@ func BenchmarkSeqAsm(b *testing.B) {
 		kind, level int
 	}{{"text-L1", 0, 1}, {"text-L3", 0, 3}, {"text-L19", 0, 19}, {"mixed-L3", 3, 3}, {"mixed-L19", 3, 19}} {
 		src := seqAsmData(r, c.kind, 1<<20)
-		e := NewEncoder(nil)
+		e := newEncoder(nil)
 		e.Level = c.level
 		frame := e.EncodeAll(src, nil)
 		dec, _ := NewDecoder()

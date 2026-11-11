@@ -26,17 +26,17 @@ const (
 	LoadForce                       // ZSTD_dictForceLoad
 )
 
-// DictContentType is ZSTD_dictContentType_e.
-type DictContentType uint8
+// dictContentType is ZSTD_dictContentType_e.
+type dictContentType uint8
 
-// Values of DictContentType.
+// Values of dictContentType.
 const (
-	DictAuto DictContentType = iota // ZSTD_dct_auto: zstd-format when the magic matches, raw content otherwise
-	DictRaw                         // ZSTD_dct_rawContent
-	DictFull                        // ZSTD_dct_fullDict: must be zstd-format
+	dictAuto dictContentType = iota // ZSTD_dct_auto: zstd-format when the magic matches, raw content otherwise
+	dictRaw                         // ZSTD_dct_rawContent
+	dictFull                        // ZSTD_dct_fullDict: must be zstd-format
 )
 
-// Params mirrors the ZSTD_c_* parameters of ZSTD_CCtx_setParameter that Encoder.Compress2 honours; the zero value is
+// Params mirrors the ZSTD_c_* parameters of ZSTD_CCtx_setParameter that encoder.Compress2 honours; the zero value is
 // libzstd's default configuration (level 3, no checksum, content size and dictionary id written).
 // Fields of 0 mean "derive from the level", like ZSTD_CCtx_setParameter(…, 0).
 type Params struct {
@@ -64,7 +64,7 @@ type Params struct {
 	// one frame, byte-identical to libzstd with the same nbWorkers parameters (the output depends on JobSize and OverlapLog, not
 	// on NbWorkers). Inputs of 512 KiB or less are compressed as with 0. Each job after the first sees only the last OverlapLog
 	// share of the window of the previous job as history, and starts with fresh entropy tables and no repeat offsets, so it
-	// compresses a little worse than one thread. The streaming API (CompressStream2, StreamWriter) makes the same frame with at
+	// compresses a little worse than one thread. The streaming API (CompressStream2, streamWriter) makes the same frame with at
 	// most NbWorkers jobs in memory (unlike the single-threaded stream, which keeps the whole frame), for any length. Not
 	// supported with a raw RefPrefix or LDM.
 	NbWorkers int
@@ -224,8 +224,8 @@ type frameParams struct {
 
 // request is what ZSTD_compressBegin_internal receives: resolved parameters, the pledged size and the dictionary.
 type request struct {
-	alias     bool    // the source may be read in place instead of being copied to the Encoder's buffer (EncodeAll)
-	cp        cParams // params->cParams, before the adjustments for an attached or copied CDict
+	alias     bool    // the source may be read in place instead of being copied to the encoder's buffer (EncodeAll)
+	cp        cParams // params->cParams, before the adjustments for an attached or copied preparedDict
 	useRow    psMode  // resolved
 	postSplit psMode  // resolved
 	fp        frameParams
@@ -235,7 +235,7 @@ type request struct {
 	maxBlock  int    // resolved (never 0)
 	pledged   uint64 // contentSizeUnknown if unknown
 	dict      *Dict  // parsed dictionary (content, entropy tables), nil if none
-	cd        *cdict // the CDict, nil when the dictionary is loaded directly (prefix)
+	cd        *cdict // the preparedDict, nil when the dictionary is loaded directly (prefix)
 	targetCB  int
 
 	nbWorkers, jobSize, overlapLog int // multithreading (ZSTD_c_nbWorkers, jobSize, overlapLog), clamped
