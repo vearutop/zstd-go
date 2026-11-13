@@ -61,6 +61,7 @@ type asyncSlot struct {
 	buf  []byte
 	lbuf []byte     // literals (allocated when first needed)
 	tabs *seqTables // table copies (allocated when first needed)
+	job  litJob     // the chunk's litJob: travels with the slot, so no allocation per block
 }
 
 type asyncChunk struct {
@@ -358,7 +359,8 @@ func (p *asyncPipe) parse(r io.Reader, s *dStream) {
 				body := cb[3 : 3+cs]
 				lits, rest, err := st.literals(body)
 				st.lits = nil
-				job := &litJob{body: body, lits: lits, err: err}
+				job := &sl.job
+				*job = litJob{body: body, lits: lits, err: err}
 				if err == nil {
 					job.nb, job.rest, job.err = st.seqPrep(rest)
 				}

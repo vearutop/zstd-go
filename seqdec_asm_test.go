@@ -223,7 +223,7 @@ func seqFastRef(c *seqCtx, buf []byte, llt, oft, mlt []dEntry, out, lits []byte)
 			}
 		}
 		n2 := n + llen
-		if o := int(off); o < 32 || o > n2-c.base || n2+mlen+wildPad > c.ocap {
+		if o := int(off); o < 1 || o > n2-c.base || n2+mlen+wildPad > c.ocap || (o < 8 && mlen > 64) {
 			return
 		}
 		updateRep(&c.reps, offBase, ll0)
@@ -233,7 +233,21 @@ func seqFastRef(c *seqCtx, buf []byte, llt, oft, mlt []dEntry, out, lits []byte)
 		} else {
 			copy(out[n:n+llen], lits[li:li+llen])
 		}
-		wildCopy(out, n2, out, n2-int(off), mlen)
+		if off >= 8 && off < 32 { // overlapping: steps of 16 (off >= 16) or 8 bytes, like the assembly (so is its overshoot)
+			step := 8
+			if off >= 16 {
+				step = 16
+			}
+			for k := 0; k < mlen; k += step {
+				copy(out[n2+k:n2+k+step], out[n2+k-int(off):n2+k-int(off)+step])
+			}
+		} else if off < 8 {
+			for k := 0; k < mlen; k++ {
+				out[n2+k] = out[n2+k-int(off)]
+			}
+		} else {
+			wildCopy(out, n2, out, n2-int(off), mlen)
+		}
 		c.v, c.br, c.off, c.sl, c.so, c.sm = r.v, uint64(r.br), r.off, uint64(sl), uint64(so), uint64(sm)
 		c.n, c.li = n2+mlen, li+llen
 	}

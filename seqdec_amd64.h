@@ -1,8 +1,8 @@
 // Body of seqDecBase/seqDecBMI2 (seqdec_amd64.s includes it once per variant, with its own GETBITS).
 // It is the loop of decState.sequences (decoder.go) restricted to "simple" sequences that are not the block's last:
 // the stream stays inside the buffer, the block stays within outLim, the literals take the 16-byte copy or (at least
-// 16 of them) an append within the capacity, the offset (>= 32) points into this call's output and the match fits the
-// 32-byte wildCopy. Each sequence is decoded into
+// 16 of them) an append within the capacity, the offset points into this call's output (and, below 8, the match is at most
+// 64 bytes) and the match fits the 32-byte wildCopy. Each sequence is decoded into
 // registers; when it is not simple the loop returns with c holding the state before it, otherwise it is committed to c.
 //
 // Registers: R15 c, R8 v, R9 br, R10 off, R11 buf, SI/DI/BP the ll/of/ml entries then the new states,
@@ -150,9 +150,16 @@ newoff:
 	MOVL $2, DX
 
 check:
-	// 32 <= off <= n+llen-base, n+llen+mlen+32 <= cap(out)
-	CMPQ BX, $32
-	JLT  done
+	// 1 <= off <= n+llen-base, n+llen+mlen+32 <= cap(out); an offset below 8 repeats a short pattern byte by byte,
+	// so a long match of one (a run) is left to the Go loop
+	TESTQ BX, BX
+	JEQ   done
+	CMPQ  BX, $8
+	JGE   offok
+	CMPQ  R13, $64
+	JGT   done
+
+offok:
 	LEAQ (AX)(R14*1), R12
 	SUBQ seqCtx_base(R15), R12
 	CMPQ BX, R12
@@ -229,6 +236,8 @@ cpdone:
 	MOVQ SI, DI
 	SUBQ BX, DI
 	XORQ CX, CX
+	CMPQ BX, $32
+	JLT  shortoff
 
 copy:
 	CMPQ  CX, R13
@@ -245,6 +254,39 @@ copied:
 	MOVQ AX, seqCtx_n(R15)
 	DECQ seqCtx_rem(R15)
 	JMP  loop
+
+shortoff:
+	// off < 32: steps of 16 (off >= 16), 8 (off >= 8) or 1 byte, so a step reads only bytes that are already written
+	CMPQ BX, $16
+	JLT  off8
+
+step16:
+	CMPQ  CX, R13
+	JGE   copied
+	MOVOU (DI)(CX*1), X0
+	MOVOU X0, (SI)(CX*1)
+	ADDQ  $16, CX
+	JMP   step16
+
+off8:
+	CMPQ BX, $8
+	JLT  off1
+
+step8:
+	CMPQ CX, R13
+	JGE  copied
+	MOVQ (DI)(CX*1), DX
+	MOVQ DX, (SI)(CX*1)
+	ADDQ $8, CX
+	JMP  step8
+
+off1:
+	CMPQ CX, R13
+	JGE  copied
+	MOVB (DI)(CX*1), DX
+	MOVB DX, (SI)(CX*1)
+	INCQ CX
+	JMP  off1
 
 done:
 	RET
