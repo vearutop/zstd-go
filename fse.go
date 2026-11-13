@@ -33,19 +33,22 @@ func (ct *cTable) build(normIn []int16, log uint8) {
 	mask := size - 1
 	step := (size >> 1) + (size >> 3) + 3
 	ct.log = log
+	if cap(ct.norm) < 256 {
+		ct.norm = make([]int16, 0, 256)
+	}
 	ct.norm = append(ct.norm[:0], normIn...)
 	norm := ct.norm
 	if cap(ct.stateTable) < size {
-		ct.stateTable = make([]uint16, size)
+		ct.stateTable = make([]uint16, size, max(size, 512))
 	}
 	ct.stateTable = ct.stateTable[:size]
 	if cap(ct.tt) < len(norm) {
-		ct.tt = make([]symTT, len(norm))
+		ct.tt = make([]symTT, len(norm), max(len(norm), 256))
 	}
 	ct.tt = ct.tt[:len(norm)]
 	var cumul [64]int
 	if cap(ct.sym) < size {
-		ct.sym = make([]uint8, size)
+		ct.sym = make([]uint8, size, max(size, 512))
 	}
 	sym := ct.sym[:size]
 	high := size - 1

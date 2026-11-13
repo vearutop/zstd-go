@@ -82,3 +82,6 @@ func srcPtr(b []byte) unsafe.Pointer {
 	}
 	return unsafe.Pointer(&b[0])
 }
+
+// Version is ZSTD_versionString of the linked libzstd.
+func Version() string { return C.GoString(C.ZSTD_versionString()) }

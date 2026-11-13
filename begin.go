@@ -86,6 +86,8 @@ func (e *encoder) frame(src, dst []byte, L int) []byte {
 	return dst
 }
 
+const drainSize = 1 << 20
+
 // chunk is ZSTD_compress_frameChunk: the blocks of data, which starts at position base of the frame; savings is
 // consumedSrcSize - producedCSize.
 func (e *encoder) chunk(dst, data []byte, L, base0 int, last bool, savings int64) []byte {
@@ -96,6 +98,12 @@ func (e *encoder) chunk(dst, data []byte, L, base0 int, last bool, savings int64
 		before := len(dst)
 		dst = e.block(dst, data[base:end], L, base0+base, last && end == len(data))
 		savings += int64(bs) - int64(len(dst)-before)
+		if e.drain != nil && len(dst) >= drainSize {
+			if e.drainErr == nil {
+				e.drainErr = e.drain(dst)
+			}
+			dst = dst[:0]
+		}
 		base = end
 		if end == len(data) {
 			break

@@ -9,6 +9,11 @@ const blockMax = 128 << 10
 
 // encoder is a reusable single-shot encoder, not safe for concurrent use.
 type encoder struct {
+	// drain, when set (Writer), receives the output of a frame in pieces of about drainSize bytes while it is produced,
+	// so a huge frame does not need a huge output buffer. After the first error the rest of the frame is dropped.
+	drain    func([]byte) error
+	drainErr error
+
 	hufOut   []byte     // scratch for the Huffman-compressed literals of one block
 	mtEnc    []*encoder // job encoders of the multithreaded Compress2, kept between calls
 	mt       *mtStream  // multithreaded frame in progress (mtstream.go)
@@ -200,6 +205,10 @@ func (e *encoder) block(dst, s []byte, L, base int, last bool) []byte {
 	}
 	savedReps := e.reps // prevCBlock->rep: the block compressor works on nextCBlock->rep, which only counts once confirmed
 	e.seqs, e.lits = e.seqs[:0], e.lits[:0]
+	if cap(e.seqs) < n/3+1 { // a sequence covers at least 3 bytes: size once instead of growing by append through the first blocks
+		e.seqs, e.lits = make([]seq, 0, n/3+1), make([]byte, 0, n)
+		e.llc, e.ofc, e.mlc = make([]uint8, 0, n/3+1), make([]uint8, 0, n/3+1), make([]uint8, 0, n/3+1)
+	}
 	e.matchFind(L, base, n)
 	if e.postSplit {
 		return e.splitBlock(dst, s, last, savedReps)

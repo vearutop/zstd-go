@@ -3,6 +3,7 @@ package zstd
 import (
 	"errors"
 	"io"
+	"slices"
 
 	"github.com/cespare/xxhash/v2"
 )
@@ -114,6 +115,13 @@ func (z *Writer) Write(p []byte) (n int, err error) {
 	}
 	fs := z.size()
 	for len(p) > 0 {
+		if z.async == nil && len(z.buf) == 0 && len(p) >= fs { // a whole frame at hand: compress it in place, no copy
+			if err = z.frame(p[:fs]); err != nil {
+				return n, err
+			}
+			p, n = p[fs:], n+fs
+			continue
+		}
 		k := min(fs-len(z.buf), len(p))
 		z.buf = append(z.buf, p[:k]...)
 		p, n = p[k:], n+k
@@ -150,6 +158,24 @@ func (z *Writer) Flush() error {
 	if z.err != nil || len(z.buf) == 0 {
 		return z.err
 	}
+	err := z.frame(z.buf)
+	z.buf = z.buf[:0]
+	return err
+}
+
+// frame compresses src as one frame and writes it.
+func (z *Writer) frame(src []byte) error {
+	if z.err != nil {
+		return z.err
+	}
+	z.out = slices.Grow(z.out[:0], min(len(src)/2+64, 2*drainSize)) // a large frame is written out in pieces (encoder.drain)
+	var size int
+	z.e.drain, z.e.drainErr = func(b []byte) error {
+		size += len(b)
+		_, err := z.w.Write(b)
+		return err
+	}, nil
+	defer func() { z.e.drain = nil }()
 	if z.Params != (Params{}) {
 		if !z.pset {
 			if z.err = z.e.SetParams(z.Params); z.err != nil {
@@ -157,20 +183,23 @@ func (z *Writer) Flush() error {
 			}
 			z.pset = true
 		}
-		if z.out, z.err = z.e.Compress2(z.out[:0], z.buf); z.err != nil {
+		if z.out, z.err = z.e.Compress2(z.out, src); z.err != nil {
 			return z.err
 		}
 	} else {
 		if z.Level != 0 {
 			z.e.Level = z.Level
 		}
-		z.out = z.e.EncodeAll(z.buf, z.out[:0])
+		z.out = z.e.EncodeAll(src, z.out)
 	}
+	if z.err = z.e.drainErr; z.err != nil {
+		return z.err
+	}
+	size += len(z.out)
 	if z.Seekable {
-		z.table = append(z.table, seekEntry{uint32(len(z.out)), uint32(len(z.buf)), uint32(xxhash.Sum64(z.buf))})
+		z.table = append(z.table, seekEntry{uint32(size), uint32(len(src)), uint32(xxhash.Sum64(src))})
 	}
 	z.n++
-	z.buf = z.buf[:0]
 	_, z.err = z.w.Write(z.out)
 	return z.err
 }

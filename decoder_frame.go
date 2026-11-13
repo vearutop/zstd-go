@@ -47,7 +47,9 @@ type Decoder struct {
 	pool  sync.Pool // *decState
 }
 
-// NewDecoder returns a decoder that knows the given dictionaries.
+// NewDecoder returns a decoder that knows the given dictionaries; a frame is decoded with the one whose id it names. Dictionaries
+// with the same id (all raw-content dictionaries have id 0) cannot be told apart: only the last of them is used, so decode frames
+// of raw-content dictionaries with Dict.Decode instead.
 func NewDecoder(dicts ...*Dict) (*Decoder, error) { //nolint:unparam // the error is part of the API
 	d := &Decoder{dicts: map[uint32]*Dict{}}
 	for _, dc := range dicts {

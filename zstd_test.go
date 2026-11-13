@@ -460,3 +460,58 @@ func TestNewDecoderNilDict(t *testing.T) {
 		t.Fatalf("%q %v", got, err)
 	}
 }
+
+func TestDictEncodeLevel(t *testing.T) {
+	d, _ := loadDict(t)
+	dec, _ := zstd.NewDecoder(d)
+	src := corpus(3, 4)[1]
+	for _, dd := range []*zstd.Dict{d, nil} {
+		for _, level := range []int{0, 1, 3, 9, 19, -5} {
+			got := dd.EncodeLevel(nil, src, level)
+			e := zstd.NewEncoder(dd)
+			e.Level = level
+			if !bytes.Equal(got, e.EncodeAll(src, nil)) {
+				t.Fatalf("dict=%v level %d: differs from the encoder's frame", dd != nil, level)
+			}
+			if out, err := dec.Decode(nil, got); err != nil || !bytes.Equal(out, src) {
+				t.Fatalf("dict=%v level %d: round trip: %v", dd != nil, level, err)
+			}
+		}
+	}
+	if len(d.EncodeLevel(nil, src, 1)) <= len(d.EncodeLevel(nil, src, 19)) {
+		t.Fatal("level 19 should not be larger than level 1 here")
+	}
+}
+
+func TestDictDecodeMultiple(t *testing.T) {
+	d1, _ := loadDict(t)
+	raws := [][]byte{[]byte("hello hello hello hello world world"), []byte("foo bar foo bar baz baz qux qux qux")}
+	src := []byte("hello world foo bar baz qux hello world")
+	dicts := []*zstd.Dict{d1, nil}
+	for _, r := range raws {
+		d, err := zstd.LoadDict(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dicts = append(dicts, d)
+	}
+	frames := make([][]byte, len(dicts))
+	for i, d := range dicts {
+		frames[i] = d.Encode(nil, src)
+	}
+	for i, d := range dicts { // each frame with its own dictionary, whatever the others are
+		if out, err := d.Decode(nil, frames[i]); err != nil || !bytes.Equal(out, src) {
+			t.Fatalf("dict %d: %v", i, err)
+		}
+	}
+	if _, err := dicts[0].Decode(nil, frames[1]); err != nil { // a frame without an id decodes with the given dictionary or fails its checks, never panics
+		t.Log("trained dictionary on a dictionary-less frame:", err)
+	}
+	if _, err := dicts[1].Decode(nil, frames[0]); err == nil {
+		t.Fatal("a frame that names a dictionary must not decode without it")
+	}
+	dec, _ := zstd.NewDecoder(dicts[0], dicts[1], dicts[2], dicts[3])
+	if out, err := dec.Decode(nil, frames[0]); err != nil || !bytes.Equal(out, src) {
+		t.Fatalf("decoder with several dictionaries: %v", err)
+	}
+}
