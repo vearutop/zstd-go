@@ -6,6 +6,8 @@ import (
 	"os"
 	"runtime/debug"
 	"testing"
+
+	"github.com/vearutop/zstd-go"
 )
 
 // libzstdVersion is set by bench_ref_hook_test.go with -tags libzstd.
@@ -23,6 +25,7 @@ func TestMain(m *testing.M) {
 				}
 			}
 		}
+		zstd.SetStrictHufDefaultForTest(false) // benchmark the shipped default (export_test.go makes the tests strict)
 		fmt.Println("klauspost-compress:", ver)
 		if libzstdVersion != "" {
 			fmt.Println("libzstd:", libzstdVersion)
