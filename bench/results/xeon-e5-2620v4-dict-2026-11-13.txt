@@ -1,0 +1,706 @@
+host: Linux 5.9.11-gentoo x86_64
+zstd-go: 9a22ecd+dirty
+klauspost-compress: v1.20.4
+libzstd: 1.5.7
+goos: linux
+goarch: amd64
+pkg: github.com/vearutop/zstd-go
+cpu: Intel(R) Xeon(R) CPU E5-2620 v4 @ 2.10GHz
+                                                                    │     port     │                klauspost                 │               libzstd               │
+                                                                    │    sec/op    │     sec/op      vs base                  │    sec/op     vs base               │
+DictEncode/set=full-json/dict=none/tier=fastest/par=serial-32          33.04µ ± 1%     27.84µ ±  1%     -15.73% (p=0.002 n=6)    22.05µ ± 0%  -33.25% (p=0.002 n=6)
+DictEncode/set=full-json/dict=none/tier=fastest/par=parallel-32        1.870µ ± 1%     1.663µ ±  8%     -11.05% (p=0.002 n=6)    1.157µ ± 1%  -38.11% (p=0.002 n=6)
+DictEncode/set=full-json/dict=none/tier=default/par=serial-32          40.43µ ± 0%     49.30µ ±  9%     +21.94% (p=0.002 n=6)    28.62µ ± 0%  -29.22% (p=0.002 n=6)
+DictEncode/set=full-json/dict=none/tier=default/par=parallel-32        2.316µ ± 1%     2.325µ ±  4%           ~ (p=0.615 n=6)    1.512µ ± 0%  -34.74% (p=0.002 n=6)
+DictEncode/set=full-json/dict=16K/tier=fastest/par=serial-32           21.50µ ± 0%     56.29µ ±  2%    +161.80% (p=0.002 n=6)    12.41µ ± 0%  -42.27% (p=0.002 n=6)
+DictEncode/set=full-json/dict=16K/tier=fastest/par=parallel-32        1333.5n ± 0%    2650.0n ± 38%     +98.73% (p=0.002 n=6)    680.6n ± 1%  -48.96% (p=0.002 n=6)
+DictEncode/set=full-json/dict=16K/tier=default/par=serial-32           29.08µ ± 0%    242.40µ ± 11%    +733.56% (p=0.002 n=6)    18.11µ ± 0%  -37.74% (p=0.002 n=6)
+DictEncode/set=full-json/dict=16K/tier=default/par=parallel-32         1.667µ ± 0%    29.707µ ±  6%   +1682.57% (p=0.002 n=6)    1.005µ ± 1%  -39.72% (p=0.002 n=6)
+DictEncode/set=full-json/dict=64K/tier=fastest/par=serial-32           21.05µ ± 0%     64.22µ ±  3%    +205.02% (p=0.002 n=6)    12.16µ ± 0%  -42.25% (p=0.002 n=6)
+DictEncode/set=full-json/dict=64K/tier=fastest/par=parallel-32        1319.0n ± 1%    2694.5n ±  2%    +104.28% (p=0.002 n=6)    670.5n ± 1%  -49.17% (p=0.002 n=6)
+DictEncode/set=full-json/dict=64K/tier=default/par=serial-32           28.60µ ± 0%    417.08µ ±  8%   +1358.17% (p=0.002 n=6)    18.18µ ± 0%  -36.43% (p=0.002 n=6)
+DictEncode/set=full-json/dict=64K/tier=default/par=parallel-32        1623.0n ± 0%   87098.0n ± 11%   +5266.48% (p=0.002 n=6)    997.2n ± 1%  -38.56% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=none/tier=fastest/par=serial-32       35.30µ ± 0%     30.21µ ±  0%     -14.40% (p=0.002 n=6)    23.82µ ± 0%  -32.50% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=none/tier=fastest/par=parallel-32     1.989µ ± 1%     1.786µ ±  3%     -10.23% (p=0.002 n=6)    1.241µ ± 1%  -37.61% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=none/tier=default/par=serial-32       40.73µ ± 3%     53.27µ ±  4%     +30.80% (p=0.002 n=6)    29.48µ ± 1%  -27.62% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=none/tier=default/par=parallel-32     2.321µ ± 1%     2.445µ ±  2%      +5.34% (p=0.002 n=6)    1.555µ ± 1%  -32.99% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=16K/tier=fastest/par=serial-32        21.94µ ± 0%     58.52µ ±  5%    +166.76% (p=0.002 n=6)    12.70µ ± 0%  -42.10% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=16K/tier=fastest/par=parallel-32     1356.5n ± 1%    2606.0n ±  3%     +92.11% (p=0.002 n=6)    697.6n ± 1%  -48.57% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=16K/tier=default/par=serial-32        28.77µ ± 0%    274.35µ ± 20%    +853.72% (p=0.002 n=6)    17.82µ ± 0%  -38.06% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=16K/tier=default/par=parallel-32     1658.5n ± 2%   31453.0n ±  4%   +1796.47% (p=0.002 n=6)    996.9n ± 1%  -39.89% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=64K/tier=fastest/par=serial-32        21.29µ ± 0%     67.07µ ±  3%    +215.00% (p=0.002 n=6)    12.24µ ± 0%  -42.52% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=64K/tier=fastest/par=parallel-32     1329.0n ± 0%    2776.0n ±  1%    +108.88% (p=0.002 n=6)    680.1n ± 0%  -48.82% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=64K/tier=default/par=serial-32        27.72µ ± 0%    411.49µ ±  6%   +1384.69% (p=0.002 n=6)    17.35µ ± 0%  -37.41% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=64K/tier=default/par=parallel-32     1595.5n ± 1%   87217.5n ±  5%   +5366.47% (p=0.002 n=6)    962.2n ± 2%  -39.70% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=none/tier=fastest/par=serial-32         23.12µ ± 0%     20.19µ ±  0%     -12.65% (p=0.002 n=6)    16.91µ ± 0%  -26.85% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=none/tier=fastest/par=parallel-32      1300.0n ± 0%    1385.5n ±  3%      +6.58% (p=0.002 n=6)    894.2n ± 1%  -31.21% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=none/tier=default/par=serial-32         28.03µ ± 0%     34.13µ ± 15%     +21.76% (p=0.002 n=6)    20.85µ ± 0%  -25.62% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=none/tier=default/par=parallel-32       1.604µ ± 0%     1.966µ ±  3%     +22.61% (p=0.002 n=6)    1.110µ ± 0%  -30.81% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=16K/tier=fastest/par=serial-32         15.098µ ± 0%    47.634µ ±  9%    +215.50% (p=0.002 n=6)    8.505µ ± 1%  -43.67% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=16K/tier=fastest/par=parallel-32        917.1n ± 1%    2327.5n ±  9%    +153.80% (p=0.002 n=6)    476.9n ± 1%  -48.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=16K/tier=default/par=serial-32          18.54µ ± 0%    205.52µ ±  9%   +1008.73% (p=0.002 n=6)    12.01µ ± 0%  -35.21% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=16K/tier=default/par=parallel-32       1068.5n ± 1%   24175.0n ±  4%   +2162.52% (p=0.002 n=6)    667.1n ± 1%  -37.57% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=64K/tier=fastest/par=serial-32         14.567µ ± 1%    56.279µ ±  4%    +286.34% (p=0.002 n=6)    8.277µ ± 0%  -43.18% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=64K/tier=fastest/par=parallel-32        910.5n ± 3%    2485.0n ±  7%    +172.94% (p=0.002 n=6)    464.5n ± 0%  -48.99% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=64K/tier=default/par=serial-32          17.64µ ± 1%    399.77µ ± 11%   +2166.59% (p=0.002 n=6)    11.56µ ± 0%  -34.44% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=64K/tier=default/par=parallel-32       1010.5n ± 1%   84542.0n ± 10%   +8266.35% (p=0.002 n=6)    634.7n ± 1%  -37.19% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=none/tier=fastest/par=serial-32      23.27µ ± 0%     22.23µ ±  0%      -4.47% (p=0.002 n=6)    17.91µ ± 0%  -23.05% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=none/tier=fastest/par=parallel-32   1296.5n ± 1%    1457.5n ±  7%     +12.42% (p=0.002 n=6)    935.7n ± 1%  -27.83% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=none/tier=default/par=serial-32      27.73µ ± 1%     38.00µ ±  6%     +37.05% (p=0.002 n=6)    21.44µ ± 0%  -22.68% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=none/tier=default/par=parallel-32    1.598µ ± 2%     1.990µ ± 14%     +24.50% (p=0.002 n=6)    1.127µ ± 0%  -29.44% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=16K/tier=fastest/par=serial-32      13.953µ ± 0%    49.407µ ±  2%    +254.10% (p=0.002 n=6)    8.106µ ± 1%  -41.90% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=16K/tier=fastest/par=parallel-32     857.3n ± 1%    2360.0n ±  3%    +175.30% (p=0.002 n=6)    457.2n ± 0%  -46.66% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=16K/tier=default/par=serial-32       17.88µ ± 0%    214.92µ ±  8%   +1102.27% (p=0.002 n=6)    11.70µ ± 2%  -34.58% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=16K/tier=default/par=parallel-32    1030.0n ± 2%   23798.5n ± 13%   +2210.53% (p=0.002 n=6)    649.8n ± 1%  -36.91% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=64K/tier=fastest/par=serial-32      13.493µ ± 0%    57.105µ ±  4%    +323.22% (p=0.002 n=6)    7.852µ ± 0%  -41.81% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=64K/tier=fastest/par=parallel-32     831.3n ± 1%    2500.5n ±  5%    +200.79% (p=0.002 n=6)    443.2n ± 0%  -46.69% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=64K/tier=default/par=serial-32       16.88µ ± 0%    418.86µ ± 10%   +2380.68% (p=0.002 n=6)    11.18µ ± 0%  -33.81% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=64K/tier=default/par=parallel-32     974.0n ± 0%   88158.5n ±  6%   +8950.72% (p=0.002 n=6)    616.9n ± 1%  -36.67% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=none/tier=fastest/par=serial-32          11.31µ ± 0%     10.03µ ±  1%     -11.36% (p=0.002 n=6)    10.57µ ± 0%   -6.57% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=none/tier=fastest/par=parallel-32        620.2n ± 2%    1263.0n ± 12%    +103.64% (p=0.002 n=6)    570.8n ± 0%   -7.97% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=none/tier=default/par=serial-32          13.81µ ± 0%     17.79µ ±  2%     +28.89% (p=0.002 n=6)    11.74µ ± 0%  -14.94% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=none/tier=default/par=parallel-32        767.1n ± 0%    1431.0n ±  8%     +86.56% (p=0.002 n=6)    635.8n ± 0%  -17.11% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=16K/tier=fastest/par=serial-32           5.003µ ± 2%    29.907µ ±  2%    +497.77% (p=0.002 n=6)    3.201µ ± 1%  -36.02% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=16K/tier=fastest/par=parallel-32         495.6n ± 3%    2343.0n ±  4%    +372.81% (p=0.002 n=6)    190.3n ± 0%  -61.59% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=16K/tier=default/par=serial-32           5.912µ ± 3%   104.418µ ±  7%   +1666.05% (p=0.002 n=6)    3.971µ ± 1%  -32.85% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=16K/tier=default/par=parallel-32         468.2n ± 0%    9797.5n ± 13%   +1992.37% (p=0.002 n=6)    227.9n ± 0%  -51.33% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=64K/tier=fastest/par=serial-32           4.866µ ± 0%    35.133µ ±  2%    +622.02% (p=0.002 n=6)    3.178µ ± 1%  -34.69% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=64K/tier=fastest/par=parallel-32         492.2n ± 0%    2700.0n ± 13%    +448.50% (p=0.002 n=6)    188.0n ± 0%  -61.80% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=64K/tier=default/par=serial-32           5.690µ ± 1%   404.617µ ±  9%   +7011.02% (p=0.002 n=6)    3.888µ ± 1%  -31.67% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=64K/tier=default/par=parallel-32         470.8n ± 0%   84725.5n ± 12%  +17897.98% (p=0.002 n=6)    222.4n ± 1%  -52.76% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=none/tier=fastest/par=serial-32      12.412µ ± 0%     3.077µ ±  0%     -75.21% (p=0.002 n=6)   11.928µ ± 0%   -3.90% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=none/tier=fastest/par=parallel-32     680.3n ± 1%    1163.5n ±  1%     +71.01% (p=0.002 n=6)    630.7n ± 0%   -7.30% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=none/tier=default/par=serial-32       14.27µ ± 0%     13.74µ ±  4%           ~ (p=0.093 n=6)    12.90µ ± 1%   -9.56% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=none/tier=default/par=parallel-32     784.9n ± 1%    1376.5n ±  9%     +75.37% (p=0.002 n=6)    684.0n ± 0%  -12.86% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=16K/tier=fastest/par=serial-32        4.685µ ± 0%    30.799µ ±  2%    +557.39% (p=0.002 n=6)    3.067µ ± 1%  -34.55% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=16K/tier=fastest/par=parallel-32      493.2n ± 0%    2291.5n ±  4%    +364.67% (p=0.002 n=6)    183.3n ± 0%  -62.82% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=16K/tier=default/par=serial-32        5.632µ ± 0%   103.902µ ±  5%   +1744.85% (p=0.002 n=6)    3.808µ ± 1%  -32.39% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=16K/tier=default/par=parallel-32      464.0n ± 0%    8500.0n ±  3%   +1731.90% (p=0.002 n=6)    220.3n ± 0%  -52.52% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=64K/tier=fastest/par=serial-32        4.607µ ± 0%    36.181µ ±  3%    +685.35% (p=0.002 n=6)    3.035µ ± 1%  -34.12% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=64K/tier=fastest/par=parallel-32      494.9n ± 0%    2470.0n ±  9%    +399.04% (p=0.002 n=6)    181.0n ± 0%  -63.42% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=64K/tier=default/par=serial-32        5.462µ ± 0%   358.385µ ± 15%   +6461.42% (p=0.002 n=6)    3.756µ ± 1%  -31.24% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=64K/tier=default/par=parallel-32      470.0n ± 0%   85430.5n ± 13%  +18078.64% (p=0.002 n=6)    214.8n ± 1%  -54.28% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=none/tier=fastest/par=serial-32          7.137µ ± 0%     1.592µ ±  0%     -77.69% (p=0.002 n=6)    8.288µ ± 0%  +16.14% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=none/tier=fastest/par=parallel-32        388.0n ± 4%    1076.5n ±  9%    +177.45% (p=0.002 n=6)    448.7n ± 0%  +15.63% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=none/tier=default/par=serial-32          7.816µ ± 0%     3.454µ ±  7%     -55.81% (p=0.002 n=6)    8.693µ ± 0%  +11.21% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=none/tier=default/par=parallel-32        425.9n ± 2%    1171.5n ± 11%    +175.03% (p=0.002 n=6)    471.2n ± 0%  +10.64% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=16K/tier=fastest/par=serial-32           2.500µ ± 0%    16.298µ ±  2%    +551.92% (p=0.002 n=6)    2.043µ ± 1%  -18.30% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=16K/tier=fastest/par=parallel-32         488.7n ± 1%    1795.0n ±  1%    +267.26% (p=0.002 n=6)    130.0n ± 2%  -73.41% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=16K/tier=default/par=serial-32           2.762µ ± 0%    36.694µ ±  5%   +1228.51% (p=0.002 n=6)    2.259µ ± 1%  -18.23% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=16K/tier=default/par=parallel-32         480.7n ± 1%    3426.0n ±  2%    +612.71% (p=0.002 n=6)    138.9n ± 0%  -71.09% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=64K/tier=fastest/par=serial-32           2.517µ ± 0%    19.746µ ± 15%    +684.49% (p=0.002 n=6)    2.058µ ± 0%  -18.26% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=64K/tier=fastest/par=parallel-32         477.8n ± 1%    2473.0n ±  8%    +417.58% (p=0.002 n=6)    130.1n ± 1%  -72.76% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=64K/tier=default/par=serial-32           2.712µ ± 0%    39.199µ ±  3%   +1345.66% (p=0.002 n=6)    2.224µ ± 1%  -18.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=64K/tier=default/par=parallel-32         465.7n ± 0%    3640.5n ±  5%    +681.73% (p=0.002 n=6)    136.8n ± 0%  -70.62% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=none/tier=fastest/par=serial-32       6.570µ ± 1%     1.092µ ±  1%     -83.39% (p=0.002 n=6)    7.543µ ± 0%  +14.82% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=none/tier=fastest/par=parallel-32     353.1n ± 0%    1033.5n ±  1%    +192.73% (p=0.002 n=6)    401.7n ± 0%  +13.78% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=none/tier=default/par=serial-32       6.998µ ± 1%     2.682µ ±  8%     -61.68% (p=0.002 n=6)    7.796µ ± 0%  +11.41% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=none/tier=default/par=parallel-32     380.6n ± 6%    1214.5n ±  6%    +219.10% (p=0.002 n=6)    416.4n ± 0%   +9.39% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=16K/tier=fastest/par=serial-32        2.495µ ± 2%    17.324µ ±  4%    +594.35% (p=0.002 n=6)    2.040µ ± 1%  -18.24% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=16K/tier=fastest/par=parallel-32      488.5n ± 0%    1771.0n ±  3%    +262.58% (p=0.002 n=6)    129.5n ± 1%  -73.49% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=16K/tier=default/par=serial-32        2.735µ ± 0%    38.021µ ±  5%   +1290.16% (p=0.002 n=6)    2.247µ ± 1%  -17.86% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=16K/tier=default/par=parallel-32      477.2n ± 0%    3708.5n ± 10%    +677.22% (p=0.002 n=6)    138.3n ± 0%  -71.02% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=64K/tier=fastest/par=serial-32        2.493µ ± 0%    20.417µ ±  2%    +718.95% (p=0.002 n=6)    2.050µ ± 1%  -17.75% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=64K/tier=fastest/par=parallel-32      480.5n ± 1%    2398.0n ±  4%    +399.01% (p=0.002 n=6)    129.7n ± 1%  -73.02% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=64K/tier=default/par=serial-32        2.677µ ± 0%    40.995µ ±  4%   +1431.66% (p=0.002 n=6)    2.220µ ± 1%  -17.07% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=64K/tier=default/par=parallel-32      461.9n ± 0%    3630.5n ±  8%    +685.99% (p=0.002 n=6)    136.4n ± 1%  -70.48% (p=0.002 n=6)
+DictDecode/set=full-json/dict=none/par=serial-32                       9.311µ ± 0%     9.325µ ±  0%      +0.14% (p=0.006 n=6)    6.531µ ± 0%  -29.86% (p=0.002 n=6)
+DictDecode/set=full-json/dict=none/par=parallel-32                     504.0n ± 0%    1225.5n ±  1%    +143.15% (p=0.002 n=6)    366.2n ± 0%  -27.33% (p=0.002 n=6)
+DictDecode/set=full-json/dict=16K/par=serial-32                        7.511µ ± 0%     7.034µ ±  0%      -6.35% (p=0.002 n=6)    4.057µ ± 0%  -45.99% (p=0.002 n=6)
+DictDecode/set=full-json/dict=16K/par=parallel-32                      436.3n ± 0%    1220.0n ±  2%    +179.62% (p=0.002 n=6)    224.3n ± 1%  -48.58% (p=0.002 n=6)
+DictDecode/set=full-json/dict=64K/par=serial-32                        7.567µ ± 0%     6.873µ ±  0%      -9.17% (p=0.002 n=6)    4.027µ ± 0%  -46.79% (p=0.002 n=6)
+DictDecode/set=full-json/dict=64K/par=parallel-32                      440.7n ± 2%    1197.0n ±  2%    +171.64% (p=0.002 n=6)    221.7n ± 0%  -49.69% (p=0.002 n=6)
+DictDecode/set=full-msgpack/dict=none/par=serial-32                   10.858µ ± 0%    10.537µ ±  0%      -2.96% (p=0.002 n=6)    7.091µ ± 0%  -34.69% (p=0.002 n=6)
+DictDecode/set=full-msgpack/dict=none/par=parallel-32                  581.9n ± 0%    1244.0n ± 10%    +113.78% (p=0.002 n=6)    385.5n ± 1%  -33.76% (p=0.002 n=6)
+DictDecode/set=full-msgpack/dict=16K/par=serial-32                     8.054µ ± 0%     7.376µ ±  0%      -8.42% (p=0.002 n=6)    4.325µ ± 0%  -46.31% (p=0.002 n=6)
+DictDecode/set=full-msgpack/dict=16K/par=parallel-32                   463.2n ± 0%    1239.5n ±  1%    +167.62% (p=0.002 n=6)    235.9n ± 2%  -49.08% (p=0.002 n=6)
+DictDecode/set=full-msgpack/dict=64K/par=serial-32                     8.170µ ± 0%     7.294µ ±  0%     -10.72% (p=0.002 n=6)    4.309µ ± 0%  -47.25% (p=0.002 n=6)
+DictDecode/set=full-msgpack/dict=64K/par=parallel-32                   473.0n ± 0%    1216.0n ±  2%    +157.08% (p=0.002 n=6)    235.6n ± 0%  -50.20% (p=0.002 n=6)
+DictDecode/set=nourl-json/dict=none/par=serial-32                      7.336µ ± 0%     7.309µ ±  3%           ~ (p=0.061 n=6)    4.902µ ± 0%  -33.17% (p=0.002 n=6)
+DictDecode/set=nourl-json/dict=none/par=parallel-32                    394.4n ± 1%    1203.5n ±  2%    +205.15% (p=0.002 n=6)    271.0n ± 0%  -31.28% (p=0.002 n=6)
+DictDecode/set=nourl-json/dict=16K/par=serial-32                       5.007µ ± 0%     4.549µ ±  0%      -9.15% (p=0.002 n=6)    2.747µ ± 1%  -45.14% (p=0.002 n=6)
+DictDecode/set=nourl-json/dict=16K/par=parallel-32                     282.1n ± 1%    1181.0n ±  7%    +318.57% (p=0.002 n=6)    154.6n ± 1%  -45.22% (p=0.002 n=6)
+DictDecode/set=nourl-json/dict=64K/par=serial-32                       5.019µ ± 0%     4.393µ ±  0%     -12.47% (p=0.002 n=6)    2.738µ ± 0%  -45.45% (p=0.002 n=6)
+DictDecode/set=nourl-json/dict=64K/par=parallel-32                     284.8n ± 1%    1185.0n ±  1%    +316.15% (p=0.002 n=6)    152.7n ± 0%  -46.39% (p=0.002 n=6)
+DictDecode/set=nourl-msgpack/dict=none/par=serial-32                   8.550µ ± 0%     8.502µ ±  0%      -0.56% (p=0.002 n=6)    5.268µ ± 0%  -38.39% (p=0.002 n=6)
+DictDecode/set=nourl-msgpack/dict=none/par=parallel-32                 451.2n ± 1%    1223.0n ±  2%    +171.05% (p=0.002 n=6)    280.8n ± 1%  -37.77% (p=0.002 n=6)
+DictDecode/set=nourl-msgpack/dict=16K/par=serial-32                    4.777µ ± 0%     4.326µ ±  0%      -9.44% (p=0.002 n=6)    2.643µ ± 0%  -44.67% (p=0.002 n=6)
+DictDecode/set=nourl-msgpack/dict=16K/par=parallel-32                  265.4n ± 0%    1190.0n ±  2%    +348.38% (p=0.002 n=6)    148.0n ± 1%  -44.22% (p=0.002 n=6)
+DictDecode/set=nourl-msgpack/dict=64K/par=serial-32                    4.906µ ± 0%     4.206µ ±  0%     -14.26% (p=0.002 n=6)    2.646µ ± 1%  -46.07% (p=0.002 n=6)
+DictDecode/set=nourl-msgpack/dict=64K/par=parallel-32                  277.5n ± 0%    1176.0n ±  6%    +323.86% (p=0.002 n=6)    147.8n ± 1%  -46.71% (p=0.002 n=6)
+DictDecode/set=slim-json/dict=none/par=serial-32                       4.281µ ± 0%     4.674µ ±  0%      +9.16% (p=0.002 n=6)    3.076µ ± 0%  -28.16% (p=0.002 n=6)
+DictDecode/set=slim-json/dict=none/par=parallel-32                     224.6n ± 0%    1168.5n ±  9%    +420.26% (p=0.002 n=6)    166.9n ± 0%  -25.69% (p=0.002 n=6)
+DictDecode/set=slim-json/dict=16K/par=serial-32                        1.609µ ± 0%     1.613µ ±  1%      +0.25% (p=0.019 n=6)    1.026µ ± 1%  -36.21% (p=0.002 n=6)
+DictDecode/set=slim-json/dict=16K/par=parallel-32                     103.95n ± 2%   1067.50n ±  5%    +926.94% (p=0.002 n=6)    91.59n ± 4%  -11.89% (p=0.002 n=6)
+DictDecode/set=slim-json/dict=64K/par=serial-32                        1.570µ ± 0%     1.582µ ±  0%      +0.73% (p=0.002 n=6)    1.022µ ± 1%  -34.94% (p=0.002 n=6)
+DictDecode/set=slim-json/dict=64K/par=parallel-32                     103.85n ± 3%   1075.00n ±  5%    +935.15% (p=0.002 n=6)    89.66n ± 5%  -13.67% (p=0.002 n=6)
+DictDecode/set=slim-msgpack/dict=none/par=serial-32                    4.949µ ± 0%     5.580µ ±  0%     +12.75% (p=0.002 n=6)    3.200µ ± 0%  -35.33% (p=0.002 n=6)
+DictDecode/set=slim-msgpack/dict=none/par=parallel-32                  255.9n ± 0%    1175.5n ±  5%    +359.36% (p=0.002 n=6)    167.9n ± 0%  -34.39% (p=0.002 n=6)
+DictDecode/set=slim-msgpack/dict=16K/par=serial-32                     1.605µ ± 0%     1.538µ ±  1%      -4.14% (p=0.002 n=6)    1.006µ ± 0%  -37.30% (p=0.002 n=6)
+DictDecode/set=slim-msgpack/dict=16K/par=parallel-32                  103.95n ± 0%   1098.00n ±  7%    +956.28% (p=0.002 n=6)    91.17n ± 4%  -12.29% (p=0.002 n=6)
+DictDecode/set=slim-msgpack/dict=64K/par=serial-32                     1.550µ ± 2%     1.512µ ±  0%      -2.42% (p=0.002 n=6)    1.001µ ± 2%  -35.40% (p=0.002 n=6)
+DictDecode/set=slim-msgpack/dict=64K/par=parallel-32                  101.75n ± 1%   1095.00n ±  7%    +976.17% (p=0.002 n=6)    91.17n ± 3%  -10.40% (p=0.002 n=6)
+DictDecode/set=tiny-json/dict=none/par=serial-32                       2.610µ ± 0%     2.904µ ±  0%     +11.26% (p=0.002 n=6)    2.049µ ± 0%  -21.51% (p=0.002 n=6)
+DictDecode/set=tiny-json/dict=none/par=parallel-32                     139.9n ± 1%    1155.5n ±  6%    +726.24% (p=0.002 n=6)    116.1n ± 2%  -16.98% (p=0.002 n=6)
+DictDecode/set=tiny-json/dict=16K/par=serial-32                        810.6n ± 0%     911.2n ±  1%     +12.41% (p=0.002 n=6)    623.8n ± 1%  -23.04% (p=0.002 n=6)
+DictDecode/set=tiny-json/dict=16K/par=parallel-32                      84.73n ± 4%   1049.00n ±  2%   +1137.98% (p=0.002 n=6)    84.39n ± 2%        ~ (p=0.937 n=6)
+DictDecode/set=tiny-json/dict=64K/par=serial-32                        798.8n ± 0%     881.4n ±  1%     +10.33% (p=0.002 n=6)    620.7n ± 0%  -22.30% (p=0.002 n=6)
+DictDecode/set=tiny-json/dict=64K/par=parallel-32                      84.11n ± 3%   1019.00n ±  5%   +1111.51% (p=0.002 n=6)    84.71n ± 2%        ~ (p=0.394 n=6)
+DictDecode/set=tiny-msgpack/dict=none/par=serial-32                    220.0n ± 2%     360.1n ±  1%     +63.68% (p=0.002 n=6)    332.6n ± 0%  +51.16% (p=0.002 n=6)
+DictDecode/set=tiny-msgpack/dict=none/par=parallel-32                  74.18n ± 5%    888.00n ±  4%   +1097.01% (p=0.002 n=6)    84.88n ± 3%  +14.42% (p=0.002 n=6)
+DictDecode/set=tiny-msgpack/dict=16K/par=serial-32                     775.1n ± 0%     923.3n ±  1%     +19.13% (p=0.002 n=6)    613.4n ± 1%  -20.86% (p=0.002 n=6)
+DictDecode/set=tiny-msgpack/dict=16K/par=parallel-32                   83.74n ± 3%   1034.00n ±  4%   +1134.70% (p=0.002 n=6)    85.76n ± 5%   +2.40% (p=0.041 n=6)
+DictDecode/set=tiny-msgpack/dict=64K/par=serial-32                     781.3n ± 1%     882.2n ±  0%     +12.91% (p=0.002 n=6)    613.5n ± 3%  -21.48% (p=0.002 n=6)
+DictDecode/set=tiny-msgpack/dict=64K/par=parallel-32                   83.48n ± 2%   1037.50n ±  4%   +1142.74% (p=0.002 n=6)    84.09n ± 4%        ~ (p=0.485 n=6)
+geomean                                                                1.914µ          6.955µ          +263.46%                  1.238µ       -35.30%
+
+                                                                    │      port      │               klauspost                │                 libzstd                 │
+                                                                    │      B/s       │      B/s        vs base                │       B/s        vs base                │
+DictEncode/set=full-json/dict=none/tier=fastest/par=serial-32           97.30Mi ± 1%   115.46Mi ±  1%   +18.66% (p=0.002 n=6)     145.77Mi ± 0%   +49.81% (p=0.002 n=6)
+DictEncode/set=full-json/dict=none/tier=fastest/par=parallel-32         1.679Gi ± 1%    1.888Gi ±  7%   +12.41% (p=0.002 n=6)      2.713Gi ± 1%   +61.53% (p=0.002 n=6)
+DictEncode/set=full-json/dict=none/tier=default/par=serial-32           79.52Mi ± 0%    65.23Mi ± 10%   -17.97% (p=0.002 n=6)     112.34Mi ± 0%   +41.28% (p=0.002 n=6)
+DictEncode/set=full-json/dict=none/tier=default/par=parallel-32         1.356Gi ± 1%    1.350Gi ±  4%         ~ (p=0.615 n=6)      2.077Gi ± 0%   +53.21% (p=0.002 n=6)
+DictEncode/set=full-json/dict=16K/tier=fastest/par=serial-32           149.53Mi ± 0%    57.12Mi ±  2%   -61.80% (p=0.002 n=6)     259.01Mi ± 0%   +73.22% (p=0.002 n=6)
+DictEncode/set=full-json/dict=16K/tier=fastest/par=parallel-32          2.355Gi ± 0%    1.185Gi ± 27%   -49.67% (p=0.002 n=6)      4.613Gi ± 1%   +95.89% (p=0.002 n=6)
+DictEncode/set=full-json/dict=16K/tier=default/par=serial-32           110.55Mi ± 0%    13.27Mi ± 12%   -88.00% (p=0.002 n=6)     177.56Mi ± 0%   +60.62% (p=0.002 n=6)
+DictEncode/set=full-json/dict=16K/tier=default/par=parallel-32         1929.6Mi ± 0%    108.2Mi ±  7%   -94.39% (p=0.002 n=6)     3199.5Mi ± 1%   +65.81% (p=0.002 n=6)
+DictEncode/set=full-json/dict=64K/tier=fastest/par=serial-32           152.70Mi ± 0%    50.06Mi ±  3%   -67.22% (p=0.002 n=6)     264.40Mi ± 0%   +73.15% (p=0.002 n=6)
+DictEncode/set=full-json/dict=64K/tier=fastest/par=parallel-32          2.380Gi ± 1%    1.165Gi ±  2%   -51.05% (p=0.002 n=6)      4.682Gi ± 1%   +96.70% (p=0.002 n=6)
+DictEncode/set=full-json/dict=64K/tier=default/par=serial-32          112.395Mi ± 0%    7.710Mi ±  8%   -93.14% (p=0.002 n=6)    176.811Mi ± 0%   +57.31% (p=0.002 n=6)
+DictEncode/set=full-json/dict=64K/tier=default/par=parallel-32        1980.83Mi ± 0%    36.92Mi ± 10%   -98.14% (p=0.002 n=6)    3223.62Mi ± 1%   +62.74% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=none/tier=fastest/par=serial-32        82.52Mi ± 0%    96.40Mi ±  0%   +16.81% (p=0.002 n=6)     122.25Mi ± 0%   +48.15% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=none/tier=fastest/par=parallel-32      1.430Gi ± 0%    1.593Gi ±  3%   +11.40% (p=0.002 n=6)      2.292Gi ± 1%   +60.29% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=none/tier=default/par=serial-32        71.51Mi ± 3%    54.67Mi ±  5%   -23.54% (p=0.002 n=6)      98.81Mi ± 1%   +38.17% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=none/tier=default/par=parallel-32      1.226Gi ± 1%    1.164Gi ±  2%    -5.06% (p=0.002 n=6)      1.829Gi ± 1%   +49.25% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=16K/tier=fastest/par=serial-32        132.77Mi ± 0%    49.77Mi ±  5%   -62.51% (p=0.002 n=6)     229.29Mi ± 0%   +72.70% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=16K/tier=fastest/par=parallel-32       2.097Gi ± 1%    1.091Gi ±  3%   -47.95% (p=0.002 n=6)      4.077Gi ± 1%   +94.45% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=16K/tier=default/par=serial-32        101.25Mi ± 0%    10.62Mi ± 26%   -89.51% (p=0.002 n=6)     163.46Mi ± 0%   +61.44% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=16K/tier=default/par=parallel-32     1756.33Mi ± 2%    92.60Mi ±  4%   -94.73% (p=0.002 n=6)    2921.50Mi ± 1%   +66.34% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=64K/tier=fastest/par=serial-32        136.79Mi ± 0%    43.43Mi ±  3%   -68.25% (p=0.002 n=6)     237.96Mi ± 0%   +73.97% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=64K/tier=fastest/par=parallel-32       2.140Gi ± 0%    1.025Gi ±  1%   -52.13% (p=0.002 n=6)      4.182Gi ± 0%   +95.38% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=64K/tier=default/par=serial-32       105.090Mi ± 0%    7.076Mi ±  5%   -93.27% (p=0.002 n=6)    167.890Mi ± 0%   +59.76% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=64K/tier=default/par=parallel-32     1825.56Mi ± 1%    33.39Mi ±  5%   -98.17% (p=0.002 n=6)    3027.12Mi ± 2%   +65.82% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=none/tier=fastest/par=serial-32          58.62Mi ± 0%    67.11Mi ±  0%   +14.48% (p=0.002 n=6)      80.14Mi ± 0%   +36.71% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=none/tier=fastest/par=parallel-32       1042.8Mi ± 0%    977.9Mi ±  3%    -6.22% (p=0.002 n=6)     1515.4Mi ± 1%   +45.33% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=none/tier=default/par=serial-32          48.35Mi ± 0%    39.71Mi ± 13%   -17.87% (p=0.002 n=6)      65.00Mi ± 0%   +34.44% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=none/tier=default/par=parallel-32        845.1Mi ± 0%    689.3Mi ±  3%   -18.45% (p=0.002 n=6)     1221.8Mi ± 1%   +44.56% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=16K/tier=fastest/par=serial-32           89.76Mi ± 0%    28.45Mi ±  8%   -68.31% (p=0.002 n=6)     159.35Mi ± 1%   +77.53% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=16K/tier=fastest/par=parallel-32        1477.7Mi ± 1%    582.2Mi ±  9%   -60.60% (p=0.002 n=6)     2841.6Mi ± 1%   +92.29% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=16K/tier=default/par=serial-32          73.109Mi ± 0%    6.595Mi ±  9%   -90.98% (p=0.002 n=6)    112.844Mi ± 0%   +54.35% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=16K/tier=default/par=parallel-32       1268.09Mi ± 1%    56.06Mi ±  4%   -95.58% (p=0.002 n=6)    2031.45Mi ± 1%   +60.20% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=64K/tier=fastest/par=serial-32           93.03Mi ± 1%    24.08Mi ±  4%   -74.12% (p=0.002 n=6)     163.73Mi ± 0%   +76.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=64K/tier=fastest/par=parallel-32        1488.6Mi ± 3%    545.3Mi ±  7%   -63.37% (p=0.002 n=6)     2918.0Mi ± 0%   +96.02% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=64K/tier=default/par=serial-32          76.833Mi ± 1%    3.390Mi ± 10%   -95.59% (p=0.002 n=6)    117.192Mi ± 0%   +52.53% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=64K/tier=default/par=parallel-32       1340.49Mi ± 0%    16.03Mi ± 11%   -98.80% (p=0.002 n=6)    2135.06Mi ± 0%   +59.27% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=none/tier=fastest/par=serial-32       48.90Mi ± 0%    51.19Mi ±  0%    +4.68% (p=0.002 n=6)      63.54Mi ± 0%   +29.95% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=none/tier=fastest/par=parallel-32     877.5Mi ± 1%    780.6Mi ±  6%   -11.04% (p=0.002 n=6)     1216.0Mi ± 1%   +38.57% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=none/tier=default/par=serial-32       41.03Mi ± 1%    29.99Mi ±  6%   -26.90% (p=0.002 n=6)      53.07Mi ± 0%   +29.33% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=none/tier=default/par=parallel-32     712.0Mi ± 3%    571.9Mi ± 12%   -19.68% (p=0.002 n=6)     1009.0Mi ± 0%   +41.72% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=16K/tier=fastest/par=serial-32        81.54Mi ± 0%    23.03Mi ±  2%   -71.76% (p=0.002 n=6)     140.36Mi ± 1%   +72.12% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=16K/tier=fastest/par=parallel-32     1327.2Mi ± 1%    482.1Mi ±  3%   -63.68% (p=0.002 n=6)     2488.2Mi ± 0%   +87.47% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=16K/tier=default/par=serial-32       63.648Mi ± 0%    5.298Mi ±  9%   -91.68% (p=0.002 n=6)     97.280Mi ± 2%   +52.84% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=16K/tier=default/par=parallel-32    1104.87Mi ± 2%    47.81Mi ± 12%   -95.67% (p=0.002 n=6)    1750.93Mi ± 1%   +58.47% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=64K/tier=fastest/par=serial-32        84.32Mi ± 0%    19.93Mi ±  4%   -76.37% (p=0.002 n=6)     144.90Mi ± 0%   +71.85% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=64K/tier=fastest/par=parallel-32     1368.6Mi ± 1%    455.0Mi ±  5%   -66.75% (p=0.002 n=6)     2567.3Mi ± 0%   +87.58% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=64K/tier=default/par=serial-32       67.382Mi ± 0%    2.718Mi ± 11%   -95.97% (p=0.002 n=6)    101.795Mi ± 0%   +51.07% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=64K/tier=default/par=parallel-32    1168.05Mi ± 0%    12.90Mi ±  6%   -98.90% (p=0.002 n=6)    1844.50Mi ± 1%   +57.91% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=none/tier=fastest/par=serial-32           27.91Mi ± 0%    31.49Mi ±  1%   +12.79% (p=0.002 n=6)      29.88Mi ± 0%    +7.04% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=none/tier=fastest/par=parallel-32         509.0Mi ± 2%    249.8Mi ± 10%   -50.91% (p=0.002 n=6)      553.0Mi ± 0%    +8.65% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=none/tier=default/par=serial-32           22.86Mi ± 0%    17.74Mi ±  2%   -22.40% (p=0.002 n=6)      26.88Mi ± 0%   +17.58% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=none/tier=default/par=parallel-32         411.5Mi ± 0%    220.6Mi ±  8%   -46.41% (p=0.002 n=6)      496.4Mi ± 0%   +20.63% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=16K/tier=fastest/par=serial-32            63.10Mi ± 2%    10.56Mi ±  2%   -83.27% (p=0.002 n=6)      98.62Mi ± 1%   +56.30% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=16K/tier=fastest/par=parallel-32          637.0Mi ± 3%    134.7Mi ±  4%   -78.85% (p=0.002 n=6)     1658.1Mi ± 0%  +160.31% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=16K/tier=default/par=serial-32           53.391Mi ± 3%    3.023Mi ±  7%   -94.34% (p=0.002 n=6)     79.503Mi ± 1%   +48.91% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=16K/tier=default/par=parallel-32         674.12Mi ± 0%    32.33Mi ± 13%   -95.20% (p=0.002 n=6)    1385.21Mi ± 0%  +105.48% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=64K/tier=fastest/par=serial-32           64.874Mi ± 0%    8.984Mi ±  2%   -86.15% (p=0.002 n=6)     99.330Mi ± 1%   +53.11% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=64K/tier=fastest/par=parallel-32          641.2Mi ± 0%    116.9Mi ± 14%   -81.77% (p=0.002 n=6)     1678.4Mi ± 0%  +161.75% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=64K/tier=default/par=serial-32          56806.6Ki ± 1%    800.8Ki ±  9%   -98.59% (p=0.002 n=6)    83139.6Ki ± 1%   +46.36% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=64K/tier=default/par=parallel-32        670.552Mi ± 0%    3.724Mi ± 13%   -99.44% (p=0.002 n=6)   1419.501Mi ± 1%  +111.69% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=none/tier=fastest/par=serial-32        20.44Mi ± 0%    82.45Mi ±  0%  +303.43% (p=0.002 n=6)      21.27Mi ± 0%    +4.06% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=none/tier=fastest/par=parallel-32      372.9Mi ± 1%    218.1Mi ±  1%   -41.51% (p=0.002 n=6)      402.2Mi ± 0%    +7.88% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=none/tier=default/par=serial-32        17.78Mi ± 0%    18.48Mi ±  4%         ~ (p=0.074 n=6)      19.66Mi ± 1%   +10.57% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=none/tier=default/par=parallel-32      323.2Mi ± 1%    184.3Mi ±  9%   -42.98% (p=0.002 n=6)      370.9Mi ± 0%   +14.75% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=16K/tier=fastest/par=serial-32        54.150Mi ± 0%    8.240Mi ±  2%   -84.78% (p=0.002 n=6)     82.717Mi ± 1%   +52.76% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=16K/tier=fastest/par=parallel-32       514.4Mi ± 0%    110.7Mi ±  4%   -78.48% (p=0.002 n=6)     1383.7Mi ± 0%  +169.01% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=16K/tier=default/par=serial-32        45.042Mi ± 0%    2.441Mi ±  4%   -94.58% (p=0.002 n=6)     66.614Mi ± 1%   +47.89% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=16K/tier=default/par=parallel-32      546.73Mi ± 0%    29.85Mi ±  3%   -94.54% (p=0.002 n=6)    1151.32Mi ± 0%  +110.58% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=64K/tier=fastest/par=serial-32        55.060Mi ± 0%    7.014Mi ±  3%   -87.26% (p=0.002 n=6)     83.580Mi ± 1%   +51.80% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=64K/tier=fastest/par=parallel-32       512.5Mi ± 0%    102.8Mi ±  9%   -79.94% (p=0.002 n=6)     1400.9Mi ± 0%  +173.34% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=64K/tier=default/par=serial-32       47558.6Ki ± 0%    727.5Ki ± 13%   -98.47% (p=0.002 n=6)    69174.8Ki ± 1%   +45.45% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=64K/tier=default/par=parallel-32     539.827Mi ± 0%    2.980Mi ± 11%   -99.45% (p=0.002 n=6)   1180.649Mi ± 1%  +118.71% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=none/tier=fastest/par=serial-32           12.69Mi ± 0%    56.92Mi ±  0%  +348.38% (p=0.002 n=6)      10.93Mi ± 0%   -13.86% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=none/tier=fastest/par=parallel-32        233.50Mi ± 4%    84.18Mi ±  8%   -63.95% (p=0.002 n=6)     201.93Mi ± 0%   -13.52% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=none/tier=default/par=serial-32           11.59Mi ± 0%    26.23Mi ±  7%  +126.29% (p=0.002 n=6)      10.42Mi ± 0%   -10.08% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=none/tier=default/par=parallel-32        212.70Mi ± 2%    77.35Mi ± 10%   -63.63% (p=0.002 n=6)     192.26Mi ± 0%    -9.61% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=16K/tier=fastest/par=serial-32           36.240Mi ± 0%    5.560Mi ±  2%   -84.66% (p=0.002 n=6)     44.355Mi ± 1%   +22.39% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=16K/tier=fastest/par=parallel-32         185.37Mi ± 1%    50.48Mi ±  1%   -72.77% (p=0.002 n=6)     697.23Mi ± 2%  +276.13% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=16K/tier=default/par=serial-32           32.802Mi ± 0%    2.470Mi ±  5%   -92.47% (p=0.002 n=6)     40.116Mi ± 1%   +22.30% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=16K/tier=default/par=parallel-32         188.48Mi ± 1%    26.45Mi ±  3%   -85.97% (p=0.002 n=6)     652.02Mi ± 0%  +245.93% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=64K/tier=fastest/par=serial-32           35.992Mi ± 0%    4.587Mi ± 13%   -87.25% (p=0.002 n=6)     44.041Mi ± 0%   +22.36% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=64K/tier=fastest/par=parallel-32         189.62Mi ± 1%    36.66Mi ±  7%   -80.66% (p=0.002 n=6)     696.14Mi ± 1%  +267.13% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=64K/tier=default/par=serial-32           33.412Mi ± 0%    2.308Mi ±  3%   -93.09% (p=0.002 n=6)     40.741Mi ± 1%   +21.94% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=64K/tier=default/par=parallel-32         194.55Mi ± 0%    24.89Mi ±  4%   -87.21% (p=0.002 n=6)     662.40Mi ± 0%  +240.47% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=none/tier=fastest/par=serial-32       11.468Mi ± 1%   69.051Mi ±  1%  +502.12% (p=0.002 n=6)      9.985Mi ± 0%   -12.93% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=none/tier=fastest/par=parallel-32     213.39Mi ± 0%    72.89Mi ±  1%   -65.84% (p=0.002 n=6)     187.55Mi ± 0%   -12.11% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=none/tier=default/par=serial-32       10.767Mi ± 1%   28.105Mi ±  8%  +161.03% (p=0.002 n=6)      9.661Mi ± 0%   -10.27% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=none/tier=default/par=parallel-32     197.95Mi ± 6%    62.12Mi ±  6%   -68.62% (p=0.002 n=6)     180.95Mi ± 0%    -8.59% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=16K/tier=fastest/par=serial-32        30.198Mi ± 2%    4.349Mi ±  4%   -85.60% (p=0.002 n=6)     36.931Mi ± 1%   +22.30% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=16K/tier=fastest/par=parallel-32      154.25Mi ± 0%    42.54Mi ±  3%   -72.42% (p=0.002 n=6)     581.96Mi ± 1%  +277.28% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=16K/tier=default/par=serial-32        27.547Mi ± 0%    1.984Mi ±  5%   -92.80% (p=0.002 n=6)     33.536Mi ± 1%   +21.74% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=16K/tier=default/par=parallel-32      157.90Mi ± 0%    20.31Mi ±  9%   -87.13% (p=0.002 n=6)     544.83Mi ± 0%  +245.06% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=64K/tier=fastest/par=serial-32        30.222Mi ± 0%    3.686Mi ±  2%   -87.80% (p=0.002 n=6)     36.740Mi ± 1%   +21.57% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=64K/tier=fastest/par=parallel-32      156.78Mi ± 1%    31.42Mi ±  4%   -79.96% (p=0.002 n=6)     581.06Mi ± 1%  +270.63% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=64K/tier=default/par=serial-32        28.143Mi ± 0%    1.836Mi ±  4%   -93.48% (p=0.002 n=6)     33.941Mi ± 1%   +20.60% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=64K/tier=default/par=parallel-32      163.11Mi ± 0%    20.76Mi ±  8%   -87.27% (p=0.002 n=6)     552.65Mi ± 1%  +238.83% (p=0.002 n=6)
+DictDecode/set=full-json/dict=none/par=serial-32                        345.3Mi ± 0%    344.8Mi ±  0%    -0.15% (p=0.006 n=6)      492.3Mi ± 0%   +42.58% (p=0.002 n=6)
+DictDecode/set=full-json/dict=none/par=parallel-32                      6.229Gi ± 0%    2.561Gi ±  1%   -58.88% (p=0.002 n=6)      8.573Gi ± 0%   +37.62% (p=0.002 n=6)
+DictDecode/set=full-json/dict=16K/par=serial-32                         428.0Mi ± 0%    457.1Mi ±  0%    +6.79% (p=0.002 n=6)      792.5Mi ± 0%   +85.16% (p=0.002 n=6)
+DictDecode/set=full-json/dict=16K/par=parallel-32                       7.196Gi ± 0%    2.573Gi ±  2%   -64.25% (p=0.002 n=6)     13.995Gi ± 1%   +94.48% (p=0.002 n=6)
+DictDecode/set=full-json/dict=64K/par=serial-32                         424.9Mi ± 0%    467.8Mi ±  0%   +10.09% (p=0.002 n=6)      798.4Mi ± 0%   +87.91% (p=0.002 n=6)
+DictDecode/set=full-json/dict=64K/par=parallel-32                       7.124Gi ± 2%    2.623Gi ±  2%   -63.18% (p=0.002 n=6)     14.161Gi ± 0%   +98.78% (p=0.002 n=6)
+DictDecode/set=full-msgpack/dict=none/par=serial-32                     268.2Mi ± 0%    276.4Mi ±  0%    +3.06% (p=0.002 n=6)      410.7Mi ± 0%   +53.13% (p=0.002 n=6)
+DictDecode/set=full-msgpack/dict=none/par=parallel-32                   4.888Gi ± 0%    2.286Gi ±  9%   -53.23% (p=0.002 n=6)      7.379Gi ± 1%   +50.95% (p=0.002 n=6)
+DictDecode/set=full-msgpack/dict=16K/par=serial-32                      361.6Mi ± 0%    394.9Mi ±  0%    +9.19% (p=0.002 n=6)      673.5Mi ± 0%   +86.24% (p=0.002 n=6)
+DictDecode/set=full-msgpack/dict=16K/par=parallel-32                    6.140Gi ± 0%    2.295Gi ±  1%   -62.63% (p=0.002 n=6)     12.060Gi ± 2%   +96.40% (p=0.002 n=6)
+DictDecode/set=full-msgpack/dict=64K/par=serial-32                      356.5Mi ± 0%    399.3Mi ±  0%   +12.00% (p=0.002 n=6)      675.8Mi ± 0%   +89.58% (p=0.002 n=6)
+DictDecode/set=full-msgpack/dict=64K/par=parallel-32                    6.013Gi ± 0%    2.340Gi ±  2%   -61.09% (p=0.002 n=6)     12.076Gi ± 0%  +100.83% (p=0.002 n=6)
+DictDecode/set=nourl-json/dict=none/par=serial-32                       184.7Mi ± 0%    185.4Mi ±  3%         ~ (p=0.061 n=6)      276.5Mi ± 0%   +49.65% (p=0.002 n=6)
+DictDecode/set=nourl-json/dict=none/par=parallel-32                     3.355Gi ± 1%    1.100Gi ±  2%   -67.23% (p=0.002 n=6)      4.883Gi ± 0%   +45.52% (p=0.002 n=6)
+DictDecode/set=nourl-json/dict=16K/par=serial-32                        270.7Mi ± 0%    297.9Mi ±  0%   +10.06% (p=0.002 n=6)      493.3Mi ± 1%   +82.26% (p=0.002 n=6)
+DictDecode/set=nourl-json/dict=16K/par=parallel-32                      4.690Gi ± 1%    1.121Gi ±  6%   -76.11% (p=0.002 n=6)      8.563Gi ± 1%   +82.58% (p=0.002 n=6)
+DictDecode/set=nourl-json/dict=64K/par=serial-32                        270.0Mi ± 0%    308.5Mi ±  0%   +14.25% (p=0.002 n=6)      495.0Mi ± 0%   +83.32% (p=0.002 n=6)
+DictDecode/set=nourl-json/dict=64K/par=parallel-32                      4.648Gi ± 1%    1.117Gi ±  1%   -75.98% (p=0.002 n=6)      8.670Gi ± 0%   +86.56% (p=0.002 n=6)
+DictDecode/set=nourl-msgpack/dict=none/par=serial-32                    133.1Mi ± 0%    133.8Mi ±  0%    +0.56% (p=0.002 n=6)      216.0Mi ± 0%   +62.31% (p=0.002 n=6)
+DictDecode/set=nourl-msgpack/dict=none/par=parallel-32                 2521.5Mi ± 1%    930.2Mi ±  2%   -63.11% (p=0.002 n=6)     4052.1Mi ± 1%   +60.70% (p=0.002 n=6)
+DictDecode/set=nourl-msgpack/dict=16K/par=serial-32                     238.2Mi ± 0%    263.0Mi ±  0%   +10.42% (p=0.002 n=6)      430.5Mi ± 0%   +80.77% (p=0.002 n=6)
+DictDecode/set=nourl-msgpack/dict=16K/par=parallel-32                  4287.0Mi ± 0%    956.1Mi ±  2%   -77.70% (p=0.002 n=6)     7686.6Mi ± 1%   +79.30% (p=0.002 n=6)
+DictDecode/set=nourl-msgpack/dict=64K/par=serial-32                     231.9Mi ± 0%    270.5Mi ±  0%   +16.64% (p=0.002 n=6)      430.1Mi ± 1%   +85.43% (p=0.002 n=6)
+DictDecode/set=nourl-msgpack/dict=64K/par=parallel-32                  4101.3Mi ± 0%    967.6Mi ±  5%   -76.41% (p=0.002 n=6)     7696.5Mi ± 1%   +87.66% (p=0.002 n=6)
+DictDecode/set=slim-json/dict=none/par=serial-32                        73.73Mi ± 0%    67.54Mi ±  0%    -8.39% (p=0.002 n=6)     102.62Mi ± 0%   +39.19% (p=0.002 n=6)
+DictDecode/set=slim-json/dict=none/par=parallel-32                     1405.4Mi ± 0%    270.1Mi ±  8%   -80.78% (p=0.002 n=6)     1890.9Mi ± 0%   +34.55% (p=0.002 n=6)
+DictDecode/set=slim-json/dict=16K/par=serial-32                         196.3Mi ± 0%    195.8Mi ±  0%    -0.24% (p=0.015 n=6)      307.8Mi ± 1%   +56.84% (p=0.002 n=6)
+DictDecode/set=slim-json/dict=16K/par=parallel-32                      3036.3Mi ± 2%    295.8Mi ±  5%   -90.26% (p=0.002 n=6)     3446.4Mi ± 4%   +13.51% (p=0.002 n=6)
+DictDecode/set=slim-json/dict=64K/par=serial-32                         201.0Mi ± 0%    199.6Mi ±  0%    -0.71% (p=0.002 n=6)      309.0Mi ± 1%   +53.70% (p=0.002 n=6)
+DictDecode/set=slim-json/dict=64K/par=parallel-32                      3039.2Mi ± 3%    293.7Mi ±  5%   -90.34% (p=0.002 n=6)     3521.2Mi ± 5%   +15.86% (p=0.002 n=6)
+DictDecode/set=slim-msgpack/dict=none/par=serial-32                     51.26Mi ± 0%    45.47Mi ±  0%   -11.31% (p=0.002 n=6)      79.27Mi ± 0%   +54.64% (p=0.002 n=6)
+DictDecode/set=slim-msgpack/dict=none/par=parallel-32                   991.2Mi ± 0%    215.7Mi ±  5%   -78.24% (p=0.002 n=6)     1511.1Mi ± 0%   +52.44% (p=0.002 n=6)
+DictDecode/set=slim-msgpack/dict=16K/par=serial-32                      158.1Mi ± 0%    164.9Mi ±  1%    +4.32% (p=0.002 n=6)      252.2Mi ± 0%   +59.47% (p=0.002 n=6)
+DictDecode/set=slim-msgpack/dict=16K/par=parallel-32                   2440.4Mi ± 0%    231.1Mi ±  6%   -90.53% (p=0.002 n=6)     2782.6Mi ± 4%   +14.02% (p=0.002 n=6)
+DictDecode/set=slim-msgpack/dict=64K/par=serial-32                      163.7Mi ± 2%    167.8Mi ±  0%    +2.50% (p=0.002 n=6)      253.4Mi ± 2%   +54.79% (p=0.002 n=6)
+DictDecode/set=slim-msgpack/dict=64K/par=parallel-32                   2492.5Mi ± 1%    231.7Mi ±  6%   -90.70% (p=0.002 n=6)     2782.6Mi ± 3%   +11.64% (p=0.002 n=6)
+DictDecode/set=tiny-json/dict=none/par=serial-32                        34.71Mi ± 0%    31.19Mi ±  0%   -10.14% (p=0.002 n=6)      44.23Mi ± 0%   +27.40% (p=0.002 n=6)
+DictDecode/set=tiny-json/dict=none/par=parallel-32                     647.84Mi ± 1%    78.43Mi ±  5%   -87.89% (p=0.002 n=6)     780.62Mi ± 2%   +20.50% (p=0.002 n=6)
+DictDecode/set=tiny-json/dict=16K/par=serial-32                        111.77Mi ± 0%    99.42Mi ±  1%   -11.05% (p=0.002 n=6)     145.23Mi ± 1%   +29.94% (p=0.002 n=6)
+DictDecode/set=tiny-json/dict=16K/par=parallel-32                     1069.22Mi ± 4%    86.37Mi ±  2%   -91.92% (p=0.002 n=6)    1073.57Mi ± 2%         ~ (p=0.937 n=6)
+DictDecode/set=tiny-json/dict=64K/par=serial-32                         113.4Mi ± 0%    102.8Mi ±  1%    -9.37% (p=0.002 n=6)      146.0Mi ± 0%   +28.68% (p=0.002 n=6)
+DictDecode/set=tiny-json/dict=64K/par=parallel-32                     1077.17Mi ± 3%    88.91Mi ±  5%   -91.75% (p=0.002 n=6)    1069.57Mi ± 2%         ~ (p=0.394 n=6)
+DictDecode/set=tiny-msgpack/dict=none/par=serial-32                     342.4Mi ± 2%    209.2Mi ±  1%   -38.89% (p=0.002 n=6)      226.6Mi ± 0%   -33.84% (p=0.002 n=6)
+DictDecode/set=tiny-msgpack/dict=none/par=parallel-32                 1015.61Mi ± 5%    84.84Mi ±  4%   -91.65% (p=0.002 n=6)     887.64Mi ± 3%   -12.60% (p=0.002 n=6)
+DictDecode/set=tiny-msgpack/dict=16K/par=serial-32                      97.20Mi ± 0%    81.60Mi ±  1%   -16.06% (p=0.002 n=6)     122.82Mi ± 1%   +26.36% (p=0.002 n=6)
+DictDecode/set=tiny-msgpack/dict=16K/par=parallel-32                   899.66Mi ± 3%    72.88Mi ±  5%   -91.90% (p=0.002 n=6)     878.58Mi ± 5%    -2.34% (p=0.041 n=6)
+DictDecode/set=tiny-msgpack/dict=64K/par=serial-32                      96.43Mi ± 1%    85.40Mi ±  0%   -11.44% (p=0.002 n=6)     122.80Mi ± 3%   +27.35% (p=0.002 n=6)
+DictDecode/set=tiny-msgpack/dict=64K/par=parallel-32                   902.44Mi ± 2%    72.59Mi ±  4%   -91.96% (p=0.002 n=6)     896.02Mi ± 5%         ~ (p=0.485 n=6)
+geomean                                                                 285.3Mi         78.51Mi         -72.48%                    440.9Mi        +54.56%
+
+                                                                    │    port     │              klauspost              │               libzstd               │
+                                                                    │    ratio    │    ratio      vs base               │    ratio     vs base                │
+DictEncode/set=full-json/dict=none/tier=fastest/par=serial-32         246.3m ± 0%    249.1m ± 0%   +1.16% (p=0.002 n=6)   246.3m ± 0%       ~ (p=0.182 n=6)
+DictEncode/set=full-json/dict=none/tier=fastest/par=parallel-32       246.2m ± 0%    249.1m ± 0%   +1.18% (p=0.002 n=6)   246.2m ± 0%       ~ (p=0.273 n=6)
+DictEncode/set=full-json/dict=none/tier=default/par=serial-32         242.3m ± 0%    242.2m ± 0%        ~ (p=0.082 n=6)   242.4m ± 0%       ~ (p=0.076 n=6)
+DictEncode/set=full-json/dict=none/tier=default/par=parallel-32       242.5m ± 0%    241.7m ± 0%   -0.33% (p=0.002 n=6)   242.4m ± 0%       ~ (p=0.396 n=6)
+DictEncode/set=full-json/dict=16K/tier=fastest/par=serial-32          151.0m ± 0%    156.0m ± 0%   +3.31% (p=0.002 n=6)   151.0m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=full-json/dict=16K/tier=fastest/par=parallel-32        150.9m ± 0%    155.8m ± 0%   +3.25% (p=0.002 n=6)   150.9m ± 0%       ~ (p=0.455 n=6)
+DictEncode/set=full-json/dict=16K/tier=default/par=serial-32          142.5m ± 0%    149.3m ± 0%   +4.77% (p=0.002 n=6)   142.5m ± 0%       ~ (p=1.000 n=6)
+DictEncode/set=full-json/dict=16K/tier=default/par=parallel-32        142.5m ± 0%    148.1m ± 0%   +3.93% (p=0.002 n=6)   142.4m ± 0%       ~ (p=0.061 n=6)
+DictEncode/set=full-json/dict=64K/tier=fastest/par=serial-32          148.9m ± 0%    147.6m ± 0%   -0.87% (p=0.002 n=6)   148.9m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=full-json/dict=64K/tier=fastest/par=parallel-32        148.8m ± 0%    147.3m ± 0%   -0.97% (p=0.002 n=6)   148.8m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=full-json/dict=64K/tier=default/par=serial-32          135.9m ± 0%    140.6m ± 1%   +3.42% (p=0.002 n=6)   136.0m ± 0%  +0.07% (p=0.002 n=6)
+DictEncode/set=full-json/dict=64K/tier=default/par=parallel-32        135.8m ± 0%    134.0m ± 0%   -1.40% (p=0.002 n=6)   136.0m ± 0%  +0.11% (p=0.009 n=6)
+DictEncode/set=full-msgpack/dict=none/tier=fastest/par=serial-32      286.8m ± 0%    293.1m ± 0%   +2.20% (p=0.002 n=6)   286.8m ± 0%       ~ (p=1.000 n=6)
+DictEncode/set=full-msgpack/dict=none/tier=fastest/par=parallel-32    286.7m ± 0%    292.8m ± 0%   +2.15% (p=0.002 n=6)   286.7m ± 0%       ~ (p=0.182 n=6)
+DictEncode/set=full-msgpack/dict=none/tier=default/par=serial-32      280.8m ± 0%    282.3m ± 0%   +0.52% (p=0.002 n=6)   281.1m ± 0%  +0.11% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=none/tier=default/par=parallel-32    281.0m ± 0%    282.1m ± 0%   +0.39% (p=0.002 n=6)   280.8m ± 0%  -0.05% (p=0.035 n=6)
+DictEncode/set=full-msgpack/dict=16K/tier=fastest/par=serial-32       174.7m ± 0%    181.0m ± 0%   +3.61% (p=0.002 n=6)   174.7m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=full-msgpack/dict=16K/tier=fastest/par=parallel-32     174.5m ± 0%    180.8m ± 0%   +3.58% (p=0.002 n=6)   174.6m ± 0%       ~ (p=0.182 n=6)
+DictEncode/set=full-msgpack/dict=16K/tier=default/par=serial-32       169.5m ± 0%    180.2m ± 0%   +6.28% (p=0.002 n=6)   169.6m ± 0%  +0.06% (p=0.015 n=6)
+DictEncode/set=full-msgpack/dict=16K/tier=default/par=parallel-32     169.5m ± 0%    177.5m ± 0%   +4.75% (p=0.002 n=6)   169.5m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=full-msgpack/dict=64K/tier=fastest/par=serial-32       169.8m ± 0%    171.2m ± 0%   +0.85% (p=0.002 n=6)   169.9m ± 0%       ~ (p=0.242 n=6)
+DictEncode/set=full-msgpack/dict=64K/tier=fastest/par=parallel-32     169.8m ± 0%    171.1m ± 0%   +0.77% (p=0.002 n=6)   169.8m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=full-msgpack/dict=64K/tier=default/par=serial-32       159.4m ± 0%    169.4m ± 0%   +6.24% (p=0.002 n=6)   159.4m ± 0%       ~ (p=0.182 n=6)
+DictEncode/set=full-msgpack/dict=64K/tier=default/par=parallel-32     159.3m ± 0%    163.7m ± 0%   +2.70% (p=0.002 n=6)   159.3m ± 0%       ~ (p=0.545 n=6)
+DictEncode/set=nourl-json/dict=none/tier=fastest/par=serial-32        412.2m ± 0%    414.9m ± 0%   +0.64% (p=0.002 n=6)   412.4m ± 0%       ~ (p=0.922 n=6)
+DictEncode/set=nourl-json/dict=none/tier=fastest/par=parallel-32      412.5m ± 0%    414.4m ± 0%   +0.47% (p=0.002 n=6)   412.3m ± 0%  -0.05% (p=0.013 n=6)
+DictEncode/set=nourl-json/dict=none/tier=default/par=serial-32        408.3m ± 0%    407.0m ± 0%   -0.32% (p=0.002 n=6)   408.4m ± 0%       ~ (p=0.184 n=6)
+DictEncode/set=nourl-json/dict=none/tier=default/par=parallel-32      406.8m ± 0%    406.8m ± 0%        ~ (p=0.669 n=6)   407.8m ± 0%  +0.26% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=16K/tier=fastest/par=serial-32         255.0m ± 0%    264.7m ± 0%   +3.80% (p=0.002 n=6)   255.1m ± 0%       ~ (p=0.061 n=6)
+DictEncode/set=nourl-json/dict=16K/tier=fastest/par=parallel-32       255.0m ± 0%    264.2m ± 0%   +3.61% (p=0.002 n=6)   255.0m ± 0%       ~ (p=0.727 n=6)
+DictEncode/set=nourl-json/dict=16K/tier=default/par=serial-32         244.8m ± 0%    258.8m ± 1%   +5.74% (p=0.002 n=6)   244.9m ± 0%  +0.08% (p=0.009 n=6)
+DictEncode/set=nourl-json/dict=16K/tier=default/par=parallel-32       244.8m ± 0%    253.3m ± 0%   +3.45% (p=0.002 n=6)   244.9m ± 0%       ~ (p=0.545 n=6)
+DictEncode/set=nourl-json/dict=64K/tier=fastest/par=serial-32         246.7m ± 0%    251.8m ± 0%   +2.05% (p=0.002 n=6)   246.6m ± 0%       ~ (p=0.448 n=6)
+DictEncode/set=nourl-json/dict=64K/tier=fastest/par=parallel-32       246.4m ± 0%    251.9m ± 0%   +2.23% (p=0.002 n=6)   246.6m ± 0%  +0.08% (p=0.006 n=6)
+DictEncode/set=nourl-json/dict=64K/tier=default/par=serial-32         232.6m ± 0%    243.5m ± 2%   +4.71% (p=0.002 n=6)   232.4m ± 0%  -0.09% (p=0.011 n=6)
+DictEncode/set=nourl-json/dict=64K/tier=default/par=parallel-32       232.5m ± 0%    228.1m ± 1%   -1.87% (p=0.002 n=6)   232.4m ± 0%       ~ (p=0.177 n=6)
+DictEncode/set=nourl-msgpack/dict=none/tier=fastest/par=serial-32     491.3m ± 0%    497.1m ± 0%   +1.19% (p=0.002 n=6)   490.9m ± 0%  -0.09% (p=0.006 n=6)
+DictEncode/set=nourl-msgpack/dict=none/tier=fastest/par=parallel-32   491.1m ± 0%    497.4m ± 0%   +1.28% (p=0.002 n=6)   490.8m ± 0%       ~ (p=0.119 n=6)
+DictEncode/set=nourl-msgpack/dict=none/tier=default/par=serial-32     485.8m ± 0%    485.3m ± 0%   -0.09% (p=0.002 n=6)   485.8m ± 0%       ~ (p=0.485 n=6)
+DictEncode/set=nourl-msgpack/dict=none/tier=default/par=parallel-32   484.8m ± 0%    484.4m ± 0%        ~ (p=0.100 n=6)   485.2m ± 0%  +0.10% (p=0.039 n=6)
+DictEncode/set=nourl-msgpack/dict=16K/tier=fastest/par=serial-32      300.6m ± 0%    314.6m ± 0%   +4.62% (p=0.002 n=6)   300.7m ± 0%       ~ (p=0.448 n=6)
+DictEncode/set=nourl-msgpack/dict=16K/tier=fastest/par=parallel-32    300.2m ± 0%    314.2m ± 0%   +4.65% (p=0.002 n=6)   300.6m ± 0%  +0.13% (p=0.024 n=6)
+DictEncode/set=nourl-msgpack/dict=16K/tier=default/par=serial-32      291.3m ± 0%    314.2m ± 1%   +7.88% (p=0.002 n=6)   291.4m ± 0%  +0.03% (p=0.032 n=6)
+DictEncode/set=nourl-msgpack/dict=16K/tier=default/par=parallel-32    291.2m ± 0%    311.1m ± 0%   +6.83% (p=0.002 n=6)   291.3m ± 0%       ~ (p=0.054 n=6)
+DictEncode/set=nourl-msgpack/dict=64K/tier=fastest/par=serial-32      289.9m ± 0%    299.2m ± 0%   +3.19% (p=0.002 n=6)   290.0m ± 0%       ~ (p=0.935 n=6)
+DictEncode/set=nourl-msgpack/dict=64K/tier=fastest/par=parallel-32    289.9m ± 0%    299.1m ± 1%   +3.17% (p=0.002 n=6)   289.9m ± 0%       ~ (p=1.000 n=6)
+DictEncode/set=nourl-msgpack/dict=64K/tier=default/par=serial-32      276.1m ± 0%    295.5m ± 1%   +7.01% (p=0.002 n=6)   276.3m ± 0%       ~ (p=0.080 n=6)
+DictEncode/set=nourl-msgpack/dict=64K/tier=default/par=parallel-32    276.0m ± 0%    285.1m ± 1%   +3.28% (p=0.002 n=6)   276.1m ± 0%       ~ (p=0.197 n=6)
+DictEncode/set=slim-json/dict=none/tier=fastest/par=serial-32         756.9m ± 0%    817.3m ± 0%   +7.98% (p=0.002 n=6)   756.9m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-json/dict=none/tier=fastest/par=parallel-32       756.9m ± 0%    817.3m ± 0%   +7.98% (p=0.002 n=6)   756.9m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-json/dict=none/tier=default/par=serial-32         757.8m ± 0%    754.5m ± 0%   -0.44% (p=0.002 n=6)   757.8m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-json/dict=none/tier=default/par=parallel-32       757.8m ± 0%    754.5m ± 0%   -0.44% (p=0.002 n=6)   757.8m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-json/dict=16K/tier=fastest/par=serial-32          347.4m ± 0%    398.9m ± 0%  +14.82% (p=0.002 n=6)   347.4m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-json/dict=16K/tier=fastest/par=parallel-32        347.4m ± 0%    398.8m ± 0%  +14.80% (p=0.002 n=6)   347.4m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-json/dict=16K/tier=default/par=serial-32          334.7m ± 0%    389.7m ± 0%  +16.43% (p=0.002 n=6)   334.7m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-json/dict=16K/tier=default/par=parallel-32        334.7m ± 0%    389.4m ± 0%  +16.34% (p=0.002 n=6)   334.7m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-json/dict=64K/tier=fastest/par=serial-32          334.0m ± 0%    382.9m ± 0%  +14.64% (p=0.002 n=6)   334.0m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-json/dict=64K/tier=fastest/par=parallel-32        334.0m ± 0%    383.0m ± 0%  +14.67% (p=0.002 n=6)   334.0m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-json/dict=64K/tier=default/par=serial-32          324.7m ± 0%    374.6m ± 0%  +15.35% (p=0.002 n=6)   324.7m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-json/dict=64K/tier=default/par=parallel-32        324.7m ± 0%    374.6m ± 0%  +15.37% (p=0.002 n=6)   324.7m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-msgpack/dict=none/tier=fastest/par=serial-32      931.8m ± 0%   1015.0m ± 0%   +8.93% (p=0.002 n=6)   931.8m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-msgpack/dict=none/tier=fastest/par=parallel-32    931.8m ± 0%   1015.0m ± 0%   +8.93% (p=0.002 n=6)   931.8m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-msgpack/dict=none/tier=default/par=serial-32      930.8m ± 0%    966.9m ± 0%   +3.88% (p=0.002 n=6)   930.8m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-msgpack/dict=none/tier=default/par=parallel-32    930.8m ± 0%    966.9m ± 0%   +3.88% (p=0.002 n=6)   930.8m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-msgpack/dict=16K/tier=fastest/par=serial-32       423.4m ± 0%    483.3m ± 0%  +14.15% (p=0.002 n=6)   423.4m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-msgpack/dict=16K/tier=fastest/par=parallel-32     423.4m ± 0%    483.3m ± 0%  +14.15% (p=0.002 n=6)   423.4m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-msgpack/dict=16K/tier=default/par=serial-32       417.7m ± 0%    493.2m ± 0%  +18.08% (p=0.002 n=6)   417.7m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-msgpack/dict=16K/tier=default/par=parallel-32     417.7m ± 0%    493.2m ± 0%  +18.08% (p=0.002 n=6)   417.7m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-msgpack/dict=64K/tier=fastest/par=serial-32       412.2m ± 0%    460.9m ± 0%  +11.81% (p=0.002 n=6)   412.2m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-msgpack/dict=64K/tier=fastest/par=parallel-32     412.2m ± 0%    460.8m ± 0%  +11.78% (p=0.002 n=6)   412.2m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-msgpack/dict=64K/tier=default/par=serial-32       402.6m ± 0%    464.4m ± 0%  +15.35% (p=0.002 n=6)   402.6m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=slim-msgpack/dict=64K/tier=default/par=parallel-32     402.6m ± 0%    466.3m ± 0%  +15.82% (p=0.002 n=6)   402.6m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-json/dict=none/tier=fastest/par=serial-32          1.003 ± 0%     1.074 ± 0%   +7.08% (p=0.002 n=6)    1.003 ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-json/dict=none/tier=fastest/par=parallel-32        1.003 ± 0%     1.074 ± 0%   +7.08% (p=0.002 n=6)    1.003 ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-json/dict=none/tier=default/par=serial-32          1.004 ± 0%     1.074 ± 0%   +6.97% (p=0.002 n=6)    1.004 ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-json/dict=none/tier=default/par=parallel-32        1.004 ± 0%     1.074 ± 0%   +6.97% (p=0.002 n=6)    1.004 ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-json/dict=16K/tier=fastest/par=serial-32          511.2m ± 0%    576.3m ± 0%  +12.72% (p=0.002 n=6)   511.3m ± 0%       ~ (p=1.000 n=6)
+DictEncode/set=tiny-json/dict=16K/tier=fastest/par=parallel-32        511.2m ± 0%    576.4m ± 0%  +12.74% (p=0.002 n=6)   511.2m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-json/dict=16K/tier=default/par=serial-32          507.7m ± 0%    579.3m ± 0%  +14.10% (p=0.002 n=6)   507.7m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-json/dict=16K/tier=default/par=parallel-32        507.7m ± 0%    579.2m ± 0%  +14.08% (p=0.002 n=6)   507.7m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-json/dict=64K/tier=fastest/par=serial-32          501.6m ± 0%    537.4m ± 0%   +7.14% (p=0.002 n=6)   501.6m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-json/dict=64K/tier=fastest/par=parallel-32        501.6m ± 0%    537.5m ± 0%   +7.16% (p=0.002 n=6)   501.6m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-json/dict=64K/tier=default/par=serial-32          486.1m ± 0%    543.3m ± 0%  +11.77% (p=0.002 n=6)   486.1m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-json/dict=64K/tier=default/par=parallel-32        486.1m ± 0%    543.4m ± 0%  +11.78% (p=0.002 n=6)   486.1m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-msgpack/dict=none/tier=fastest/par=serial-32       1.095 ± 0%     1.105 ± 0%   +0.91% (p=0.002 n=6)    1.095 ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-msgpack/dict=none/tier=fastest/par=parallel-32     1.095 ± 0%     1.105 ± 0%   +0.91% (p=0.002 n=6)    1.095 ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-msgpack/dict=none/tier=default/par=serial-32       1.094 ± 0%     1.105 ± 0%   +1.01% (p=0.002 n=6)    1.094 ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-msgpack/dict=none/tier=default/par=parallel-32     1.094 ± 0%     1.105 ± 0%   +1.01% (p=0.002 n=6)    1.094 ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-msgpack/dict=16K/tier=fastest/par=serial-32       618.9m ± 0%    680.2m ± 0%   +9.90% (p=0.002 n=6)   618.9m ± 0%       ~ (p=1.000 n=6)
+DictEncode/set=tiny-msgpack/dict=16K/tier=fastest/par=parallel-32     618.9m ± 0%    680.2m ± 0%   +9.90% (p=0.002 n=6)   618.9m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-msgpack/dict=16K/tier=default/par=serial-32       606.3m ± 0%    709.0m ± 0%  +16.95% (p=0.002 n=6)   606.3m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-msgpack/dict=16K/tier=default/par=parallel-32     606.3m ± 0%    709.1m ± 0%  +16.96% (p=0.002 n=6)   606.3m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-msgpack/dict=64K/tier=fastest/par=serial-32       605.9m ± 0%    635.2m ± 0%   +4.84% (p=0.002 n=6)   605.9m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-msgpack/dict=64K/tier=fastest/par=parallel-32     605.9m ± 0%    635.2m ± 0%   +4.84% (p=0.002 n=6)   605.9m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-msgpack/dict=64K/tier=default/par=serial-32       578.1m ± 0%    653.6m ± 0%  +13.07% (p=0.002 n=6)   578.1m ± 0%       ~ (p=1.000 n=6) ¹
+DictEncode/set=tiny-msgpack/dict=64K/tier=default/par=parallel-32     578.1m ± 0%    653.4m ± 0%  +13.03% (p=0.002 n=6)   578.1m ± 0%       ~ (p=1.000 n=6) ¹
+geomean                                                               373.9m         397.3m        +6.25%                 373.9m       +0.01%
+¹ all samples are equal
+
+                                                                    │       port        │                 klauspost                  │                 libzstd                 │
+                                                                    │       B/op        │      B/op       vs base                    │    B/op      vs base                    │
+DictEncode/set=full-json/dict=none/tier=fastest/par=serial-32            180.5 ±   0%       1028.5 ±  3%    +469.81% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=none/tier=fastest/par=parallel-32          230.0 ±   1%        384.5 ±  8%     +67.17% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=none/tier=default/par=serial-32            201.0 ±   0%        400.0 ±  6%     +99.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=none/tier=default/par=parallel-32         256.00 ±  11%        12.00 ±  8%     -95.31% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=16K/tier=fastest/par=serial-32             152.0 ±   0%       6691.5 ±  4%   +4302.30% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=16K/tier=fastest/par=parallel-32          184.00 ±   1%        14.00 ±  7%     -92.39% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=16K/tier=default/par=serial-32             180.0 ±   1%      56621.5 ± 15%  +31356.39% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=16K/tier=default/par=parallel-32           224.0 ±   1%        121.5 ±  4%     -45.76% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=64K/tier=fastest/par=serial-32             154.0 ±   1%       7759.0 ±  4%   +4938.31% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=64K/tier=fastest/par=parallel-32          188.00 ±   0%        13.50 ±  4%     -92.82% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=64K/tier=default/par=serial-32             183.0 ±   0%     103539.5 ± 11%  +56478.96% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=64K/tier=default/par=parallel-32          227.50 ±   0%        53.50 ± 14%     -76.48% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=none/tier=fastest/par=serial-32         179.0 ±   1%        470.5 ±  1%    +162.85% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=none/tier=fastest/par=parallel-32       236.0 ±   4%        463.5 ± 13%     +96.40% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=none/tier=default/par=serial-32         194.0 ±   1%        437.5 ±  5%    +125.52% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=none/tier=default/par=parallel-32      264.50 ±   7%        13.00 ±  0%     -95.09% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=16K/tier=fastest/par=serial-32          151.0 ±   0%       7056.5 ±  5%   +4573.18% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=16K/tier=fastest/par=parallel-32       180.00 ±   1%        13.00 ± 15%     -92.78% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=16K/tier=default/par=serial-32          177.0 ±   1%      60856.5 ± 18%  +34282.20% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=16K/tier=default/par=parallel-32        219.0 ±   1%        127.0 ±  2%     -42.01% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=64K/tier=fastest/par=serial-32          151.0 ±   1%       8126.5 ±  6%   +5281.79% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=64K/tier=fastest/par=parallel-32       182.00 ±   1%        14.00 ±  7%     -92.31% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=64K/tier=default/par=serial-32          176.5 ±   0%     107301.0 ±  4%  +60693.77% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=64K/tier=default/par=parallel-32       219.00 ±   0%        53.00 ±  6%     -75.80% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=none/tier=fastest/par=serial-32           155.5 ±   0%        319.0 ±  2%    +105.14% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=none/tier=fastest/par=parallel-32         181.0 ±   7%        358.0 ±  6%     +97.79% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=none/tier=default/par=serial-32           165.0 ±   1%        283.5 ± 16%     +71.82% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=none/tier=default/par=parallel-32        196.00 ±   8%        10.50 ±  5%     -94.64% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=16K/tier=fastest/par=serial-32            135.0 ±   1%       5798.5 ±  7%   +4195.19% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=16K/tier=fastest/par=parallel-32         152.00 ±   0%        12.00 ±  8%     -92.11% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=16K/tier=default/par=serial-32            150.0 ±   0%      50877.0 ± 10%  +33818.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=16K/tier=default/par=parallel-32          173.5 ±   0%        106.5 ± 10%     -38.62% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=64K/tier=fastest/par=serial-32            133.0 ±   1%       7059.0 ±  4%   +5207.52% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=64K/tier=fastest/par=parallel-32         150.50 ±   1%        12.00 ±  8%     -92.03% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=64K/tier=default/par=serial-32            148.0 ±   0%     107843.5 ±  8%  +72767.23% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=64K/tier=default/par=parallel-32         169.00 ±   1%        46.00 ±  9%     -72.78% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=none/tier=fastest/par=serial-32        152.0 ±   0%        350.0 ±  1%    +130.26% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=none/tier=fastest/par=parallel-32      174.0 ±   7%        347.5 ±  8%     +99.71% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=none/tier=default/par=serial-32        160.0 ±   0%        314.0 ±  7%     +96.25% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=none/tier=default/par=parallel-32     188.50 ±   5%        10.50 ± 14%     -94.43% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=16K/tier=fastest/par=serial-32         130.0 ±   0%       5904.0 ±  8%   +4441.54% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=16K/tier=fastest/par=parallel-32      145.00 ±   1%        12.00 ±  8%     -91.72% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=16K/tier=default/par=serial-32         146.0 ±   0%      55313.0 ±  5%  +37785.62% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=16K/tier=default/par=parallel-32       166.0 ±   0%        104.0 ±  3%     -37.35% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=64K/tier=fastest/par=serial-32         130.5 ±   0%       7126.5 ±  5%   +5360.92% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=64K/tier=fastest/par=parallel-32      146.00 ±   0%        12.00 ±  8%     -91.78% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=64K/tier=default/par=serial-32         145.0 ±   1%     102247.0 ±  7%  +70415.17% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=64K/tier=default/par=parallel-32      165.00 ±   1%        48.00 ±  4%     -70.91% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=none/tier=fastest/par=serial-32           112.00 ±   0%        80.50 ±  3%     -28.12% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=none/tier=fastest/par=parallel-32          112.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=none/tier=default/par=serial-32            112.0 ±   0%        139.5 ±  3%     +24.55% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=none/tier=default/par=parallel-32          112.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=16K/tier=fastest/par=serial-32             112.0 ±   0%       3680.5 ±  2%   +3186.16% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=16K/tier=fastest/par=parallel-32           112.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=16K/tier=default/par=serial-32             112.0 ±   0%      25630.0 ± 19%  +22783.93% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=16K/tier=default/par=parallel-32        112.0000 ±   0%       0.5000 ±   ?     -99.55% (p=0.002 n=6)     0.0000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=64K/tier=fastest/par=serial-32             112.0 ±   0%       4464.0 ±  4%   +3885.71% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=64K/tier=fastest/par=parallel-32           112.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=64K/tier=default/par=serial-32             112.0 ±   0%     101163.5 ±  8%  +90224.55% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=64K/tier=default/par=parallel-32         112.000 ±   0%        1.000 ±   ?     -99.11% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=none/tier=fastest/par=serial-32        112.00 ±   0%        27.00 ±  4%     -75.89% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=none/tier=fastest/par=parallel-32       112.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=none/tier=default/par=serial-32         112.0 ±   0%        111.0 ±  8%           ~ (p=0.061 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=none/tier=default/par=parallel-32       112.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=16K/tier=fastest/par=serial-32          112.0 ±   0%       3818.5 ±  3%   +3309.38% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=16K/tier=fastest/par=parallel-32        112.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=16K/tier=default/par=serial-32          112.0 ±   0%      27745.0 ± 11%  +24672.32% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=16K/tier=default/par=parallel-32        112.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=64K/tier=fastest/par=serial-32          112.0 ±   0%       4563.5 ±  9%   +3974.55% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=64K/tier=fastest/par=parallel-32        112.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=64K/tier=default/par=serial-32          112.0 ±   0%      87083.0 ± 14%  +77652.68% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=64K/tier=default/par=parallel-32      112.000 ±   0%        2.000 ± 50%     -98.21% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=none/tier=fastest/par=serial-32           112.00 ±   0%        12.00 ± 25%     -89.29% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=none/tier=fastest/par=parallel-32          112.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=none/tier=default/par=serial-32           112.00 ±   0%        29.00 ± 10%     -74.11% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=none/tier=default/par=parallel-32          112.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=16K/tier=fastest/par=serial-32             112.0 ±   0%       2120.5 ± 10%   +1793.30% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=16K/tier=fastest/par=parallel-32           112.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=16K/tier=default/par=serial-32             112.0 ±   0%       8530.5 ±  5%   +7516.52% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=16K/tier=default/par=parallel-32           112.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=64K/tier=fastest/par=serial-32             112.0 ±   0%       2598.0 ± 13%   +2219.64% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=64K/tier=fastest/par=parallel-32           113.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=64K/tier=default/par=serial-32             112.0 ±   0%       9460.0 ±  4%   +8346.43% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=64K/tier=default/par=parallel-32           113.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=none/tier=fastest/par=serial-32       112.000 ±   0%        8.000 ± 12%     -92.86% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=none/tier=fastest/par=parallel-32       112.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=none/tier=default/par=serial-32        112.00 ±   0%        23.50 ± 15%     -79.02% (p=0.002 n=6)       0.00 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=none/tier=default/par=parallel-32       112.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=16K/tier=fastest/par=serial-32          112.0 ±   0%       2283.5 ±  4%   +1938.84% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=16K/tier=fastest/par=parallel-32        112.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=16K/tier=default/par=serial-32          112.0 ±   0%       9286.0 ±  4%   +8191.07% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=16K/tier=default/par=parallel-32        112.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=64K/tier=fastest/par=serial-32          112.0 ±   0%       2385.0 ± 17%   +2029.46% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=64K/tier=fastest/par=parallel-32        112.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=64K/tier=default/par=serial-32          112.0 ±   0%       9839.0 ±  5%   +8684.82% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=64K/tier=default/par=parallel-32        112.0 ±   0%          0.0 ±  0%    -100.00% (p=0.002 n=6)        0.0 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=full-json/dict=none/par=serial-32                         2.000 ±  50%       28.000 ±  4%   +1300.00% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=full-json/dict=none/par=parallel-32                       4.000 ±   0%       19.000 ±  5%    +375.00% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=full-json/dict=16K/par=serial-32                          2.000 ±   0%       16.000 ±  0%    +700.00% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=full-json/dict=16K/par=parallel-32                        3.000 ±   0%       17.000 ±  6%    +466.67% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=full-json/dict=64K/par=serial-32                          2.000 ±   0%       15.000 ±  0%    +650.00% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=full-json/dict=64K/par=parallel-32                        3.000 ±   0%       18.000 ±  6%    +500.00% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=full-msgpack/dict=none/par=serial-32                      3.000 ±   0%       29.000 ±  0%    +866.67% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=full-msgpack/dict=none/par=parallel-32                    4.000 ±   0%       18.500 ±  3%    +362.50% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=full-msgpack/dict=16K/par=serial-32                       2.000 ±   0%       15.000 ±  0%    +650.00% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=full-msgpack/dict=16K/par=parallel-32                     3.000 ±   0%       17.000 ±  6%    +466.67% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=full-msgpack/dict=64K/par=serial-32                       2.000 ±   0%       15.000 ±  0%    +650.00% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=full-msgpack/dict=64K/par=parallel-32                     3.000 ±   0%       17.000 ±  6%    +466.67% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=nourl-json/dict=none/par=serial-32                        1.000 ± 100%       12.500 ±  4%   +1150.00% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=nourl-json/dict=none/par=parallel-32                      2.000 ±   0%       13.000 ±  8%    +550.00% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=nourl-json/dict=16K/par=serial-32                         1.000 ±   0%        5.000 ±  0%    +400.00% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=nourl-json/dict=16K/par=parallel-32                       2.000 ±   0%       12.000 ±  0%    +500.00% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=nourl-json/dict=64K/par=serial-32                         1.000 ±   0%        4.000 ± 25%    +300.00% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=nourl-json/dict=64K/par=parallel-32                       2.000 ±  50%       12.000 ±  0%    +500.00% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=nourl-msgpack/dict=none/par=serial-32                     1.000 ±   0%       13.500 ±  4%   +1250.00% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=nourl-msgpack/dict=none/par=parallel-32                   2.000 ±   0%       13.500 ± 11%    +575.00% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=nourl-msgpack/dict=16K/par=serial-32                      0.000 ±   0%        4.000 ±  0%           ? (p=0.002 n=6)      0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=nourl-msgpack/dict=16K/par=parallel-32                    1.000 ±   0%       12.000 ± 17%   +1100.00% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=nourl-msgpack/dict=64K/par=serial-32                      0.000 ±    ?        4.000 ±  0%           ? (p=0.002 n=6)      0.000 ± 0%         ~ (p=1.000 n=6)
+DictDecode/set=nourl-msgpack/dict=64K/par=parallel-32                    1.000 ±   0%       11.000 ±  9%   +1000.00% (p=0.002 n=6)      0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=slim-json/dict=none/par=serial-32                         0.000 ±   0%        2.000 ±  0%           ? (p=0.002 n=6)      0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-json/dict=none/par=parallel-32                       0.000 ±   0%        1.000 ±  0%           ? (p=0.002 n=6)      0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-json/dict=16K/par=serial-32                          0.000 ±   0%        0.000 ±  0%           ~ (p=1.000 n=6) ¹    0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-json/dict=16K/par=parallel-32                        0.000 ±   0%        0.000 ±  0%           ~ (p=1.000 n=6) ¹    0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-json/dict=64K/par=serial-32                          0.000 ±   0%        0.000 ±  0%           ~ (p=1.000 n=6) ¹    0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-json/dict=64K/par=parallel-32                        0.000 ±   0%        0.000 ±  0%           ~ (p=1.000 n=6) ¹    0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-msgpack/dict=none/par=serial-32                      0.000 ±   0%        3.000 ±  0%           ? (p=0.002 n=6)      0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-msgpack/dict=none/par=parallel-32                    0.000 ±   0%        1.000 ±  0%           ? (p=0.002 n=6)      0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-msgpack/dict=16K/par=serial-32                       0.000 ±   0%        0.000 ±  0%           ~ (p=1.000 n=6) ¹    0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-msgpack/dict=16K/par=parallel-32                     0.000 ±   0%        0.000 ±  0%           ~ (p=1.000 n=6) ¹    0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-msgpack/dict=64K/par=serial-32                       0.000 ±   0%        0.000 ±  0%           ~ (p=1.000 n=6) ¹    0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-msgpack/dict=64K/par=parallel-32                     0.000 ±   0%        0.000 ±  0%           ~ (p=1.000 n=6) ¹    0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-json/dict=none/par=serial-32                         0.000 ±   0%        0.000 ±   ?           ~ (p=0.455 n=6)      0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-json/dict=none/par=parallel-32                       0.000 ±   0%        0.000 ±  0%           ~ (p=1.000 n=6) ¹    0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-json/dict=16K/par=serial-32                          0.000 ±   0%        0.000 ±  0%           ~ (p=1.000 n=6) ¹    0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-json/dict=16K/par=parallel-32                        0.000 ±   0%        0.000 ±  0%           ~ (p=1.000 n=6) ¹    0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-json/dict=64K/par=serial-32                          0.000 ±   0%        0.000 ±  0%           ~ (p=1.000 n=6) ¹    0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-json/dict=64K/par=parallel-32                        0.000 ±   0%        0.000 ±  0%           ~ (p=1.000 n=6) ¹    0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-msgpack/dict=none/par=serial-32                      0.000 ±   0%        0.000 ±  0%           ~ (p=1.000 n=6) ¹    0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-msgpack/dict=none/par=parallel-32                    0.000 ±   0%        0.000 ±  0%           ~ (p=1.000 n=6) ¹    0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-msgpack/dict=16K/par=serial-32                       0.000 ±   0%        0.000 ±  0%           ~ (p=1.000 n=6) ¹    0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-msgpack/dict=16K/par=parallel-32                     0.000 ±   0%        0.000 ±  0%           ~ (p=1.000 n=6) ¹    0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-msgpack/dict=64K/par=serial-32                       0.000 ±   0%        0.000 ±  0%           ~ (p=1.000 n=6) ¹    0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-msgpack/dict=64K/par=parallel-32                     0.000 ±   0%        0.000 ±  0%           ~ (p=1.000 n=6) ¹    0.000 ± 0%         ~ (p=1.000 n=6) ¹
+geomean                                                                               ²                   ?                        ²                ?                      ² ³
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+³ ratios must be >0 to compute geomean
+
+                                                                    │     port     │               klauspost                │                libzstd                 │
+                                                                    │  allocs/op   │ allocs/op   vs base                    │ allocs/op   vs base                    │
+DictEncode/set=full-json/dict=none/tier=fastest/par=serial-32         1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=none/tier=fastest/par=parallel-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=none/tier=default/par=serial-32         1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=none/tier=default/par=parallel-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=16K/tier=fastest/par=serial-32          1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=16K/tier=fastest/par=parallel-32        1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=16K/tier=default/par=serial-32          1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=16K/tier=default/par=parallel-32        1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=64K/tier=fastest/par=serial-32          1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=64K/tier=fastest/par=parallel-32        1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=64K/tier=default/par=serial-32          1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-json/dict=64K/tier=default/par=parallel-32        1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=none/tier=fastest/par=serial-32      1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=none/tier=fastest/par=parallel-32    1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=none/tier=default/par=serial-32      1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=none/tier=default/par=parallel-32    1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=16K/tier=fastest/par=serial-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=16K/tier=fastest/par=parallel-32     1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=16K/tier=default/par=serial-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=16K/tier=default/par=parallel-32     1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=64K/tier=fastest/par=serial-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=64K/tier=fastest/par=parallel-32     1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=64K/tier=default/par=serial-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=full-msgpack/dict=64K/tier=default/par=parallel-32     1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=none/tier=fastest/par=serial-32        1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=none/tier=fastest/par=parallel-32      1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=none/tier=default/par=serial-32        1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=none/tier=default/par=parallel-32      1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=16K/tier=fastest/par=serial-32         1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=16K/tier=fastest/par=parallel-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=16K/tier=default/par=serial-32         1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=16K/tier=default/par=parallel-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=64K/tier=fastest/par=serial-32         1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=64K/tier=fastest/par=parallel-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=64K/tier=default/par=serial-32         1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-json/dict=64K/tier=default/par=parallel-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=none/tier=fastest/par=serial-32     1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=none/tier=fastest/par=parallel-32   1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=none/tier=default/par=serial-32     1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=none/tier=default/par=parallel-32   1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=16K/tier=fastest/par=serial-32      1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=16K/tier=fastest/par=parallel-32    1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=16K/tier=default/par=serial-32      1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=16K/tier=default/par=parallel-32    1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=64K/tier=fastest/par=serial-32      1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=64K/tier=fastest/par=parallel-32    1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=64K/tier=default/par=serial-32      1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=nourl-msgpack/dict=64K/tier=default/par=parallel-32    1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=none/tier=fastest/par=serial-32         1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=none/tier=fastest/par=parallel-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=none/tier=default/par=serial-32         1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=none/tier=default/par=parallel-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=16K/tier=fastest/par=serial-32          1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=16K/tier=fastest/par=parallel-32        1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=16K/tier=default/par=serial-32          1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=16K/tier=default/par=parallel-32        1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=64K/tier=fastest/par=serial-32          1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=64K/tier=fastest/par=parallel-32        1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=64K/tier=default/par=serial-32          1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-json/dict=64K/tier=default/par=parallel-32        1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=none/tier=fastest/par=serial-32      1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=none/tier=fastest/par=parallel-32    1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=none/tier=default/par=serial-32      1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=none/tier=default/par=parallel-32    1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=16K/tier=fastest/par=serial-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=16K/tier=fastest/par=parallel-32     1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=16K/tier=default/par=serial-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=16K/tier=default/par=parallel-32     1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=64K/tier=fastest/par=serial-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=64K/tier=fastest/par=parallel-32     1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=64K/tier=default/par=serial-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=slim-msgpack/dict=64K/tier=default/par=parallel-32     1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=none/tier=fastest/par=serial-32         1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=none/tier=fastest/par=parallel-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=none/tier=default/par=serial-32         1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=none/tier=default/par=parallel-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=16K/tier=fastest/par=serial-32          1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=16K/tier=fastest/par=parallel-32        1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=16K/tier=default/par=serial-32          1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=16K/tier=default/par=parallel-32        1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=64K/tier=fastest/par=serial-32          1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=64K/tier=fastest/par=parallel-32        1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=64K/tier=default/par=serial-32          1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-json/dict=64K/tier=default/par=parallel-32        1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=none/tier=fastest/par=serial-32      1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=none/tier=fastest/par=parallel-32    1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=none/tier=default/par=serial-32      1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=none/tier=default/par=parallel-32    1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=16K/tier=fastest/par=serial-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=16K/tier=fastest/par=parallel-32     1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=16K/tier=default/par=serial-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=16K/tier=default/par=parallel-32     1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=64K/tier=fastest/par=serial-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=64K/tier=fastest/par=parallel-32     1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=64K/tier=default/par=serial-32       1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictEncode/set=tiny-msgpack/dict=64K/tier=default/par=parallel-32     1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.002 n=6)       0.000 ± 0%  -100.00% (p=0.002 n=6)
+DictDecode/set=full-json/dict=none/par=serial-32                      0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=full-json/dict=none/par=parallel-32                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=full-json/dict=16K/par=serial-32                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=full-json/dict=16K/par=parallel-32                     0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=full-json/dict=64K/par=serial-32                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=full-json/dict=64K/par=parallel-32                     0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=full-msgpack/dict=none/par=serial-32                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=full-msgpack/dict=none/par=parallel-32                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=full-msgpack/dict=16K/par=serial-32                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=full-msgpack/dict=16K/par=parallel-32                  0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=full-msgpack/dict=64K/par=serial-32                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=full-msgpack/dict=64K/par=parallel-32                  0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=nourl-json/dict=none/par=serial-32                     0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=nourl-json/dict=none/par=parallel-32                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=nourl-json/dict=16K/par=serial-32                      0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=nourl-json/dict=16K/par=parallel-32                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=nourl-json/dict=64K/par=serial-32                      0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=nourl-json/dict=64K/par=parallel-32                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=nourl-msgpack/dict=none/par=serial-32                  0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=nourl-msgpack/dict=none/par=parallel-32                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=nourl-msgpack/dict=16K/par=serial-32                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=nourl-msgpack/dict=16K/par=parallel-32                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=nourl-msgpack/dict=64K/par=serial-32                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=nourl-msgpack/dict=64K/par=parallel-32                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-json/dict=none/par=serial-32                      0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-json/dict=none/par=parallel-32                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-json/dict=16K/par=serial-32                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-json/dict=16K/par=parallel-32                     0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-json/dict=64K/par=serial-32                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-json/dict=64K/par=parallel-32                     0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-msgpack/dict=none/par=serial-32                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-msgpack/dict=none/par=parallel-32                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-msgpack/dict=16K/par=serial-32                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-msgpack/dict=16K/par=parallel-32                  0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-msgpack/dict=64K/par=serial-32                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=slim-msgpack/dict=64K/par=parallel-32                  0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-json/dict=none/par=serial-32                      0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-json/dict=none/par=parallel-32                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-json/dict=16K/par=serial-32                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-json/dict=16K/par=parallel-32                     0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-json/dict=64K/par=serial-32                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-json/dict=64K/par=parallel-32                     0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-msgpack/dict=none/par=serial-32                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-msgpack/dict=none/par=parallel-32                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-msgpack/dict=16K/par=serial-32                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-msgpack/dict=16K/par=parallel-32                  0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-msgpack/dict=64K/par=serial-32                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+DictDecode/set=tiny-msgpack/dict=64K/par=parallel-32                  0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+geomean                                                                          ²               ?                      ² ³               ?                      ² ³
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+³ ratios must be >0 to compute geomean
