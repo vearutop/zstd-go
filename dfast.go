@@ -30,6 +30,23 @@ func hashPtr(v uint64, hBits uint32, mls uint32) uint32 {
 	}
 }
 
+// hashProd is hashPtr before the final shift: hashPtr(v, bits, mls) == uint32(hashProd(v, mls)>>(64-bits)), so a position that is
+// hashed into several tables multiplies (and switches on mls) once.
+func hashProd(v uint64, mls uint32) uint64 {
+	switch mls {
+	case 5:
+		return (v << 24) * 889523592379
+	case 6:
+		return (v << 16) * 227718039650203
+	case 7:
+		return (v << 8) * 58295818150454627
+	case 8:
+		return v * 0xCF1BBCDCB7A56463
+	default: // 4
+		return uint64(uint32(v)*2654435761) << 32
+	}
+}
+
 // cdict is a dictionary prepared for one level (ZSTD_CDict): parameters and tagged double-hash tables.
 type cdict struct {
 	cp          cParams
@@ -97,7 +114,7 @@ func buildCDict(content []byte, dictSize uint64, cp cParams, row bool) *cdict {
 	for ip := dictStart(cd.cp, len(content)); ip+step-1 <= iend; ip += step {
 		for i := 0; i < step; i++ { // ZSTD_dtlm_full
 			v := binary.LittleEndian.Uint64(buf[ip+i:])
-			sm, lg := hashPtr(v, hBitsS, mls), hashPtr(v, hBitsL, 8)
+			sm, lg := uint32(hashProd(v, mls)>>(64-hBitsS)), uint32((v*0xCF1BBCDCB7A56463)>>(64-hBitsL))
 			curr := uint32(ip + i + windowStartIndex)
 			if i == 0 {
 				cd.short[sm>>shortCacheTagBits] = curr<<shortCacheTagBits | sm&0xFF
@@ -153,8 +170,9 @@ func (e *encoder) dfastDict(cd *cdict, cp cParams, L, start, iend int) {
 
 	for ip < ilimit {
 		v := rd64(buf, ip)
-		h2, h := hashPtr(v, hBitsL, 8), hashPtr(v, hBitsS, mls)
-		dhL, dhS := hashPtr(v, dictHBitsL, 8), hashPtr(v, dictHBitsS, mls)
+		pL, pS := hashProd(v, 8), hashProd(v, mls)
+		h2, h := uint32(pL>>(64-hBitsL)), uint32(pS>>(64-hBitsS))
+		dhL, dhS := uint32(pL>>(64-dictHBitsL)), uint32(pS>>(64-dictHBitsS))
 		dmL, dmS := cd.long[dhL>>shortCacheTagBits], cd.short[dhS>>shortCacheTagBits]
 		tagsL, tagsS := dmL&0xFF == dhL&0xFF, dmS&0xFF == dhS&0xFF
 		curr := idx(ip)
@@ -504,7 +522,7 @@ func (e *encoder) dfastExtDict(cp cParams, start, iend int, lowLimit, dictLimit 
 	}
 	for ip < ilimit {
 		v := rd64(buf, ip)
-		hSmall, hLong := hashPtr(v, hBitsS, mls), hashPtr(v, hBitsL, 8)
+		hSmall, hLong := uint32(hashProd(v, mls)>>(64-hBitsS)), uint32((v*0xCF1BBCDCB7A56463)>>(64-hBitsL))
 		matchIndex, matchLongIndex := hashSmall[hSmall], hashLong[hLong]
 		match, matchLong := int(matchIndex)-windowStartIndex, int(matchLongIndex)-windowStartIndex
 		curr := idx(ip)

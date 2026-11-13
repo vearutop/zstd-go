@@ -45,7 +45,9 @@ type encoder struct {
 	long, short      []uint32 // hash table (or row table) and chain table (second hash table for dfast)
 	tag              []uint8  // row match finder tag table
 	hashCache        [rowHashCacheSize]uint32
-	nextToUpdate     uint32 // ms->nextToUpdate
+	req              request    // legacyRequest's
+	rowMatches       [64]uint32 // scratch of rowFind (a local array would be zeroed on every call)
+	nextToUpdate     uint32     // ms->nextToUpdate
 	lazySkipping     bool
 	useRow           bool   // row based match finder (greedy..lazy2 with windowLog > 14)
 	dms              *cdict // attached dictionary (lazy dictMatchState mode)

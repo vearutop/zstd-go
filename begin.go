@@ -26,7 +26,8 @@ func (e *encoder) EncodeAll(src, dst []byte) []byte {
 // a dictionary.
 func (e *encoder) legacyRequest(src []byte) *request {
 	n := uint64(len(src))
-	r := &request{pledged: n, maxBlock: blockMax, fp: frameParams{contentSize: true, checksum: !e.NoChecksum}}
+	r := &e.req // reused: a request per call would be a heap allocation
+	*r = request{pledged: n, maxBlock: blockMax, fp: frameParams{contentSize: true, checksum: !e.NoChecksum}}
 	level := e.level()
 	if d := e.dict; d != nil && len(d.raw) > 0 {
 		r.dict = d

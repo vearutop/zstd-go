@@ -400,6 +400,18 @@ func buildSeqTable(slot *cTable, hdr []byte, mode int, count []uint32, max int, 
 const maxSeqSymbols = 53
 
 func histCodes(codes []uint8, count *[maxSeqSymbols + 1]uint32, maxInit int) (max, mostFrequent int) {
+	if len(codes) < 1500 { // HIST_FAST_THRESHOLD: the interleaved histograms below cost more than they save on small inputs
+		*count = [maxSeqSymbols + 1]uint32{}
+		for _, c := range codes {
+			count[c]++
+		}
+		for max = maxInit; max > 0 && count[max] == 0; max-- {
+		}
+		for s := 0; s <= max; s++ {
+			mostFrequent = max2(mostFrequent, int(count[s]))
+		}
+		return
+	}
 	// four interleaved histograms avoid store-to-load stalls on repeated codes; &63 removes the bounds checks
 	var h [4][64]uint32
 	for len(codes) >= 4 {
