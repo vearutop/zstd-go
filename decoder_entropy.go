@@ -253,7 +253,7 @@ func fseWeightsD(src []byte, w []byte) (int, *Error) {
 	omax := len(dst)
 	dec := func(s *uint32) {
 		e := dt.e[*s]
-		dst[op] = e.sym
+		dst[op] = e.xb // kindOF: the extra-bits field holds the symbol
 		op++
 		*s = uint32(e.ns) + uint32(bd.read(uint(e.nb)))
 	}

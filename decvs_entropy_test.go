@@ -153,7 +153,7 @@ func TestHufLiteralsVsLibzstd(t *testing.T) {
 	var n, bad int
 	check := func(data []byte, regen int, four bool) {
 		n++
-		st := &decState{bm: blockMax}
+		st := &decState{bm: blockMax, strictHuf: true} // libzstd's table selection, so corrupt input behaves alike
 		want, code := ref.HufDecompress(data, regen, four, 0)
 		got, err := st.hufLits(data, regen, four, true)
 		if (code != 0) != (err != nil) || (err == nil && !bytes.Equal(want, got)) {

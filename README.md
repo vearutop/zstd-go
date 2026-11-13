@@ -227,6 +227,11 @@ Measurements of individual optimizations (assembly, async reader, multithreaded 
 
 ## Implementation notes and status
 
+**Third-party code.** The assembly that decodes and executes a block's sequences (`internal/kseq`) comes from
+[klauspost/compress](https://github.com/klauspost/compress) (BSD 3-Clause, Copyright 2019 Klaus Post and the Go Authors; the license
+is in `internal/kseq/LICENSE` and the details in [NOTICE](NOTICE)); everything else, including the Go sequence loop that remains as the
+fallback, is this project's own. Decoding has no byte-parity requirement, so it takes the faster of the two implementations.
+
 Goal: functional parity with libzstd; output is **byte-identical** to libzstd and the code is a function-by-function port of the C
 sources (match finders, Huffman, FSE selection, block splitting, frame header). Details and known limitations: [PARITY.md](PARITY.md).
 
