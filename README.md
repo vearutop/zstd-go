@@ -128,9 +128,14 @@ Decoding errors are `*zstd.Error` carrying libzstd's error code (`errors.As`); a
 ## Performance
 
 Numbers below are medians of 6 runs on an otherwise idle Linux box (Xeon E5-2620 v4, 2.1 GHz, 32 threads, `GOAMD64=v3`), against
-klauspost/compress v1.20.4 and libzstd 1.5.7 (statically linked through cgo, with its amd64 assembly). Raw benchstat output is in
-[bench/results](bench/results). Times are per operation; "x faster" compares the port with the named library. Compressed sizes of the port and
-libzstd are identical (byte-for-byte output), so a ratio column says nothing about speed.
+klauspost/compress v1.20.4 and libzstd 1.5.7 (statically linked through cgo, with its amd64 assembly). Raw benchstat output of the first
+run is in [bench/results](bench/results). Times are per operation. Compressed sizes of the port and libzstd are identical (byte-for-byte
+output), so a ratio column says nothing about speed.
+
+The tables were refreshed in stages as the code changed, and each says what it was measured with. **Decoding** (small payloads with a
+dictionary, Silesia) and level 6 compression are from the current code (the decoder uses klauspost/compress's assembly sequence decoder, see
+[NOTICE](NOTICE)); the other rows come from the first run and predate the encoder and decoder work, so treat them as conservative. A full
+re-run of the bundle will bring them up to date. Columns for libzstd are from that first run.
 
 ### Small values with a dictionary (GitHub events, 16 KiB trained dictionary, one core)
 
@@ -148,16 +153,18 @@ Payloads are real GitHub events cut to four sizes (`tiny` 0.1 KB, `slim` 0.3 KB,
 | slim | 5.0 µs | 29.9 µs | 3.2 µs |
 | full | 21.5 µs | 56.3 µs | 12.4 µs |
 
-| decode | port | klauspost | libzstd |
+| decode (current code) | port | klauspost | libzstd (first run) |
 |---|---|---|---|
-| tiny | 0.81 µs | 0.91 µs | 0.62 µs |
-| slim | 1.61 µs | 1.61 µs | 1.03 µs |
-| full | 7.5 µs | 7.0 µs | 4.1 µs |
+| tiny | 0.76 µs | 0.92 µs | 0.62 µs |
+| slim | 1.37 µs | 1.62 µs | 1.03 µs |
+| full | 5.1 µs | 7.0 µs | 4.1 µs |
 
 - Encoding with a dictionary is **6 to 15x faster than klauspost** (with a 64 KiB dictionary on all cores, `default`: 1.6 µs against 87 µs per
   payload)(klauspost's cost per call grows with the dictionary size, the port's does not).
-- libzstd is 1.2 to 1.7x faster than the port on the same encodes; decoding is on par with klauspost and 1.3 to 1.8x behind libzstd. On all cores,
-  tiny-payload decoding is 85 ns for the port and libzstd and 1049 ns for klauspost.
+- libzstd is 1.2 to 1.7x faster than the port on the same encodes (slim, `default`, is now 5.6 µs after the encoder changes; the other encode
+  rows predate them). Decoding with a dictionary is **1.2 to 1.4x faster than klauspost** (0.76 against 0.92 µs for tiny, 5.1 against
+  7.0 µs for full), and without a dictionary 0.87 to 1.02x of its time (faster on the small payloads, level on the 3.4 KB ones). On all cores, tiny-payload decoding is 85 ns for the port and 973 ns
+  for klauspost (libzstd, in the first run, 84 ns).
 - Compressed size, `default`, tiny JSON: 0.508 with the port (and libzstd), 0.579 with klauspost; slim 0.335 against 0.390; without a
   dictionary tiny payloads do not shrink at all (1.00 to 1.07). MessagePack behaves the same.
 - Allocations per encode (tiny, `default`): port 1 (112 B), klauspost 112 (8.5 KB), libzstd 0.
@@ -184,30 +191,33 @@ Levels 1 and 3 are competitive with klauspost (3 to 18x faster with the records'
 | write `fastest`, 32 cores | 115 ms | 380 ms |
 | write `default`, 32 cores | 113 ms | 538 ms |
 | write `best`, 32 cores | 551 ms | 4568 ms |
-| read, synchronous | 147 ms | 128 ms |
-| read, pipelined | 170 ms | 86 ms |
+| read, synchronous (first run, before the decoder work) | 147 ms | 128 ms |
+| read, pipelined (first run, before the decoder work) | 170 ms | 86 ms |
 
 `Writer.Concurrency` compresses independent frames in parallel, so it scales where klauspost's single stream does not; the cost is that
-frames do not share history. The pipelined reader is the weakest case: the port is half of klauspost.
+frames do not share history. The two read rows predate the decoder work (on Silesia the same two modes improved by 19% and 36%, see below);
+they need a re-run.
 
 Random access in the same 64 MB seekable log (frames of 1 MiB): reading a few kilobytes at a random offset takes 1.6 ms, against 45.8 ms for
 scanning from the start; a binary search by timestamp takes 20 ms against 83 ms.
 
 ### Large files (Silesia, 211 MB, one core)
 
-| | port | klauspost | libzstd |
+| | port | klauspost | libzstd (first run) |
 |---|---|---|---|
 | compress `fastest` (level 1) | 1.49 s | 1.49 s | 0.97 s |
 | compress `default` (3) | 2.96 s | 2.02 s | 1.84 s |
-| compress `better` (6) | 10.9 s | 2.95 s | 4.20 s |
+| compress `better` (6), current code | 10.4 s | 2.95 s | 4.20 s |
 | compress `best` (9) | 15.9 s | 11.4 s | 6.2 s |
-| decode, one-shot | 541 ms | 437 ms | 436 ms |
-| decode, stream | 555 ms | 416 ms | |
-| decode, pipelined | 552 ms | 320 ms | |
+| decode, one-shot, current code | 485 ms | 455 ms | 436 ms |
+| decode, stream, current code | 407 ms | 408 ms | |
+| decode, pipelined, current code | 343 ms | 325 ms | |
 
-On large inputs without dictionaries the port is behind: about 1.0 to 1.5x klauspost's time at levels 1 to 3 and 3.7x at level 6, 1.25x on decoding
-and 1.7x on pipelined decoding. The port's strengths are the small-payload and dictionary cases above and seekability; for bulk
-throughput on large data klauspost or libzstd is the faster choice today. Memory per compression of the 211 MB file (`fastest`): port 4.7 MB, klauspost 9.3 MB.
+Decoding is now level with klauspost (the one-shot and pipelined figures are inside the run-to-run spread of both libraries on this box,
+about 5 to 10%; the port was 1.25x, 1.3x and 1.7x behind in the first run, at 541, 555 and 552 ms). Compression of large inputs without a
+dictionary is where the port is still behind: 1.0 to 1.5x klauspost's time at levels 1 to 3 (first run) and about 3.5x at level 6. The port's
+strengths are the small-payload and dictionary cases above and seekability. Memory per compression of the 211 MB file (`fastest`): port 4.7
+MB, klauspost 9.3 MB.
 
 Reproduce (build a bundle, copy it to an idle machine, run it there, compare with benchstat):
 
