@@ -130,7 +130,8 @@ Decoding errors are `*zstd.Error` carrying libzstd's error code (`errors.As`); a
 Numbers below are medians of 6 runs of one full benchmark bundle (commit `8104877`) on an otherwise idle Linux box (Xeon E5-2620 v4, 2.1 GHz,
 32 threads, `GOAMD64=v3`), against klauspost/compress v1.20.4 and libzstd 1.5.7 (statically linked through cgo, with its amd64 assembly). The raw
 benchstat input is in [bench/results](bench/results) (`xeon-e5-2620v4-full-2026-11-14.txt`; the other two files there are the first, partial run).
-Times are per operation. Compressed sizes of the port and libzstd are identical (byte-for-byte output), so a ratio column says nothing about speed.
+Times are per operation, in one unit per row. Each cell also shows its time as a percentage of the best (fastest) in the row, which is in bold: 100% is
+the best, 200% takes twice as long. Compressed sizes of the port and libzstd are identical (byte-for-byte output), so a ratio column says nothing about speed.
 Run-to-run spread on this box is a few percent; differences under about 5% are noise. The decoder uses the assembly sequence decoder of
 klauspost/compress (see [NOTICE](NOTICE)), so decoding is close to klauspost by construction.
 
@@ -140,21 +141,21 @@ Payloads are real GitHub events cut to four sizes (`tiny` 0.1 KB, `slim` 0.3 KB,
 
 | encode, tier `default` | port | klauspost | libzstd |
 |---|---|---|---|
-| tiny, 95 B | 2.2 µs | 33 µs | 2.3 µs |
-| slim, 0.3 KB | 5.2 µs | 108 µs | 4.0 µs |
-| full, 3.4 KB | 28 µs | 252 µs | 18 µs |
+| tiny, 95 B | **2.23 µs · 100%** | 33.3 µs · 1493% | 2.26 µs · 101% |
+| slim, 0.3 KB | 5.24 µs · 132% | 108 µs · 2737% | **3.96 µs · 100%** |
+| full, 3.4 KB | 27.9 µs · 154% | 252 µs · 1392% | **18.1 µs · 100%** |
 
 | encode, tier `fastest` | port | klauspost | libzstd |
 |---|---|---|---|
-| tiny | 2.1 µs | 16.5 µs | 2.0 µs |
-| slim | 4.6 µs | 29.8 µs | 3.2 µs |
-| full | 21 µs | 58 µs | 12.4 µs |
+| tiny | 2.12 µs · 105% | 16.5 µs · 811% | **2.03 µs · 100%** |
+| slim | 4.55 µs · 142% | 29.8 µs · 932% | **3.20 µs · 100%** |
+| full | 21 µs · 169% | 58.2 µs · 468% | **12.4 µs · 100%** |
 
 | decode | port | klauspost | libzstd |
 |---|---|---|---|
-| tiny | 0.76 µs | 0.91 µs | 0.62 µs |
-| slim | 1.38 µs | 1.61 µs | 1.04 µs |
-| full | 5.1 µs | 7.1 µs | 4.1 µs |
+| tiny | 0.76 µs · 123% | 0.91 µs · 147% | **0.62 µs · 100%** |
+| slim | 1.38 µs · 134% | 1.61 µs · 156% | **1.04 µs · 100%** |
+| full | 5.07 µs · 125% | 7.07 µs · 175% | **4.05 µs · 100%** |
 
 - Encoding with a dictionary is **3 to 21x faster than klauspost** (9 to 21x at `default`). klauspost's cost per call grows with the dictionary size,
   the port's does not: with a 64 KiB dictionary on all cores, `default`, slim payloads take 0.46 µs with the port and 85 µs with klauspost
@@ -173,13 +174,13 @@ Payloads are real GitHub events cut to four sizes (`tiny` 0.1 KB, `slim` 0.3 KB,
 
 | encode | port | klauspost | libzstd |
 |---|---|---|---|
-| records, level 1 | 13.9 µs | 45.7 µs | 7.9 µs |
-| records, level 3 | 13.4 µs | 251 µs | 9.1 µs |
-| blob (100 KB), level 1 | 0.96 ms | 1.0 ms | 0.55 ms |
-| blob, level 6 | 5.8 ms | 2.6 ms | 2.3 ms |
-| text (2 MB), level 1 | 17.7 ms | 18.3 ms | 11.4 ms |
-| text, level 3 | 25.3 ms | 22.2 ms | 14.3 ms |
-| text, level 6 | 115 ms | 29.6 ms | 46.3 ms |
+| records, level 1 | 13.9 µs · 175% | 45.7 µs · 576% | **7.94 µs · 100%** |
+| records, level 3 | 13.4 µs · 147% | 251 µs · 2749% | **9.11 µs · 100%** |
+| blob (100 KB), level 1 | 0.96 ms · 177% | 1.00 ms · 184% | **0.55 ms · 100%** |
+| blob, level 6 | 5.84 ms · 257% | 2.56 ms · 113% | **2.28 ms · 100%** |
+| text (2 MB), level 1 | 17.7 ms · 156% | 18.3 ms · 161% | **11.4 ms · 100%** |
+| text, level 3 | 25.3 ms · 177% | 22.2 ms · 156% | **14.3 ms · 100%** |
+| text, level 6 | 115 ms · 389% | **29.6 ms · 100%** | 46.3 ms · 156% |
 
 Levels 1 and 3 are competitive with klauspost (3 to 19x faster with the records' dictionary) and 1.5 to 1.8x slower than libzstd; from level 6 up
 the port is slower than klauspost (klauspost's levels are different, faster and weaker algorithms) and 2.5x slower than libzstd.
@@ -188,12 +189,12 @@ the port is slower than klauspost (klauspost's levels are different, faster and 
 
 | 64 MB of log lines | port | klauspost |
 |---|---|---|
-| write `fastest`, 1 core | 589 ms | 512 ms |
-| write `fastest`, 32 cores | 91 ms | 412 ms |
-| write `default`, 32 cores | 112 ms | 576 ms |
-| write `best`, 32 cores | 392 ms | 4240 ms |
-| read, synchronous | 127 ms | 126 ms |
-| read, pipelined | 159 ms (111 to 166) | 87 ms |
+| write `fastest`, 1 core | 589 ms · 115% | **512 ms · 100%** |
+| write `fastest`, 32 cores | **90.8 ms · 100%** | 412 ms · 454% |
+| write `default`, 32 cores | **112 ms · 100%** | 576 ms · 512% |
+| write `best`, 32 cores | **0.39 s · 100%** | 4.24 s · 1084% |
+| read, synchronous | 127 ms · 101% | **126 ms · 100%** |
+| read, pipelined | 159 (111 to 166) ms · 184% | **86.7 ms · 100%** |
 
 `Writer.Concurrency` compresses independent frames in parallel, so it scales where klauspost's single stream does not (4.5x to 11x faster on 32
 cores); the cost is that frames do not share history. **The pipelined reader is the weak spot**: on these 4 MiB frames it is slower than the
@@ -208,13 +209,13 @@ ms with 256 KiB frames, 17 ms with 16 MiB; searches 10 ms and 206 ms).
 
 | | port | klauspost | libzstd |
 |---|---|---|---|
-| compress `fastest` (level 1) | 1.48 s | 1.49 s | 0.97 s |
-| compress `default` (3) | 2.96 s | 2.02 s | 1.82 s |
-| compress `better` (6) | 10.3 s | 2.96 s | 4.20 s |
-| compress `best` (9) | 14.3 s | 12.8 s | 6.17 s |
-| decode, one-shot | 442 ms | 441 ms | 440 ms |
-| decode, stream | 408 ms | 405 ms | |
-| decode, pipelined | 409 ms (337 to 455) | 329 ms (298 to 336) | |
+| compress `fastest` (level 1) | 1.48 s · 152% | 1.49 s · 154% | **0.97 s · 100%** |
+| compress `default` (3) | 2.96 s · 163% | 2.02 s · 111% | **1.82 s · 100%** |
+| compress `better` (6) | 10.3 s · 347% | **2.96 s · 100%** | 4.20 s · 142% |
+| compress `best` (9) | 14.3 s · 232% | 12.8 s · 207% | **6.17 s · 100%** |
+| decode, one-shot | 442 ms · 100% | 441 ms · 100% | **440 ms · 100%** |
+| decode, stream | 408 ms · 101% | **405 ms · 100%** |  |
+| decode, pipelined | 409 (337 to 455) ms · 124% | **329 (298 to 337) ms · 100%** |  |
 
 Decoding is level with klauspost and libzstd, except the pipelined mode, which is 24% behind klauspost on average and unstable (the port's best
 runs, 337 ms, match klauspost's; it was 1.25x, 1.3x and 1.7x behind in the first run, at 541, 555 and 552 ms). Compression of large inputs without a
