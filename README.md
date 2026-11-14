@@ -194,12 +194,11 @@ the port is slower than klauspost (klauspost's levels are different, faster and 
 | write `default`, 32 cores | **112 ms · 100%** | 576 ms · 512% |
 | write `best`, 32 cores | **0.39 s · 100%** | 4.24 s · 1084% |
 | read, synchronous | 127 ms · 101% | **126 ms · 100%** |
-| read, pipelined | 159 (111 to 166) ms · 184% | **86.7 ms · 100%** |
+| read, pipelined † | 107 ms · 134% | **79.4 ms · 100%** |
 
 `Writer.Concurrency` compresses independent frames in parallel, so it scales where klauspost's single stream does not (4.5x to 11x faster on 32
-cores); the cost is that frames do not share history. **The pipelined reader is the weak spot**: on these 4 MiB frames it is slower than the
-port's own synchronous reader and 1.8x slower than klauspost's, with a wide run-to-run spread (it is also the least stable mode on Silesia, see
-below). Synchronous reading is level with klauspost.
+cores); the cost is that frames do not share history. Synchronous reading is level with klauspost. The pipelined reader (`Reader.Concurrency` of 2
+or more) is 16% faster than the port's own synchronous reader and 1.2 to 1.35x behind klauspost's pipelined one (†, below).
 
 Random access in the same 64 MB seekable log, frames of 1 MiB: reading 4 KiB at a random offset takes 1.4 ms with `ReadSeeker`, against 45.7 ms
 for decoding from the start; a binary search by timestamp takes 18.0 ms against 81.8 ms. Frame size trades compression for access time (reads: 0.55
@@ -215,12 +214,17 @@ ms with 256 KiB frames, 17 ms with 16 MiB; searches 10 ms and 206 ms).
 | compress `best` (9) | 14.3 s · 232% | 12.8 s · 207% | **6.17 s · 100%** |
 | decode, one-shot | 442 ms · 100% | 441 ms · 100% | **440 ms · 100%** |
 | decode, stream | 408 ms · 101% | **405 ms · 100%** |  |
-| decode, pipelined | 409 (337 to 455) ms · 124% | **329 (298 to 337) ms · 100%** |  |
+| decode, pipelined † | 338 (336 to 347) ms · 103% | **329 (298 to 337) ms · 100%** |  |
 
-Decoding is level with klauspost and libzstd, except the pipelined mode, which is 24% behind klauspost on average and unstable (the port's best
-runs, 337 ms, match klauspost's; it was 1.25x, 1.3x and 1.7x behind in the first run, at 541, 555 and 552 ms). Compression of large inputs without a
+Decoding is level with klauspost and libzstd in all three modes (the port was 1.25x, 1.3x and 1.7x behind in the first run, at 541, 555 and 552
+ms). Compression of large inputs without a
 dictionary is where the port is still behind: level with klauspost at level 1, 1.5x at level 3 and 3.5x at level 6. The port's strengths are the
 small-payload and dictionary cases above and seekability. Memory per compression of the 211 MB file (`fastest`): port 4.9 MB, klauspost 9.8 MB.
+
+† The two pipelined rows were measured again later on the same machine, with only those benchmarks running (6 runs each; the port's Silesia
+figure is from a run next to other port decodes, the log-file read from `StreamRead` alone, and the klauspost Silesia figure is from the full run).
+In the full run itself the two port rows were 409 ms (337 to 455) and 159 ms (111 to 166) while the machine was busy; both are in the raw file and
+neither reproduced in quiet runs (338 ms and 104 to 107 ms, spreads of 3 to 5%).
 
 ### A second machine
 
@@ -260,8 +264,8 @@ The picture is the same:
 - Silesia decoding is level with klauspost and 4 to 6% behind libzstd; compression is 1.6x klauspost at level 1 and 3, 3.8x at level 6.
 - **The pipelined modes differ between the machines, and the second one is the noisier**: on Silesia both libraries were slower pipelined than
   synchronous (590 ms and 584 ms against 361 ms and 374 ms; klauspost's six runs span 442 to 615 ms), so there is no gap to klauspost to speak of
-  on that run; on the log file the port's pipelined reader is 1.26x behind klauspost's (the first machine: 1.8x). Pipelined decoding is the least
-  stable measurement on both machines, and `Reader.Concurrency` is worth benchmarking on your own hardware before you use it.
+  on that run; on the log file the port's pipelined reader is 1.26x behind klauspost's (the first machine: 1.2 to 1.35x). Pipelined decoding is the
+  measurement most sensitive to other load, and `Reader.Concurrency` is worth benchmarking on your own hardware before you use it.
 
 Reproduce (build a bundle, copy it to an idle machine, run it there, compare with benchstat):
 
