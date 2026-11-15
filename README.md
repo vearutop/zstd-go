@@ -83,7 +83,8 @@ often shrinks the output by several percent at about the same speed, at the pric
 - `w.Params.NbWorkers = n` is libzstd's multithreading: one frame is split into jobs that overlap a little, which keeps more of the
   ratio than independent frames, and memory stays at a few jobs even for frames of 100 MB and more.
 - `r.Concurrency = n` (set before the first `Read`) decodes with a pipeline of four goroutines (input and literals, sequence decoding,
-  sequence execution, checksum): wall time drops, CPU time grows. It holds up to `n` blocks in flight on top of the window.
+  sequence execution, checksum): wall time drops, CPU time grows. It holds up to `n` blocks in flight on top of the window. Whether it helps depends on the machine (it was slower than synchronous
+  decoding on one of two test machines): benchmark it before you use it.
 - `Dict.Encode` and `Decoder.Decode` are meant for many goroutines already: call them concurrently.
 
 #### Reader settings
@@ -256,19 +257,13 @@ above and seekability. Memory per compression of the 211 MB file (`fastest`): po
 
 ### A second machine
 
-A subset of the same bundle (4 runs; no records, blob, text or stream-write) on a Xeon Gold 5118 (2.3 GHz, 48 threads,
-Linux 6.8, a shared box with scheduled jobs: the spread between runs is 4.7% of the median at the median benchmark and 19% at the 90th
-percentile, against 0.9% and 9.4% on the first machine; treat differences under about 10% as noise)..
+A Xeon Gold 5118 (48 threads, a shared and noisier box) confirms mostly similar relative performance; the exception is the pipelined reader, which is
+slower there than the synchronous one (see `Reader.Concurrency` above).
 
-It shows the same relative performance: dictionary encoding 10 to 29x faster than klauspost and level with libzstd on tiny and slim
-payloads; dictionary decoding 1.3 to 1.4x faster than klauspost and within 6 to 13% of libzstd (on all cores level with it); Silesia
-decoding level with klauspost and within 5% of libzstd; compression faster than klauspost at `fastest` and 1.06x at `default` (paired by level
-name, so not at equal size), with the same 1.5 to 1.9x gap to libzstd at levels 1 to 9 (1.5x at level 1, 1.2x at 3, 1.85x at 5, 1.9x at 6).
+### Reproducing the numbers
 
-One discrepancy: **pipelined decoding** (`Reader.Concurrency`) is faster than synchronous decoding on the first machine and slower on this
-one, for both libraries (port 363 ms synchronous, 521 ms pipelined; klauspost 375 and 593 ms). The stages hand blocks to each other, so the
-result depends on where the scheduler places the goroutines (sockets, cache sharing) and on what else the box is running; benchmark it on your
-own hardware before you use it.
+Build a bundle with `testdata/bench/scripts/bench-build.sh`, run it on an idle machine and compare runs with `benchstat -col /impl`; the raw
+results of the tables above and the steps are in [testdata/bench/README.md](testdata/bench/README.md).
 
 ## Implementation notes and status
 
