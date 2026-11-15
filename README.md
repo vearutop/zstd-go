@@ -82,8 +82,8 @@ often shrinks the output by several percent at about the same speed, at the pric
   and expect to need a few frames per core in the input to scale. Each in-flight frame holds its input, output and an encoder's tables.
 - `w.Params.NbWorkers = n` is libzstd's multithreading: one frame is split into jobs that overlap a little, which keeps more of the
   ratio than independent frames, and memory stays at a few jobs even for frames of 100 MB and more.
-- `r.Concurrency = n` (set before the first `Read`) decodes with a pipeline of goroutines: wall time drops, CPU time grows by about a
-  third. It holds up to `n` blocks in flight on top of the window.
+- `r.Concurrency = n` (set before the first `Read`) decodes with a pipeline of four goroutines (input and literals, sequence decoding,
+  sequence execution, checksum): wall time drops, CPU time grows. It holds up to `n` blocks in flight on top of the window.
 - `Dict.Encode` and `Decoder.Decode` are meant for many goroutines already: call them concurrently.
 
 #### Reader settings
@@ -194,11 +194,11 @@ the port is slower than klauspost (klauspost's levels are different, faster and 
 | write `default`, 32 cores | **112 ms · 100%** | 576 ms · 512% |
 | write `best`, 32 cores | **0.39 s · 100%** | 4.24 s · 1084% |
 | read, synchronous | 127 ms · 101% | **126 ms · 100%** |
-| read, pipelined † | 107 ms · 134% | **79.4 ms · 100%** |
+| read, pipelined † | **75.6 ms · 100%** | 79.6 ms · 105% |
 
 `Writer.Concurrency` compresses independent frames in parallel, so it scales where klauspost's single stream does not (4.5x to 11x faster on 32
 cores); the cost is that frames do not share history. Synchronous reading is level with klauspost. The pipelined reader (`Reader.Concurrency` of 2
-or more) is 16% faster than the port's own synchronous reader and 1.2 to 1.35x behind klauspost's pipelined one (†, below).
+or more) is 40% faster than the port's synchronous reader and level with klauspost's pipelined one (†, below).
 
 Random access in the same 64 MB seekable log, frames of 1 MiB: reading 4 KiB at a random offset takes 1.4 ms with `ReadSeeker`, against 45.7 ms
 for decoding from the start; a binary search by timestamp takes 18.0 ms against 81.8 ms. Frame size trades compression for access time (reads: 0.55
@@ -214,17 +214,18 @@ ms with 256 KiB frames, 17 ms with 16 MiB; searches 10 ms and 206 ms).
 | compress `best` (9) | 14.3 s · 232% | 12.8 s · 207% | **6.17 s · 100%** |
 | decode, one-shot | 442 ms · 100% | 441 ms · 100% | **440 ms · 100%** |
 | decode, stream | 408 ms · 101% | **405 ms · 100%** |  |
-| decode, pipelined † | 338 (336 to 347) ms · 103% | **329 (298 to 337) ms · 100%** |  |
+| decode, pipelined † | **256 (255 to 289) ms · 100%** | 329 (298 to 337) ms · 129% |  |
 
-Decoding is level with klauspost and libzstd in all three modes (the port was 1.25x, 1.3x and 1.7x behind in the first run, at 541, 555 and 552
-ms). Compression of large inputs without a
+Decoding is level with klauspost and libzstd in the one-shot and synchronous stream modes and faster in the pipelined one (the port was 1.25x,
+1.3x and 1.7x behind in the first run, at 541, 555 and 552 ms). Compression of large inputs without a
 dictionary is where the port is still behind: level with klauspost at level 1, 1.5x at level 3 and 3.5x at level 6. The port's strengths are the
 small-payload and dictionary cases above and seekability. Memory per compression of the 211 MB file (`fastest`): port 4.9 MB, klauspost 9.8 MB.
 
-† The two pipelined rows were measured again later on the same machine, with only those benchmarks running (6 runs each; the port's Silesia
-figure is from a run next to other port decodes, the log-file read from `StreamRead` alone, and the klauspost Silesia figure is from the full run).
-In the full run itself the two port rows were 409 ms (337 to 455) and 159 ms (111 to 166) while the machine was busy; both are in the raw file and
-neither reproduced in quiet runs (338 ms and 104 to 107 ms, spreads of 3 to 5%).
+† The two pipelined rows were measured again after the pipelined reader got a goroutine of its own for decoding sequences ahead of their
+execution (the three-stage design klauspost uses; 6 runs each, on the same machine with only those benchmarks running). The log-file read
+compares both libraries in one session (port 71 to 80 ms); the klauspost Silesia figure is from the full run, an earlier session, so that
+comparison (22% less time) is indicative. The full run's own port figures, 409 ms (337 to 455) and 159 ms (111 to 166), were taken before this
+change and while the machine was busy; they are in the raw file.
 
 ### A second machine
 
@@ -262,9 +263,10 @@ The picture is the same:
   decoding is 1.3 to 1.5x faster than klauspost and within 2 to 11% of libzstd, and on all cores it matches libzstd (tiny: 67 ns, libzstd 78 ns,
   klauspost 2.1 µs).
 - Silesia decoding is level with klauspost and 4 to 6% behind libzstd; compression is 1.6x klauspost at level 1 and 3, 3.8x at level 6.
-- **The pipelined modes differ between the machines, and the second one is the noisier**: on Silesia both libraries were slower pipelined than
+- **The pipelined modes differ between the machines, and the second one is the noisier** (this run also predates the three-stage pipelined reader,
+  so the port's pipelined rows are the old, slower design): on Silesia both libraries were slower pipelined than
   synchronous (590 ms and 584 ms against 361 ms and 374 ms; klauspost's six runs span 442 to 615 ms), so there is no gap to klauspost to speak of
-  on that run; on the log file the port's pipelined reader is 1.26x behind klauspost's (the first machine: 1.2 to 1.35x). Pipelined decoding is the
+  on that run; on the log file the port's pipelined reader is 1.26x behind klauspost's (the first machine, before the change: 1.2 to 1.35x, now level). Pipelined decoding is the
   measurement most sensitive to other load, and `Reader.Concurrency` is worth benchmarking on your own hardware before you use it.
 
 Reproduce (build a bundle, copy it to an idle machine, run it there, compare with benchstat):
