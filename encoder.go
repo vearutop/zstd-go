@@ -45,6 +45,7 @@ type encoder struct {
 	long, short      []uint32 // hash table (or row table) and chain table (second hash table for dfast)
 	tag              []uint8  // row match finder tag table
 	hashCache        [rowHashCacheSize]uint32
+	sink             uint32     // keeps the loads that stand in for prefetches
 	req              request    // legacyRequest's
 	rowMatches       [64]uint32 // scratch of rowFind (a local array would be zeroed on every call)
 	nextToUpdate     uint32     // ms->nextToUpdate

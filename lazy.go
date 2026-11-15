@@ -203,23 +203,48 @@ func (e *encoder) rowNextCachedHash(idx, hashLog, mls, rowLog uint32) uint32 {
 	return hash
 }
 
-// rowUpdateImpl is ZSTD_row_update_internalImpl.
+// rowUpdateImpl is ZSTD_row_update_internalImpl. With the hash cache, the hash entering it (rowHashCacheSize positions ahead) is
+// computed here and the row it will need is touched, which brings it into the cache by the time the position leaves the cache
+// (ZSTD_row_prefetch; a plain load does it without the call a PREFETCH instruction takes in Go).
 func (e *encoder) rowUpdateImpl(start, end, mls, rowLog, rowMask uint32, useCache bool) {
-	hashLog := e.cp.hashLog - rowLog
-	for ; start < end; start++ {
-		var hash uint32
-		if useCache {
-			hash = e.rowNextCachedHash(start, hashLog, mls, rowLog)
-		} else {
-			hash = hashPtr(rd64(e.buf, int(start)-windowStartIndex), hashLog+rowHashTagBits, mls)
+	hb := e.cp.hashLog - rowLog + rowHashTagBits
+	h := newHasher(hb, mls)
+	buf, long, tag := e.buf, e.long, e.tag
+	if !useCache {
+		for ; start < end; start++ {
+			hash := h.of(rd64(buf, int(start)-windowStartIndex))
+			relRow := (hash >> rowHashTagBits) << rowLog
+			tp := p8(tag, relRow)
+			next := (uint32(*tp) - 1) & rowMask
+			if next == 0 { // skip first position
+				next += rowMask
+			}
+			*tp = uint8(next)
+			*p8(tag, relRow+next) = uint8(hash) // ZSTD_ROW_HASH_TAG_MASK
+			*p32(long, relRow+next) = start
 		}
-		relRow := (hash >> rowHashTagBits) << rowLog
-		row := e.long[relRow : relRow+rowMask+1]
-		tagRow := e.tag[relRow : relRow+rowMask+1]
-		pos := rowNextIndex(tagRow, rowMask)
-		tagRow[pos] = uint8(hash) // ZSTD_ROW_HASH_TAG_MASK
-		row[pos] = start
+		return
 	}
+	cache := &e.hashCache
+	var sink uint32
+	for ; start < end; start++ {
+		nh := h.of(rd64(buf, int(start)-windowStartIndex+rowHashCacheSize))
+		nrow := (nh >> rowHashTagBits) << rowLog
+		sink += uint32(*p8(tag, nrow)) + *p32(long, nrow)
+		slot := start & (rowHashCacheSize - 1)
+		hash := cache[slot]
+		cache[slot] = nh
+		relRow := (hash >> rowHashTagBits) << rowLog
+		tp := p8(tag, relRow)
+		next := (uint32(*tp) - 1) & rowMask
+		if next == 0 {
+			next += rowMask
+		}
+		*tp = uint8(next)
+		*p8(tag, relRow+next) = uint8(hash)
+		*p32(long, relRow+next) = start
+	}
+	e.sink = sink
 }
 
 // rowUpdateInternal is ZSTD_row_update_internal (ip is a position).
@@ -276,33 +301,38 @@ func (e *encoder) rowFind(ip, iend int, mls, rowLog uint32, mode int, off *uint3
 
 	relRow := (hash >> rowHashTagBits) << rowLog
 	tag := uint8(hash)
-	row := hashTable[relRow : relRow+rowEntries]
-	tagRow := tagTable[relRow : relRow+rowEntries]
-	head := uint32(tagRow[0]) & rowMask
+	row := slice32(hashTable, relRow, int(rowEntries))
+	tagRow := slice8(tagTable, relRow, int(rowEntries))
+	head := uint32(*p8(tagRow, 0)) & rowMask
 	numMatches := 0
 	for matches := rowMatchMask(tagRow, tag, head, rowEntries); matches != 0 && nbAttempts > 0; matches &= matches - 1 {
 		matchPos := (head + uint32(bits.TrailingZeros64(matches))) & rowMask
-		matchIndex := row[matchPos]
+		matchIndex := *p32(row, matchPos)
 		if matchPos == 0 {
 			continue
 		}
 		if matchIndex < lowLimit {
 			break
 		}
-		e.rowMatches[numMatches] = matchIndex
+		e.rowMatches[numMatches&63] = matchIndex
 		numMatches++
 		nbAttempts--
 	}
 
-	{ // speed opt: insert the current byte into the hashtable too
-		pos := rowNextIndex(tagRow, rowMask)
-		tagRow[pos] = tag
-		row[pos] = e.nextToUpdate
+	{ // speed opt: insert the current byte into the hashtable too (rowNextIndex)
+		tp := p8(tagRow, 0)
+		pos := (uint32(*tp) - 1) & rowMask
+		if pos == 0 { // skip first position
+			pos += rowMask
+		}
+		*tp = uint8(pos)
+		*p8(tagRow, pos) = tag
+		*p32(row, pos) = e.nextToUpdate
 		e.nextToUpdate++
 	}
 
 	for currMatch := 0; currMatch < numMatches; currMatch++ { // return the longest match
-		matchIndex := e.rowMatches[currMatch]
+		matchIndex := e.rowMatches[currMatch&63]
 		currentMl := 0
 		m := int(matchIndex) - windowStartIndex
 		if mode != lazyExtDict || matchIndex >= dictLimit {

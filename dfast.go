@@ -1,6 +1,9 @@
 package zstd
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"math/bits"
+)
 
 // Port of libzstd's double-fast match finder (zstd_double_fast.c): the dictMatchState (attached dictionary)
 // and noDict loops, plus the dictionary table loading (ZSTD_fillDoubleHashTableForCDict).
@@ -139,15 +142,18 @@ func (e *encoder) storeSeq(anchor, ll int, offBase uint32, ml int) {
 	e.seqs = append(e.seqs, seq{uint32(ll), uint32(ml), offBase})
 }
 
-func rd64(b []byte, i int) uint64 { return binary.LittleEndian.Uint64(b[i : i+8]) }
-func rd32(b []byte, i int) uint32 { return binary.LittleEndian.Uint32(b[i : i+4]) }
-
 // cnt is ZSTD_count: equal bytes of buf[ip:iend] and buf[m:].
 func cnt(buf []byte, ip, m, iend int) int {
-	if ip >= iend {
-		return 0
+	n := iend - ip // m < ip, so m+i+8 <= ip+i+8 <= iend while i+8 <= n
+	i := 0
+	for ; i+8 <= n; i += 8 {
+		if x := rd64(buf, ip+i) ^ rd64(buf, m+i); x != 0 {
+			return i + bits.TrailingZeros64(x)>>3
+		}
 	}
-	return count(buf[ip:iend], buf[m:])
+	for ; i < n && buf[ip+i] == buf[m+i]; i++ {
+	}
+	return i
 }
 
 func overlapOK(prefixLowest, repIndex uint32) bool { return (prefixLowest-1)-repIndex >= 3 }
