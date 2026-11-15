@@ -35,6 +35,10 @@ type tier struct {
 	kz    kz.EncoderLevel
 }
 
+// tiers pairs klauspost's named levels with a libzstd level by name only: their compressed sizes differ (Silesia: fastest 0.348 against
+// level 1 0.346, default 0.318 against level 3 0.312, better 0.304 against level 6 0.289, best 0.280 against level 9 0.279; the
+// sizes of klauspost's better and default fall between libzstd levels 4 and 5, and 2 and 3). BenchmarkCorpusLevels sweeps the levels
+// so that speeds can be compared at equal size.
 var tiers = []tier{
 	{"fastest", 1, kz.SpeedFastest},
 	{"default", 3, kz.SpeedDefault},
@@ -255,6 +259,43 @@ func BenchmarkDecodeSmall(b *testing.B) {
 						f, dst := libzstdDec(nil), make([]byte, 0, len(got))
 						return func(src []byte) int { return len(f(dst, src)) }
 					})
+				})
+			}
+		}
+	}
+}
+
+// BenchmarkCorpusLevels compresses each corpus file at libzstd levels 1 to 9 (the port and, with -tags libzstd, libzstd), reporting the
+// compressed size ratio, so that a klauspost level (BenchmarkCorpusCompress) can be compared with the level of equal size.
+func BenchmarkCorpusLevels(b *testing.B) {
+	for _, f := range loadCorpus(b) {
+		data := f.data
+		for level := 1; level <= 9; level++ {
+			name := fmt.Sprintf("file=%s/level=%d", f.name, level)
+			report := func(b *testing.B, out int) { b.ReportMetric(float64(out)/float64(len(data)), "ratio") }
+			b.Run(name+"/impl=port", func(b *testing.B) {
+				b.SetBytes(int64(len(data)))
+				var out int64
+				for i := 0; i < b.N; i++ {
+					cw := &sizeWriter{}
+					w := zstd.NewWriter(cw)
+					w.Params = zstd.Params{Level: level}
+					w.FrameSize = min(len(data), 1<<30)
+					w.Write(data)
+					w.Close()
+					out = cw.n
+				}
+				report(b, int(out))
+			})
+			if libzstdEnc != nil {
+				b.Run(name+"/impl=libzstd", func(b *testing.B) {
+					b.SetBytes(int64(len(data)))
+					enc, dst := libzstdEnc(nil, level), make([]byte, 0, len(data)+len(data)>>8+1<<20)
+					var out int
+					for i := 0; i < b.N; i++ {
+						out = len(enc(dst, data))
+					}
+					report(b, out)
 				})
 			}
 		}
