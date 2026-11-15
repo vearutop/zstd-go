@@ -257,39 +257,20 @@ above and seekability. Memory per compression of the 211 MB file (`fastest`): po
 
 ### A second machine
 
-The same bundle (commit `f4a002c`, 4 runs, a subset of the benchmarks: no records/blob/text and no stream-write) on a different machine: Xeon Gold 5118,
-2.3 GHz, 48 threads, Linux 6.8 (the machine above runs Linux 5.9). This one is shared and runs scheduled jobs, so its results are noisier: the spread between
-the fastest and slowest run is 4.7% of the median at the median benchmark (0.9% on the first machine) and 19% at the 90th percentile (9.4%). Treat differences
-under about 10% as noise here. Raw results: `bench/results/xeon-gold-5118-full-2026-11-15.txt`.
+A subset of the same bundle (commit `f4a002c`, 4 runs; no records, blob, text or stream-write) on a Xeon Gold 5118 (2.3 GHz, 48 threads,
+Linux 6.8, a shared box with scheduled jobs: the spread between runs is 4.7% of the median at the median benchmark and 19% at the 90th
+percentile, against 0.9% and 9.4% on the first machine; treat differences under about 10% as noise). Raw results:
+`bench/results/xeon-gold-5118-full-2026-11-15.txt`.
 
-| one core unless noted | port | klauspost | libzstd |
-|---|---|---|---|
-| dictionary encode, tiny, `default` | **1.99 µs · 100%** | 38.7 µs · 1939% | 2.4 µs · 120% |
-| dictionary encode, slim | **3.9 µs · 100%** | 114 µs · 2926% | 4.82 µs · 123% |
-| dictionary encode, full | 21.5 µs · 114% | 225 µs · 1196% | **18.8 µs · 100%** |
-| dictionary decode, tiny | 0.9 µs · 106% | 1.12 µs · 131% | **0.853 µs · 100%** |
-| dictionary decode, slim | 1.39 µs · 113% | 1.76 µs · 143% | **1.23 µs · 100%** |
-| dictionary decode, full | 5.21 µs · 107% | 7.04 µs · 144% | **4.89 µs · 100%** |
-| dictionary decode, tiny, 48 threads | **0.0678 µs · 100%** | 2.01 µs · 2961% | 0.0767 µs · 113% |
-| Silesia compress `fastest` | 1.2 s · 142% | 1.28 s · 151% | **0.848 s · 100%** |
-| Silesia compress `default` | 1.88 s · 118% | 1.77 s · 111% | **1.59 s · 100%** |
-| Silesia compress `better` (6) | 7.48 s · 276% | **2.71 s · 100%** | 3.82 s · 141% |
-| Silesia compress `best` (9) | 10.5 s · 183% | 11.4 s · 199% | **5.72 s · 100%** |
-| Silesia decode, one-shot | 369 ms · 105% | 373 ms · 106% | **352 ms · 100%** |
-| Silesia decode, stream | **363 ms · 100%** | 375 ms · 103% |  |
-| Silesia decode, pipelined | **521 ms · 100%** | 593 ms · 114% |  |
-| 64 MB logs: read, synchronous | **113 ms · 100%** | 114 ms · 101% |  |
-| 64 MB logs: read, pipelined | **151 ms · 100%** | 155 ms · 102% |  |
+It shows the same relative performance: dictionary encoding 10 to 29x faster than klauspost and level with libzstd on tiny and slim
+payloads; dictionary decoding 1.3 to 1.4x faster than klauspost and within 6 to 13% of libzstd (on all cores level with it); Silesia
+decoding level with klauspost and within 5% of libzstd; compression faster than klauspost at `fastest` and 1.06x at `default` (paired by level
+name, so not at equal size), with the same 1.5 to 1.9x gap to libzstd at levels 1 to 9 (1.5x at level 1, 1.2x at 3, 1.85x at 5, 1.9x at 6).
 
-The picture is the same:
-- Dictionary encoding is 10 to 29x faster than klauspost (level with libzstd on tiny and slim payloads, 1.14x behind it on full ones); dictionary
-  decoding is 1.3 to 1.4x faster than klauspost and within 6 to 13% of libzstd, and on all cores it matches libzstd (tiny: 68 ns, libzstd 77 ns,
-  klauspost 2.0 µs).
-- Silesia decoding is level with klauspost and within 5% of libzstd; compression, paired by level name (not at equal size, see above), is 0.94x
-  klauspost's time at `fastest`, 1.06x at `default` and 2.8x at level 6 (where klauspost's output is 5% larger). The equal-size comparison was made on the
-  first machine only; the level sweep here (port/libzstd: 1.5x at level 1, 1.2x at 3, 1.85x at 5, 1.9x at 6) tells the same story.
-- **Pipelined decoding** is faster than the synchronous mode on the first machine but *slower* on this one for both libraries (the port 363 ms synchronous,
-  521 ms pipelined; klauspost 375 and 593 ms), so `Reader.Concurrency` does not help here. It is worth benchmarking on your own hardware before you use it.
+One discrepancy: **pipelined decoding** (`Reader.Concurrency`) is faster than synchronous decoding on the first machine and slower on this
+one, for both libraries (port 363 ms synchronous, 521 ms pipelined; klauspost 375 and 593 ms). The stages hand blocks to each other, so the
+result depends on where the scheduler places the goroutines (sockets, cache sharing) and on what else the box is running; benchmark it on your
+own hardware before you use it.
 
 Reproduce (build a bundle, copy it to an idle machine, run it there, compare with benchstat):
 
