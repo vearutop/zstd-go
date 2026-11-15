@@ -6,7 +6,7 @@ package zstd
 // ZSTD_compress2 with the same parameters (the tests check it against libzstd), only the choice of parameters is ours. klauspost's
 // levels reach further back than libzstd's defaults (4-8 MiB windows, large hash tables), which is most of the difference.
 //
-// Measured on three inputs of real log lines (8 MB, 59 MB, 5.4 MB; BENCHMARKS.md) against klauspost v1.20.3, single goroutine,
+// Measured on three inputs of real log lines (8 MB, 59 MB, 5.4 MB; testdata/bench/HISTORY.md) against klauspost v1.20.3, single goroutine,
 // with about 15% noise between runs:
 //
 //	preset                  size vs klauspost          speed vs klauspost
