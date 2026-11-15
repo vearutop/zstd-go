@@ -127,13 +127,13 @@ Decoding errors are `*zstd.Error` carrying libzstd's error code (`errors.As`); a
 
 ## Performance
 
-Numbers below are medians of 6 runs of one full benchmark bundle (commit `8104877`) on an otherwise idle Linux box (Xeon E5-2620 v4, 2.1 GHz,
+Numbers below are medians of 6 runs of one full benchmark bundle (commit `f4a002c`) on an otherwise idle Linux box (Xeon E5-2620 v4, 2.1 GHz,
 32 threads, `GOAMD64=v3`), against klauspost/compress v1.20.4 and libzstd 1.5.7 (statically linked through cgo, with its amd64 assembly). The raw
-benchstat input is in [bench/results](bench/results) (`xeon-e5-2620v4-full-2026-11-14.txt`; the compression level sweep is `xeon-e5-2620v4-levels-2026-11-15.txt`, the other two files are the first, partial run); a second machine follows the last table.
+benchstat input is in [bench/results](bench/results) (`xeon-e5-2620v4-full-2026-11-15.txt`); a second machine follows the last table.
 Times are per operation, in one unit per row. Each cell also shows its time as a percentage of the best (fastest) in the row, which is in bold: 100% is
 the best, 200% takes twice as long. Compressed sizes of the port and libzstd are identical (byte-for-byte output), so a ratio column says nothing about speed.
-Run-to-run spread on this box is a few percent; differences under about 5% are noise. The decoder uses the assembly sequence decoder of
-klauspost/compress (see [NOTICE](NOTICE)), so decoding is close to klauspost by construction.
+Run-to-run spread on this box is small (median 0.9% between the fastest and slowest of the 6 runs); differences under about 5% are noise. The decoder uses the
+assembly sequence decoder of klauspost/compress (see [NOTICE](NOTICE)), so decoding is close to klauspost by construction.
 
 ### Small values with a dictionary (GitHub events, 16 KiB trained dictionary, one core)
 
@@ -141,71 +141,73 @@ Payloads are real GitHub events cut to four sizes (`tiny` 0.1 KB, `slim` 0.3 KB,
 
 | encode, tier `default` | port | klauspost | libzstd |
 |---|---|---|---|
-| tiny, 95 B | **2.23 µs · 100%** | 33.3 µs · 1493% | 2.26 µs · 101% |
-| slim, 0.3 KB | 5.24 µs · 132% | 108 µs · 2737% | **3.96 µs · 100%** |
-| full, 3.4 KB | 27.9 µs · 154% | 252 µs · 1392% | **18.1 µs · 100%** |
+| tiny, 95 B | **2 µs · 100%** | 38.5 µs · 1923% | 2.25 µs · 113% |
+| slim, 0.3 KB | 4.43 µs · 111% | 112 µs · 2810% | **3.98 µs · 100%** |
+| full, 3.4 KB | 24.4 µs · 134% | 248 µs · 1366% | **18.2 µs · 100%** |
 
 | encode, tier `fastest` | port | klauspost | libzstd |
 |---|---|---|---|
-| tiny | 2.12 µs · 105% | 16.5 µs · 811% | **2.03 µs · 100%** |
-| slim | 4.55 µs · 142% | 29.8 µs · 932% | **3.20 µs · 100%** |
-| full | 21 µs · 169% | 58.2 µs · 468% | **12.4 µs · 100%** |
+| tiny | **1.94 µs · 100%** | 16.4 µs · 846% | 2.04 µs · 105% |
+| slim | 4.06 µs · 127% | 29.7 µs · 926% | **3.21 µs · 100%** |
+| full | 18.7 µs · 151% | 58.2 µs · 469% | **12.4 µs · 100%** |
 
 | decode | port | klauspost | libzstd |
 |---|---|---|---|
-| tiny | 0.76 µs · 123% | 0.91 µs · 147% | **0.62 µs · 100%** |
-| slim | 1.38 µs · 134% | 1.61 µs · 156% | **1.04 µs · 100%** |
-| full | 5.07 µs · 125% | 7.07 µs · 175% | **4.05 µs · 100%** |
+| tiny | 0.762 µs · 123% | 0.916 µs · 147% | **0.622 µs · 100%** |
+| slim | 1.37 µs · 134% | 1.62 µs · 159% | **1.02 µs · 100%** |
+| full | 5.09 µs · 126% | 7.11 µs · 175% | **4.05 µs · 100%** |
 
-- Encoding with a dictionary is **3 to 21x faster than klauspost** (9 to 21x at `default`). klauspost's cost per call grows with the dictionary size,
+- Encoding with a dictionary is **3 to 25x faster than klauspost** (10 to 25x at `default`). klauspost's cost per call grows with the dictionary size,
   the port's does not: with a 64 KiB dictionary on all cores, `default`, slim payloads take 0.46 µs with the port and 85 µs with klauspost
-  (libzstd 0.22 µs).
-- libzstd is up to 1.7x faster than the port at encoding (level with it on tiny payloads, 1.3 to 1.5x at slim and full).
+  (libzstd 0.22 µs; measured in an earlier run).
+- libzstd is up to 1.5x faster than the port at encoding (level with it on tiny payloads, 1.1 to 1.3x at slim, 1.3 to 1.5x at full).
 - Decoding with a dictionary is **1.2 to 1.4x faster than klauspost** and 1.2 to 1.3x behind libzstd. On all cores the port decodes at libzstd's
-  speed (tiny: 83 ns, libzstd 86 ns, klauspost 1.02 µs; full: 253 ns, 223 ns, 1.20 µs). Without a dictionary the port needs 0.87 to 1.02x
-  klauspost's time and 1.25 to 1.45x libzstd's.
+  speed (tiny: 82 ns, libzstd 83 ns, klauspost 1.04 µs; full: 253 ns, 224 ns, 1.17 µs). Without a dictionary the port needs 0.87 to 1.02x
+  klauspost's time and 1.25 to 1.45x libzstd's (earlier run).
 - Compressed size, `default`, tiny: 0.508 with the port (and libzstd), 0.579 with klauspost; slim 0.335 against 0.390; without a dictionary
   tiny payloads do not shrink at all (1.00 to 1.07).
 - Allocations per encode: none for the port and libzstd; klauspost allocates about 8.7 KB per tiny payload.
 - klauspost's own sample files (`benchdecoder.zip`, 12 files, serial and parallel): the port decodes in 0.96x of klauspost's time and 1.11x of libzstd's
-  (geometric means).
+  (geometric means, earlier run).
 
 ### Generated records (with a dictionary) and mid-size blocks (without), one core
 
 | encode | port | klauspost | libzstd |
 |---|---|---|---|
-| records, level 1 | 13.9 µs · 175% | 45.7 µs · 576% | **7.94 µs · 100%** |
-| records, level 3 | 13.4 µs · 147% | 251 µs · 2749% | **9.11 µs · 100%** |
-| blob (100 KB), level 1 | 0.96 ms · 177% | 1.00 ms · 184% | **0.55 ms · 100%** |
-| blob, level 6 | 5.84 ms · 257% | 2.56 ms · 113% | **2.28 ms · 100%** |
-| text (2 MB), level 1 | 17.7 ms · 156% | 18.3 ms · 161% | **11.4 ms · 100%** |
-| text, level 3 | 25.3 ms · 177% | 22.2 ms · 156% | **14.3 ms · 100%** |
-| text, level 6 | 115 ms · 389% | **29.6 ms · 100%** | 46.3 ms · 156% |
+| records, level 1 | 12 µs · 151% | 46.1 µs · 582% | **7.93 µs · 100%** |
+| records, level 3 | 11.2 µs · 123% | 232 µs · 2543% | **9.14 µs · 100%** |
+| records, level 6 | 65.2 µs · 160% | 307 µs · 752% | **40.8 µs · 100%** |
+| blob (100 KB), level 1 | 0.826 ms · 152% | 0.957 ms · 176% | **0.544 ms · 100%** |
+| blob, level 3 | 0.968 ms · 140% | 1.88 ms · 272% | **0.69 ms · 100%** |
+| blob, level 6 | 4.21 ms · 186% | 2.53 ms · 112% | **2.27 ms · 100%** |
+| text (2 MB), level 1 | 15.7 ms · 139% | 18.4 ms · 163% | **11.3 ms · 100%** |
+| text, level 3 | 19.4 ms · 136% | 22.4 ms · 156% | **14.3 ms · 100%** |
+| text, level 6 | 82.5 ms · 283% | **29.2 ms · 100%** | 46 ms · 158% |
 
-Against libzstd (the same algorithm) the port needs 1.5 to 1.8x the time at levels 1 and 3 and 2.5x at level 6. Against klauspost the rows are
+Against libzstd (the same algorithm) the port needs 1.2 to 1.5x the time at levels 1 and 3 and 1.6 to 1.9x at level 6. Against klauspost the rows are
 paired by level name and are **not at equal compressed size**: klauspost's output is 0.7 to 10% larger than the port's at levels 1 and 3 (records,
 blob, text), 2 to 4% *smaller* at level 6 and 6 to 7% larger at level 9. Read the klauspost columns with that in
-mind; the equal-size comparison above (Silesia) is the fair one. With the records' dictionary the port is 3 to 19x faster than klauspost at levels
+mind; the equal-size comparison below (Silesia) is the fair one. With the records' dictionary the port is 4 to 21x faster than klauspost at levels
 1 and 3.
 
 ### Streaming and seekable
 
 | 64 MB of log lines | port | klauspost |
 |---|---|---|
-| write `fastest`, 1 core | 589 ms · 115% | **512 ms · 100%** |
-| write `fastest`, 32 cores | **90.8 ms · 100%** | 412 ms · 454% |
-| write `default`, 32 cores | **112 ms · 100%** | 576 ms · 512% |
-| write `best`, 32 cores | **0.39 s · 100%** | 4.24 s · 1084% |
+| write `fastest`, 1 core | 540 ms · 105% | **513 ms · 100%** |
+| write `fastest`, 32 cores | **86 ms · 100%** | 417 ms · 485% |
+| write `default`, 32 cores | **108 ms · 100%** | 576 ms · 535% |
+| write `best`, 32 cores | **350 ms · 100%** | 4.43 s · 1267% |
 | read, synchronous | 127 ms · 101% | **126 ms · 100%** |
-| read, pipelined † | **75.6 ms · 100%** | 79.6 ms · 105% |
+| read, pipelined | 88.1 ms · 101% | **87.5 ms · 100%** |
 
-`Writer.Concurrency` compresses independent frames in parallel, so it scales where klauspost's single stream does not (4.5x to 11x faster on 32
-cores); the cost is that frames do not share history. Synchronous reading is level with klauspost. The pipelined reader (`Reader.Concurrency` of 2
-or more) is 40% faster than the port's synchronous reader and level with klauspost's pipelined one (†, below).
+`Writer.Concurrency` compresses independent frames in parallel, so it scales where klauspost's single stream does not (4.8x to 13x faster on 32
+cores); the cost is that frames do not share history. Reading is level with klauspost in both modes; the pipelined reader (`Reader.Concurrency` of 2
+or more) takes about 30% less time than the synchronous one.
 
-Random access in the same 64 MB seekable log, frames of 1 MiB: reading 4 KiB at a random offset takes 1.4 ms with `ReadSeeker`, against 45.7 ms
-for decoding from the start; a binary search by timestamp takes 18.0 ms against 81.8 ms. Frame size trades compression for access time (reads: 0.55
-ms with 256 KiB frames, 17 ms with 16 MiB; searches 10 ms and 206 ms).
+Random access in the same 64 MB seekable log, frames of 1 MiB: reading 4 KiB at a random offset takes 1.46 ms with `ReadSeeker`, against 45.8 ms
+for decoding from the start; a binary search by timestamp takes 18.3 ms against 81.7 ms. Frame size trades compression for access time (reads: 0.56
+ms with 256 KiB frames, 17 ms with 16 MiB; searches 10 ms and 208 ms).
 
 ### Large files (Silesia, 211 MB, one core)
 
@@ -213,95 +215,82 @@ ms with 256 KiB frames, 17 ms with 16 MiB; searches 10 ms and 206 ms).
 do not match the libzstd levels they are usually paired with (its `better` is the size of libzstd levels 4 to 5, not 6; the sizes vary by input,
 see the notes under the mid-size table). Comparing speeds by level name is therefore misleading, so this table gives, for each klauspost level, the
 time of the port and of libzstd at the same compressed size (the level in parentheses is interpolated between the two nearest levels of the table
-below, in log time; the percentage is each time against the fastest in the row; times from 4 runs):
+below, in log time; the percentage is each time against the fastest in the row; times from 6 runs):
 
 | klauspost level (compressed size) | port at that size (level) | klauspost | libzstd at that size |
 |---|---|---|---|
-| `fastest` (0.348) | 1.46 s · 153% (level 1) | 1.49 s · 156% | **0.95 s · 100%** |
-| `default` (0.318) | 2.35 s · 149% (~level 2.6) | 2.02 s · 129% | **1.57 s · 100%** |
-| `better` (0.304) | 3.80 s · 182% (~level 4.2) | 2.96 s · 142% | **2.09 s · 100%** |
-| `best` (0.280) | 14.1 s · 235% (~level 8.5) | 11.4 s · 190% | **6.01 s · 100%** |
+| `fastest` (0.348) | 1.31 s · 135% (level 1) | 1.50 s · 154% | **0.97 s · 100%** |
+| `default` (0.318) | 1.91 s · 121% (~level 2.6) | 2.03 s · 128% | **1.58 s · 100%** |
+| `better` (0.304) | 2.82 s · 135% (~level 4.2) | 2.95 s · 141% | **2.09 s · 100%** |
+| `best` (0.280) | 10.6 s · 176% (~level 8.5) | 11.4 s · 189% | **6.05 s · 100%** |
 
-- At equal size the port takes 0.98x (`fastest`), 1.16x, 1.28x and 1.24x of klauspost's time; libzstd takes 0.64x, 0.78x, 0.71x and 0.53x (it is
-  faster than klauspost at the same size). Against libzstd, the same algorithm in C, the port needs 1.3 to 2.6x the time.
-- At level 1 the port's output is a little smaller than klauspost's `fastest` (0.3455 against 0.3478) at the same speed.
+- At equal size the port takes 0.87x (`fastest`), 0.94x, 0.96x and 0.93x of klauspost's time, so it is **faster than klauspost at every level**;
+  libzstd takes 0.65x, 0.78x, 0.71x and 0.53x. Against libzstd, the same algorithm in C, the port needs 1.2 to 1.8x the time (1.2 to 1.35x up to level 4,
+  1.75x from level 5 on).
+- At level 1 the port's output is a little smaller than klauspost's `fastest` (0.3455 against 0.3478) at a lower time.
 
 Every libzstd level, for reference (the port's output is byte-identical to libzstd's at each level):
 
 | level | compressed size | port | libzstd |
 |---|---|---|---|
-| 1 | 0.3455 | 1.46 s · 153% | **0.95 s · 100%** |
-| 2 | 0.3270 | 1.72 s · 133% | **1.30 s · 100%** |
-| 3 | 0.3120 | 2.95 s · 163% | **1.81 s · 100%** |
-| 4 | 0.3065 | 2.97 s · 162% | **1.83 s · 100%** |
-| 5 | 0.2960 | 7.97 s · 256% | **3.11 s · 100%** |
-| 6 | 0.2889 | 10.3 s · 245% | **4.20 s · 100%** |
-| 7 | 0.2843 | 11.4 s · 241% | **4.72 s · 100%** |
-| 8 | 0.2817 | 13.9 s · 236% | **5.88 s · 100%** |
-| 9 | 0.2787 | 14.4 s · 235% | **6.13 s · 100%** |
+| 1 | 0.3455 | 1.31 s · 135% | **0.969 s · 100%** |
+| 2 | 0.3270 | 1.56 s · 122% | **1.28 s · 100%** |
+| 3 | 0.3120 | 2.20 s · 119% | **1.85 s · 100%** |
+| 4 | 0.3065 | 2.27 s · 123% | **1.84 s · 100%** |
+| 5 | 0.2960 | 5.51 s · 176% | **3.13 s · 100%** |
+| 6 | 0.2889 | 7.41 s · 177% | **4.20 s · 100%** |
+| 7 | 0.2843 | 8.27 s · 177% | **4.68 s · 100%** |
+| 8 | 0.2817 | 10.4 s · 173% | **5.97 s · 100%** |
+| 9 | 0.2787 | 10.9 s · 178% | **6.13 s · 100%** |
 
 Decoding:
 
 | | port | klauspost | libzstd |
 |---|---|---|---|
-| decode, one-shot | 442 ms · 100% | 441 ms · 100% | **440 ms · 100%** |
-| decode, stream | 408 ms · 101% | **405 ms · 100%** |  |
-| decode, pipelined † | **256 (255 to 289) ms · 100%** | 329 (298 to 337) ms · 129% |  |
+| decode, one-shot | 441 ms · 101% | 437 ms · 100% | **437 ms · 100%** |
+| decode, stream | 409 ms · 105% | **391 ms · 100%** |  |
+| decode, pipelined | **278 ms · 100%** | 312 ms · 112% |  |
 
-Decoding is level with klauspost and libzstd in the one-shot and synchronous stream modes and faster in the pipelined one (the port was 1.25x,
-1.3x and 1.7x behind in the first run, at 541, 555 and 552 ms). Compression of large inputs without a dictionary is where the port is behind:
-about 1.0 to 1.3x klauspost's time at equal size, and 1.3 to 2.6x libzstd's. The port's strengths are the small-payload and dictionary cases above
-and seekability. Memory per compression of the 211 MB file (`fastest`): port 4.9 MB, klauspost 9.8 MB.
-
-† The two pipelined rows were measured again after the pipelined reader got a goroutine of its own for decoding sequences ahead of their
-execution (the three-stage design klauspost uses; 6 runs each, on the same machine with only those benchmarks running). The log-file read
-compares both libraries in one session (port 71 to 80 ms); the klauspost Silesia figure is from the full run, an earlier session, so that
-comparison (22% less time) is indicative. The full run's own port figures, 409 ms (337 to 455) and 159 ms (111 to 166), were taken before this
-change and while the machine was busy; they are in the raw file.
+Decoding is level with klauspost and libzstd in the one-shot mode, 5% behind klauspost in the synchronous stream mode and faster in the pipelined one
+(the port was 1.25x, 1.3x and 1.7x behind in the first run, at 541, 555 and 552 ms). Compression of large inputs without a dictionary is where the port
+is behind libzstd (1.2 to 1.8x); against klauspost it is level or faster at equal size. The port's strengths are the small-payload and dictionary cases
+above and seekability. Memory per compression of the 211 MB file (`fastest`): port 4.7 MiB, klauspost 9.3 MiB.
 
 ### A second machine
 
-The same bundle (commit `8104877`, 6 runs) on a different machine: Xeon Gold 5118, 2.3 GHz, 48 threads, Linux 6.8 (the machine above runs
-Linux 5.9). This one is shared and runs scheduled jobs, so its results are noisier: the spread between the fastest and slowest of the 6 runs is
-4.7% of the median across all benchmarks (0.9% on the first machine), 25% at the 90th percentile (11%). Treat differences under about 10% as noise
-here. Raw results: `bench/results/xeon-gold-5118-full-2026-11-14.txt`.
+The same bundle (commit `f4a002c`, 4 runs, a subset of the benchmarks: no records/blob/text and no stream-write) on a different machine: Xeon Gold 5118,
+2.3 GHz, 48 threads, Linux 6.8 (the machine above runs Linux 5.9). This one is shared and runs scheduled jobs, so its results are noisier: the spread between
+the fastest and slowest run is 4.7% of the median at the median benchmark (0.9% on the first machine) and 19% at the 90th percentile (9.4%). Treat differences
+under about 10% as noise here. Raw results: `bench/results/xeon-gold-5118-full-2026-11-15.txt`.
 
 | one core unless noted | port | klauspost | libzstd |
 |---|---|---|---|
-| dictionary encode, tiny, `default` | **2.19 µs · 100%** | 45.8 µs · 2090% | 2.44 µs · 111% |
-| dictionary encode, slim | **4.54 µs · 100%** | 89.4 µs · 1968% | 4.8 µs · 106% |
-| dictionary encode, full | 23.8 µs · 141% | 207 µs · 1223% | **16.9 µs · 100%** |
-| dictionary decode, tiny | 0.876 µs · 102% | 1.11 µs · 130% | **0.855 µs · 100%** |
-| dictionary decode, slim | 1.4 µs · 110% | 1.76 µs · 138% | **1.27 µs · 100%** |
-| dictionary decode, full | 5.08 µs · 111% | 7.02 µs · 153% | **4.58 µs · 100%** |
-| dictionary decode, tiny, 48 threads | **0.0674 µs · 100%** | 2.08 µs · 3087% | 0.0781 µs · 116% |
-| records, level 1 | 13.5 µs · 175% | 58.1 µs · 754% | **7.7 µs · 100%** |
-| records, level 3 | 12.4 µs · 140% | 183 µs · 2068% | **8.86 µs · 100%** |
-| Silesia compress `fastest` | 1.35 s · 164% | 1.28 s · 156% | **0.824 s · 100%** |
-| Silesia compress `default` | 2.46 s · 164% | 1.75 s · 117% | **1.5 s · 100%** |
-| Silesia compress `better` (6) | 10.4 s · 384% | **2.72 s · 100%** | 3.81 s · 140% |
-| Silesia compress `best` (9) | 13.9 s · 242% | 11.9 s · 206% | **5.74 s · 100%** |
-| Silesia decode, one-shot | 366 ms · 104% | 371 ms · 106% | **352 ms · 100%** |
-| Silesia decode, stream | **361 ms · 100%** | 374 ms · 104% |  |
-| Silesia decode, pipelined † | **528 (511 to 538) ms · 100%** | 584 (442 to 615) ms · 111% |  |
-| 64 MB logs: write `fastest`, 1 core | 537 ms · 124% | **434 ms · 100%** |
-| write `fastest`, 48 cores | **124 ms · 100%** | 507 ms · 409% |
-| write `best`, 48 cores | **0.352 s · 100%** | 4.77 s · 1352% |
-| read, synchronous | **111 ms · 100%** | 112 ms · 101% |
-| read, pipelined † | **145 ms · 100%** | 150 ms · 103% |
+| dictionary encode, tiny, `default` | **1.99 µs · 100%** | 38.7 µs · 1939% | 2.4 µs · 120% |
+| dictionary encode, slim | **3.9 µs · 100%** | 114 µs · 2926% | 4.82 µs · 123% |
+| dictionary encode, full | 21.5 µs · 114% | 225 µs · 1196% | **18.8 µs · 100%** |
+| dictionary decode, tiny | 0.9 µs · 106% | 1.12 µs · 131% | **0.853 µs · 100%** |
+| dictionary decode, slim | 1.39 µs · 113% | 1.76 µs · 143% | **1.23 µs · 100%** |
+| dictionary decode, full | 5.21 µs · 107% | 7.04 µs · 144% | **4.89 µs · 100%** |
+| dictionary decode, tiny, 48 threads | **0.0678 µs · 100%** | 2.01 µs · 2961% | 0.0767 µs · 113% |
+| Silesia compress `fastest` | 1.2 s · 142% | 1.28 s · 151% | **0.848 s · 100%** |
+| Silesia compress `default` | 1.88 s · 118% | 1.77 s · 111% | **1.59 s · 100%** |
+| Silesia compress `better` (6) | 7.48 s · 276% | **2.71 s · 100%** | 3.82 s · 141% |
+| Silesia compress `best` (9) | 10.5 s · 183% | 11.4 s · 199% | **5.72 s · 100%** |
+| Silesia decode, one-shot | 369 ms · 105% | 373 ms · 106% | **352 ms · 100%** |
+| Silesia decode, stream | **363 ms · 100%** | 375 ms · 103% |  |
+| Silesia decode, pipelined | **521 ms · 100%** | 593 ms · 114% |  |
+| 64 MB logs: read, synchronous | **113 ms · 100%** | 114 ms · 101% |  |
+| 64 MB logs: read, pipelined | **151 ms · 100%** | 155 ms · 102% |  |
 
 The picture is the same:
-- Dictionary encoding is 12 to 21x faster than klauspost (level with libzstd on tiny and slim payloads, 1.4x behind it on full ones); dictionary
-  decoding is 1.3 to 1.5x faster than klauspost and within 2 to 11% of libzstd, and on all cores it matches libzstd (tiny: 67 ns, libzstd 78 ns,
-  klauspost 2.1 µs).
-- Silesia decoding is level with klauspost and 4 to 6% behind libzstd; compression, paired by level name (not at equal size, see above), is 1.6x
-  klauspost at levels 1 and 3 and 3.8x at level 6; the equal-size comparison was made on the first machine only.
-- **Pipelined decoding** († measured again after the three-stage pipelined reader, in a quiet-as-possible run: 6 runs; the log-file figures compare both
-  libraries in one session, klauspost's Silesia figure is from the full run, an earlier session): the log-file read is level with klauspost (145
-  against 150 ms; it was 192 against 153 ms in the full run, before the change), and Silesia is 25% faster than before (528 against 708 ms in
-  the same session). On this machine both libraries are *slower* pipelined than synchronous on Silesia (the port 364 ms synchronous, 528 ms
-  pipelined; klauspost 374 and 584 ms in the full run), so `Reader.Concurrency` does not help here. It is worth benchmarking on your own hardware
-  before you use it.
+- Dictionary encoding is 10 to 29x faster than klauspost (level with libzstd on tiny and slim payloads, 1.14x behind it on full ones); dictionary
+  decoding is 1.3 to 1.4x faster than klauspost and within 6 to 13% of libzstd, and on all cores it matches libzstd (tiny: 68 ns, libzstd 77 ns,
+  klauspost 2.0 µs).
+- Silesia decoding is level with klauspost and within 5% of libzstd; compression, paired by level name (not at equal size, see above), is 0.94x
+  klauspost's time at `fastest`, 1.06x at `default` and 2.8x at level 6 (where klauspost's output is 5% larger). The equal-size comparison was made on the
+  first machine only; the level sweep here (port/libzstd: 1.5x at level 1, 1.2x at 3, 1.85x at 5, 1.9x at 6) tells the same story.
+- **Pipelined decoding** is faster than the synchronous mode on the first machine but *slower* on this one for both libraries (the port 363 ms synchronous,
+  521 ms pipelined; klauspost 375 and 593 ms), so `Reader.Concurrency` does not help here. It is worth benchmarking on your own hardware before you use it.
 
 Reproduce (build a bundle, copy it to an idle machine, run it there, compare with benchstat):
 
