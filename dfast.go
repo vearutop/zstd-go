@@ -165,6 +165,11 @@ func (e *encoder) dfastDict(cd *cdict, cp cParams, L, start, iend int) {
 	hBitsL, hBitsS, mls := cp.hashLog, cp.chainLog, cp.minMatch
 	hashLong, hashSmall := e.long, e.short
 	dictHBitsL, dictHBitsS := cd.cp.hashLog+shortCacheTagBits, cd.cp.chainLog+shortCacheTagBits
+	hsL, hsS, hdL := newHasher(hBitsL, 8), newHasher(hBitsS, mls), newHasher(dictHBitsL, 8)
+	// the tables are accessed without bounds checks (see rd_fast.go): check once per block that every hash fits
+	if len(hashLong) < 1<<hBitsL || len(hashSmall) < 1<<hBitsS || len(cd.long) < 1<<cd.cp.hashLog || len(cd.short) < 1<<cd.cp.chainLog || len(buf) < iend {
+		panic("zstd: internal error: tables or buffer smaller than the block needs")
+	}
 	prefixLowestIndex := uint32(L + windowStartIndex)
 	ilimit := iend - hashReadSize
 	offset1, offset2 := e.reps[0], e.reps[1]
@@ -179,12 +184,12 @@ func (e *encoder) dfastDict(cd *cdict, cp cParams, L, start, iend int) {
 		pL, pS := hashProd(v, 8), hashProd(v, mls)
 		h2, h := uint32(pL>>(64-hBitsL)), uint32(pS>>(64-hBitsS))
 		dhL, dhS := uint32(pL>>(64-dictHBitsL)), uint32(pS>>(64-dictHBitsS))
-		dmL, dmS := cd.long[dhL>>shortCacheTagBits], cd.short[dhS>>shortCacheTagBits]
+		dmL, dmS := *p32(cd.long, dhL>>shortCacheTagBits), *p32(cd.short, dhS>>shortCacheTagBits)
 		tagsL, tagsS := dmL&0xFF == dhL&0xFF, dmS&0xFF == dhS&0xFF
 		curr := idx(ip)
-		matchIndexL, matchIndexS := hashLong[h2], hashSmall[h]
+		matchIndexL, matchIndexS := *p32(hashLong, h2), *p32(hashSmall, h)
 		repIndex := curr + 1 - offset1
-		hashLong[h2], hashSmall[h] = curr, curr
+		*p32(hashLong, h2), *p32(hashSmall, h) = curr, curr
 
 		var mLength int
 		var offset uint32
@@ -241,12 +246,12 @@ func (e *encoder) dfastDict(cd *cdict, cp cParams, L, start, iend int) {
 			}
 			// _search_next_long
 			v1 := rd64(buf, ip+1)
-			hl3 := hashPtr(v1, hBitsL, 8)
-			dhL3 := hashPtr(v1, dictHBitsL, 8)
-			matchIndexL3 := hashLong[hl3]
-			dmL3 := cd.long[dhL3>>shortCacheTagBits]
+			hl3 := hsL.of(v1)
+			dhL3 := hdL.of(v1)
+			matchIndexL3 := *p32(hashLong, hl3)
+			dmL3 := *p32(cd.long, dhL3>>shortCacheTagBits)
 			tagsL3 := dmL3&0xFF == dhL3&0xFF
-			hashLong[hl3] = curr + 1
+			*p32(hashLong, hl3) = curr + 1
 			if matchIndexL3 >= prefixLowestIndex && rd64(buf, int(matchIndexL3)-windowStartIndex) == v1 {
 				m3 := int(matchIndexL3) - windowStartIndex
 				mLength = cnt(buf, ip+9, m3+8, iend) + 8
@@ -301,10 +306,10 @@ func (e *encoder) dfastDict(cd *cdict, cp cParams, L, start, iend int) {
 		anchor = ip
 		if ip <= ilimit {
 			ins := curr + 2 // complementary insertion
-			hashLong[hashPtr(rd64(buf, int(ins)-windowStartIndex), hBitsL, 8)] = ins
-			hashLong[hashPtr(rd64(buf, ip-2), hBitsL, 8)] = idx(ip - 2)
-			hashSmall[hashPtr(rd64(buf, int(ins)-windowStartIndex), hBitsS, mls)] = ins
-			hashSmall[hashPtr(rd64(buf, ip-1), hBitsS, mls)] = idx(ip - 1)
+			*p32(hashLong, hsL.of(rd64(buf, int(ins)-windowStartIndex))) = ins
+			*p32(hashLong, hsL.of(rd64(buf, ip-2))) = idx(ip - 2)
+			*p32(hashSmall, hsS.of(rd64(buf, int(ins)-windowStartIndex))) = ins
+			*p32(hashSmall, hsS.of(rd64(buf, ip-1))) = idx(ip - 1)
 			for ip <= ilimit { // immediate repcode
 				cur2 := idx(ip)
 				rep2 := cur2 - offset2
@@ -314,8 +319,8 @@ func (e *encoder) dfastDict(cd *cdict, cp cParams, L, start, iend int) {
 				l2 := cnt(buf, ip+4, int(rep2)-windowStartIndex+4, iend) + 4
 				offset2, offset1 = offset1, offset2
 				e.storeSeq(anchor, 0, 1, l2)
-				hashSmall[hashPtr(rd64(buf, ip), hBitsS, mls)] = cur2
-				hashLong[hashPtr(rd64(buf, ip), hBitsL, 8)] = cur2
+				*p32(hashSmall, hsS.of(rd64(buf, ip))) = cur2
+				*p32(hashLong, hsL.of(rd64(buf, ip))) = cur2
 				ip += l2
 				anchor = ip
 			}
