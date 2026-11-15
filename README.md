@@ -128,8 +128,7 @@ Decoding errors are `*zstd.Error` carrying libzstd's error code (`errors.As`); a
 ## Performance
 
 Numbers below are medians of 6 runs of one full benchmark bundle on an otherwise idle Linux box (Xeon E5-2620 v4, 2.1 GHz,
-32 threads, `GOAMD64=v3`), against klauspost/compress v1.20.4 and libzstd 1.5.7 (statically linked through cgo, with its amd64 assembly). The raw
-benchstat input is in [testdata/bench/results](testdata/bench/results) (`xeon-e5-2620v4-full-2026-11-15.txt`); a second machine follows the last table.
+32 threads, `GOAMD64=v3`), against klauspost/compress v1.20.4 and libzstd 1.5.7 (statically linked through cgo, with its amd64 assembly). A second machine follows the last table.
 Times are per operation, in one unit per row. Each cell also shows its time as a percentage of the best (fastest) in the row, which is in bold: 100% is
 the best, 200% takes twice as long. Compressed sizes of the port and libzstd are identical (byte-for-byte output), so a ratio column says nothing about speed.
 Run-to-run spread on this box is small (median 0.9% between the fastest and slowest of the 6 runs); differences under about 5% are noise. The decoder uses the
@@ -259,8 +258,7 @@ above and seekability. Memory per compression of the 211 MB file (`fastest`): po
 
 A subset of the same bundle (4 runs; no records, blob, text or stream-write) on a Xeon Gold 5118 (2.3 GHz, 48 threads,
 Linux 6.8, a shared box with scheduled jobs: the spread between runs is 4.7% of the median at the median benchmark and 19% at the 90th
-percentile, against 0.9% and 9.4% on the first machine; treat differences under about 10% as noise). Raw results:
-`testdata/bench/results/xeon-gold-5118-full-2026-11-15.txt`.
+percentile, against 0.9% and 9.4% on the first machine; treat differences under about 10% as noise)..
 
 It shows the same relative performance: dictionary encoding 10 to 29x faster than klauspost and level with libzstd on tiny and slim
 payloads; dictionary decoding 1.3 to 1.4x faster than klauspost and within 6 to 13% of libzstd (on all cores level with it); Silesia
@@ -271,22 +269,6 @@ One discrepancy: **pipelined decoding** (`Reader.Concurrency`) is faster than sy
 one, for both libraries (port 363 ms synchronous, 521 ms pipelined; klauspost 375 and 593 ms). The stages hand blocks to each other, so the
 result depends on where the scheduler places the goroutines (sockets, cache sharing) and on what else the box is running; benchmark it on your
 own hardware before you use it.
-
-Reproduce (build a bundle, copy it to an idle machine, run it there, compare with benchstat):
-
-```
-testdata/bench/scripts/bench-build.sh                   # testdata/bench/dist and testdata/bench/zstd-bench-linux-amd64.tar.gz: test binary, data, run.sh (GOARCH=arm64 ...)
-scp testdata/bench/zstd-bench-linux-amd64.tar.gz host: && ssh host 'tar xzf zstd-bench-linux-amd64.tar.gz && dist/run.sh 6'
-scp host:dist/results-*.txt . && benchstat -col /impl results-*.txt
-```
-
-The default bundle is pure Go (port and klauspost). `LIBZSTD=1 testdata/bench/scripts/bench-build.sh` adds libzstd to the one-shot, corpus and
-small-frame benchmarks; it cross-compiles libzstd with zig (see the script header), so no C toolchain is needed on the target. The data is Silesia and the small frames of
-klauspost's `benchdecoder.zip`, as in the performance section of klauspost/compress's README (`EXTRA_FILES` adds more, e.g. its GOB
-stream or GitHub JSON). Results print the klauspost and libzstd versions.
-
-A log of earlier measurements (async reader, multithreaded compression, presets, single-thread speed work) is in
-[testdata/bench/HISTORY.md](testdata/bench/HISTORY.md); its numbers come from other machines and earlier code.
 
 ## Implementation notes and status
 
@@ -358,7 +340,5 @@ Not ported / road map:
 
 - long-distance matching (libzstd turns it on automatically only for windows of 128 MiB and more, i.e. sources above 64 MiB),
   dictionaries larger than the match-finder tables (only the suffix is loaded), the dedicated dictionary search, `targetCBlockSize`;
-- the dictionary trainer (work in progress in [pull request #3](https://github.com/vearutop/zstd-go/pull/3), not byte-exact yet);
+- the dictionary trainer (train dictionaries with `zstd --train`);
 - legacy zstd formats v0.5-0.7, stable-output mode and the bufferless/block API of the decoder;
-
-Tests: `go test -short ./...` (CI); `go test -tags libzstd .` needs libzstd 1.5.7 and a C compiler (`internal/ref`, edit the `#cgo` paths).
