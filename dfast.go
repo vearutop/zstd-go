@@ -344,6 +344,7 @@ func (e *encoder) dfastNoDict(cp cParams, start, iend int, lowestValid uint32, i
 	buf := e.buf
 	hBitsL, hBitsS, mls := cp.hashLog, cp.chainLog, cp.minMatch
 	hashLong, hashSmall := e.long, e.short
+	hsL, hsS := newHasher(hBitsL, 8), newHasher(hBitsS, mls)
 	idx := func(p int) uint32 { return uint32(p + windowStartIndex) }
 	endIndex := idx(iend)
 	prefixLowestIndex := getLowestPrefixIndex(lowestValid, endIndex, cp.windowLog, isDict)
@@ -379,8 +380,8 @@ func (e *encoder) dfastNoDict(cp cParams, start, iend int, lowestValid uint32, i
 			break
 		}
 		v0 := rd64(buf, ip)
-		hl0 := hashPtr(v0, hBitsL, 8)
-		idxl0 := hashLong[hl0]
+		hl0 := hsL.of(v0)
+		idxl0 := *p32(hashLong, hl0)
 		var curr uint32
 		var mLength int
 		var offset uint32
@@ -389,10 +390,10 @@ func (e *encoder) dfastNoDict(cp cParams, start, iend int, lowestValid uint32, i
 		var v1 uint64
 
 		for {
-			hs0 := hashPtr(v0, hBitsS, mls)
-			idxs0 := hashSmall[hs0]
+			hs0 := hsS.of(v0)
+			idxs0 := *p32(hashSmall, hs0)
 			curr = idx(ip)
-			hashLong[hl0], hashSmall[hs0] = curr, curr
+			*p32(hashLong, hl0), *p32(hashSmall, hs0) = curr, curr
 
 			// noDict repcode
 			if offset1 > 0 && ip+1-int(offset1) >= 0 && rd32(buf, ip+1-int(offset1)) == rd32(buf, ip+1) {
@@ -403,7 +404,7 @@ func (e *encoder) dfastNoDict(cp cParams, start, iend int, lowestValid uint32, i
 				break
 			}
 			v1 = rd64(buf, ip1)
-			hl1 = hashPtr(v1, hBitsL, 8)
+			hl1 = hsL.of(v1)
 
 			matchl0 := int(idxl0) - windowStartIndex
 			if idxl0 >= prefixLowestIndex && rd64(buf, matchl0) == v0 {
@@ -417,7 +418,7 @@ func (e *encoder) dfastNoDict(cp cParams, start, iend int, lowestValid uint32, i
 				matched = true
 				break
 			}
-			idxl1 := hashLong[hl1]
+			idxl1 := *p32(hashLong, hl1)
 			matchs0 := int(idxs0) - windowStartIndex
 			if idxs0 >= prefixLowestIndex && rd32(buf, matchs0) == uint32(v0) {
 				// _search_next_long
@@ -461,7 +462,7 @@ func (e *encoder) dfastNoDict(cp cParams, start, iend int, lowestValid uint32, i
 		if matched { // _match_found
 			offset2, offset1 = offset1, offset
 			if step < 4 {
-				hashLong[hl1] = idx(ip1)
+				*p32(hashLong, hl1) = idx(ip1)
 			}
 			e.storeSeq(anchor, ip-anchor, offset+3, mLength)
 		}
@@ -470,15 +471,15 @@ func (e *encoder) dfastNoDict(cp cParams, start, iend int, lowestValid uint32, i
 		anchor = ip
 		if ip <= ilimit {
 			ins := curr0 + 2
-			hashLong[hashPtr(rd64(buf, int(ins)-windowStartIndex), hBitsL, 8)] = ins
-			hashLong[hashPtr(rd64(buf, ip-2), hBitsL, 8)] = idx(ip - 2)
-			hashSmall[hashPtr(rd64(buf, int(ins)-windowStartIndex), hBitsS, mls)] = ins
-			hashSmall[hashPtr(rd64(buf, ip-1), hBitsS, mls)] = idx(ip - 1)
+			*p32(hashLong, hsL.of(rd64(buf, int(ins)-windowStartIndex))) = ins
+			*p32(hashLong, hsL.of(rd64(buf, ip-2))) = idx(ip - 2)
+			*p32(hashSmall, hsS.of(rd64(buf, int(ins)-windowStartIndex))) = ins
+			*p32(hashSmall, hsS.of(rd64(buf, ip-1))) = idx(ip - 1)
 			for ip <= ilimit && offset2 > 0 && ip-int(offset2) >= 0 && rd32(buf, ip) == rd32(buf, ip-int(offset2)) {
 				rLength := cnt(buf, ip+4, ip+4-int(offset2), iend) + 4
 				offset2, offset1 = offset1, offset2
-				hashSmall[hashPtr(rd64(buf, ip), hBitsS, mls)] = idx(ip)
-				hashLong[hashPtr(rd64(buf, ip), hBitsL, 8)] = idx(ip)
+				*p32(hashSmall, hsS.of(rd64(buf, ip))) = idx(ip)
+				*p32(hashLong, hsL.of(rd64(buf, ip))) = idx(ip)
 				e.storeSeq(anchor, 0, 1, rLength)
 				ip += rLength
 				anchor = ip
