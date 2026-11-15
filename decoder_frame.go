@@ -47,6 +47,15 @@ type Decoder struct {
 	pool  sync.Pool // *decState
 }
 
+// mustDecoder is NewDecoder for callers that cannot fail: it never returns an error today.
+func mustDecoder(dicts ...*Dict) *Decoder {
+	d, err := NewDecoder(dicts...)
+	if err != nil {
+		panic(err)
+	}
+	return d
+}
+
 // NewDecoder returns a decoder that knows the given dictionaries; a frame is decoded with the one whose id it names. Dictionaries
 // with the same id (all raw-content dictionaries have id 0) cannot be told apart: only the last of them is used, so decode frames
 // of raw-content dictionaries with Dict.Decode instead.

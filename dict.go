@@ -178,7 +178,7 @@ func (d *Dict) EncodeLevel(dst, src []byte, level int) []byte {
 	return dst
 }
 
-var noDictDecoder = sync.OnceValue(func() *Decoder { d, _ := NewDecoder(); return d })
+var noDictDecoder = sync.OnceValue(func() *Decoder { return mustDecoder() })
 
 // Decode appends the decompressed content of the frames in src to dst, with this dictionary chosen by the caller: it is how
 // frames made with a raw-content dictionary (which carries no id, so a Decoder holding several of them cannot tell them apart) are
@@ -189,7 +189,7 @@ func (d *Dict) Decode(dst, src []byte) ([]byte, error) {
 	if d == nil {
 		return noDictDecoder().Decode(dst, src)
 	}
-	d.decOnce.Do(func() { d.dec, _ = NewDecoder(d) })
+	d.decOnce.Do(func() { d.dec = mustDecoder(d) })
 	return d.dec.Decode(dst, src)
 }
 

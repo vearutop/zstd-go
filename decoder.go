@@ -2,8 +2,9 @@ package zstd
 
 import (
 	"encoding/binary"
-	"github.com/vearutop/zstd-go/internal/kseq"
 	"math/bits"
+
+	"github.com/vearutop/zstd-go/internal/kseq"
 )
 
 // FSE decoding table entry, one per state. Its layout is klauspost/compress's decSymbol (nb | xb<<8 | ns<<16 | base<<32),

@@ -143,7 +143,7 @@ func (z *Writer) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
-// eFlush emits the pending input as a frame (if any); it makes the data decodable without waiting for Close.
+// Flush emits the pending input as a frame (if any); it makes the data decodable without waiting for Close.
 func (z *Writer) Flush() error {
 	if z.mt {
 		if z.err == nil && z.fin > 0 {

@@ -103,11 +103,20 @@ linters:
           - errcheck
           - gosec
         path: example_
+      - linters: # a developer tool that exits on the first error
+          - errcheck
+          - gosec
+          - gocritic
+          - prealloc
+          - errchkjson
+          - noctx
+        path: internal/cmd/
       - linters:
           - revive
         text: 'unused-parameter: parameter|redefines-builtin-id|empty-block'
     paths:
       - third_party$
+      - internal/kseq # vendored from klauspost/compress, kept close to upstream
       - builtin$
       - examples$
 formatters:

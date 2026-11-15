@@ -616,7 +616,7 @@ func WithDecoder(d *Decoder) ReaderOption {
 
 // WithReaderDict makes the Reader know the given dictionaries.
 func WithReaderDict(dicts ...*Dict) ReaderOption {
-	return func(z *Reader) { z.s.dec, _ = NewDecoder(dicts...) }
+	return func(z *Reader) { z.s.dec = mustDecoder(dicts...) }
 }
 
 // NewReader returns a Reader decoding frames from r configured by opts.

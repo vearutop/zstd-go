@@ -2,7 +2,6 @@ package zstd
 
 import (
 	"encoding/binary"
-	"math/bits"
 )
 
 const blockMax = 128 << 10
@@ -283,30 +282,6 @@ func updateRep(r *[3]uint32, offBase uint32, ll0 bool) {
 		r[2] = r[1]
 	}
 	r[1], r[0] = r[0], cur
-}
-
-// count returns the common prefix length of a and b (b no longer than a is not required).
-func count(a, b []byte) int {
-	n := min(len(a), len(b))
-	a, b = a[:n:n], b[:n:n]
-	i := 0
-	for ; i+16 <= n; i += 16 {
-		if x := binary.LittleEndian.Uint64(a[i:]) ^ binary.LittleEndian.Uint64(b[i:]); x != 0 {
-			return i + bits.TrailingZeros64(x)>>3
-		}
-		if x := binary.LittleEndian.Uint64(a[i+8:]) ^ binary.LittleEndian.Uint64(b[i+8:]); x != 0 {
-			return i + 8 + bits.TrailingZeros64(x)>>3
-		}
-	}
-	if i+8 <= n {
-		if x := binary.LittleEndian.Uint64(a[i:]) ^ binary.LittleEndian.Uint64(b[i:]); x != 0 {
-			return i + bits.TrailingZeros64(x)>>3
-		}
-		i += 8
-	}
-	for ; i < n && a[i] == b[i]; i++ {
-	}
-	return i
 }
 
 // offRepeatAfterBlock: a dictionary's offset table is only known to cover every offset for the first block.

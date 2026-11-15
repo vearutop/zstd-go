@@ -4,12 +4,12 @@ import (
 	"bufio"
 	"encoding/binary"
 	"errors"
-	"github.com/vearutop/zstd-go/internal/kseq"
 	"io"
 	"runtime"
 	"sync"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/vearutop/zstd-go/internal/kseq"
 )
 
 // Asynchronous Reader (Reader.Concurrency >= 2): a pipeline of goroutines.
@@ -210,7 +210,7 @@ func (p *asyncPipe) send(c asyncChunk) bool {
 }
 
 // sendBytes forwards b untouched (b is copied, the caller reuses it).
-func (p *asyncPipe) sendBytes(b []byte, start bool) bool {
+func (p *asyncPipe) sendBytes(b []byte) bool {
 	if len(b) == 0 {
 		return true
 	}
@@ -218,7 +218,7 @@ func (p *asyncPipe) sendBytes(b []byte, start bool) bool {
 	if sl == nil {
 		return false
 	}
-	return p.send(asyncChunk{data: sl.buf[:copy(sl.buf, b)], slot: sl, start: start})
+	return p.send(asyncChunk{data: sl.buf[:copy(sl.buf, b)], slot: sl})
 }
 
 // sendFrame is sendBytes for a frame header: the chunk also carries the frame's starting repeat offsets.
@@ -252,9 +252,11 @@ func (p *asyncPipe) seqdec() {
 			if cap(sl.seqs) < j.nb {
 				sl.seqs = make([]kseq.SeqVal, j.nb, max(j.nb, 4096))
 			}
-			sp := kseq.SeqParams{In: j.rest, LL: entries(j.pll), OF: entries(j.pof), ML: entries(j.pml),
+			sp := kseq.SeqParams{
+				In: j.rest, LL: entries(j.pll), OF: entries(j.pof), ML: entries(j.pml),
 				LLLog: j.pll.log, OFLog: j.pof.log, MLLog: j.pml.log, MaxBits: j.pll.maxXb + j.pof.maxXb + j.pml.maxXb,
-				LitLen: len(j.lits), Reps: reps, Seqs: sl.seqs[:j.nb]}
+				LitLen: len(j.lits), Reps: reps, Seqs: sl.seqs[:j.nb],
+			}
 			if kseq.DecodeSeqs(&sp) == nil {
 				j.seqs, j.total, j.repsOut = sp.Seqs, sp.Total, sp.Reps
 				reps = sp.Reps
@@ -355,19 +357,19 @@ func (p *asyncPipe) parse(r io.Reader, s *dStream) {
 			m, err := io.ReadFull(br, hdr[n:need])
 			n += m
 			if err != nil {
-				p.sendBytes(hdr[:n], false)
+				p.sendBytes(hdr[:n])
 				p.finish(err)
 				return
 			}
 		}
 		if bad {
-			if p.sendBytes(hdr[:n], false) {
+			if p.sendBytes(hdr[:n]) {
 				p.passthrough(br)
 			}
 			return
 		}
 		if !magicless && binary.LittleEndian.Uint32(hdr[:])&magicSkippableMask == magicSkippableBase {
-			if !p.sendBytes(hdr[:n], false) || !p.forward(br, uint64(binary.LittleEndian.Uint32(hdr[4:]))) {
+			if !p.sendBytes(hdr[:n]) || !p.forward(br, uint64(binary.LittleEndian.Uint32(hdr[4:]))) {
 				return
 			}
 			continue
@@ -379,7 +381,7 @@ func (p *asyncPipe) parse(r io.Reader, s *dStream) {
 			bm = uint32(s.MaxBlockSize)
 		}
 		if e != nil || window > uint64(1)<<uint(wl) {
-			if p.sendBytes(hdr[:n], false) {
+			if p.sendBytes(hdr[:n]) {
 				p.passthrough(br)
 			}
 			return

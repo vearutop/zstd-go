@@ -1,8 +1,9 @@
 package zstd
 
-import "os"
-
-import "io"
+import (
+	"io"
+	"os"
+)
 
 // the existing differential tests expect libzstd's exact behavior; ZSTD_TEST_NONSTRICT=1 runs the suite with the shipped default
 func init() { strictHufDefault = os.Getenv("ZSTD_TEST_NONSTRICT") == "" }

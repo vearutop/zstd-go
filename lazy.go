@@ -165,16 +165,6 @@ func (e *encoder) hcFind(ip, iend int, mls uint32, mode int, off *uint32) int {
 
 // ---- row based ----
 
-// rowNextIndex is ZSTD_row_nextIndex.
-func rowNextIndex(tagRow []uint8, rowMask uint32) uint32 {
-	next := (uint32(tagRow[0]) - 1) & rowMask
-	if next == 0 { // skip first position
-		next += rowMask
-	}
-	tagRow[0] = uint8(next)
-	return next
-}
-
 // rowFillHashCache is ZSTD_row_fillHashCache; iLimit is a position.
 func (e *encoder) rowFillHashCache(idx uint32, iLimit int, mls, rowLog uint32) {
 	hashLog := e.cp.hashLog - rowLog // ms->rowHashLog

@@ -11,6 +11,7 @@ import "unsafe"
 func rd64(b []byte, i int) uint64 {
 	return *(*uint64)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(b)), i))
 }
+
 func rd32(b []byte, i int) uint32 {
 	return *(*uint32)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(b)), i))
 }
@@ -20,6 +21,7 @@ func rd32(b []byte, i int) uint32 {
 func p8(s []uint8, i uint32) *uint8 {
 	return (*uint8)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(s)), i))
 }
+
 func p32(s []uint32, i uint32) *uint32 {
 	return (*uint32)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(s)), uintptr(i)*4))
 }
