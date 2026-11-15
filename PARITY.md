@@ -5,7 +5,7 @@ accept and reject the same inputs with the same output. The code is a function-b
 checked against the real library through a cgo differential harness (`-tags libzstd`, `internal/ref`, `go test -tags libzstd`).
 Nothing below is claimed beyond what those checks cover.
 
-## Compression (master)
+## Compression
 
 **Byte-identical to libzstd for every compression level from -50 to 22**, for the single-shot API, with or without a
 prepared dictionary (`ZSTD_compressCCtx` / `ZSTD_compress_usingCDict`; the port adds the content checksum when asked, libzstd's
@@ -49,14 +49,14 @@ Known limitations of the compressor:
   optimal parser's statistics from them; the port treats the missing entries as cost 0, which cannot be checked byte for byte.
 - **Row match finder salt:** libzstd salts row hashes from the history of the context; the salt only permutes rows and tags, so
   it does not change output and is not modelled.
-- **Dictionary trainer (zdict):** not on master (parked on branch `zdict-wip`, work in progress, not verified).
+- **Dictionary trainer (zdict):** not part of the package; work in progress in pull request #3, not byte-exact yet.
 
-Found late (fixed in this merge): the FSE table-size calculation used signed arithmetic where libzstd wraps in 32 bits, so blocks with
+Fixed bug class: the FSE table-size calculation used signed arithmetic where libzstd wraps in 32 bits, so blocks with
 4 or fewer sequences could pick a different offset-table mode and come out 1 to 3 bytes larger than libzstd's. The randomized
 single-shot tests never produced such blocks; the streaming tests did. Verified by calling libzstd's `ZSTD_selectEncodingType` on
 200,000 random histograms (574 mismatches before, 0 after).
 
-## Decoder (master, merged from the decoder-parity branch, last decoder commit `8760d20`)
+## Decoder
 
 - `Decode` follows `ZSTD_decompress`: window, offset, block-size, dictionary and checksum rules, magicless format,
   multi-dictionary selection, libzstd's destination-capacity rules, X1 and X2 Huffman decoders and the fast path.
@@ -66,7 +66,6 @@ single-shot tests never produced such blocks; the streaming tests did. Verified 
   output chunks, with about 445 thousand runs at seeds 3-4, 408 thousand magicless runs and 316 thousand `RefPrefix` runs;
   95 thousand utility inputs; 1.2 million FSE/Huffman header inputs; 15 thousand mutated dictionaries): no accept/reject or
   output divergences, except the limitations below. Seeds 3-5 of the one-shot sweep predate the last error-class fixes.
-  After the merge: `go vet`, `go test -race .`, a streaming lockstep run at a fresh seed, and compression exactness at levels 3, 9, 16 pass.
 
 Known limitations of the decoder:
 1. **Legacy formats v0.5-v0.7 are not ported.** libzstd decodes them but cannot produce them, the repo has no legacy frames,

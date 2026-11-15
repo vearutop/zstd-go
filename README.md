@@ -14,8 +14,8 @@ Why it exists:
   compressed log does not need to decompress the log.
 - **Compatibility.** Compressed output is byte-identical to libzstd with the same parameters at every level (-50 to 22), and the
   decoder is verified against libzstd on millions of valid and mutated frames, so the two can be swapped without changing the data.
-- **Speed without cgo.** Decoding has amd64 assembly for the hot loops (BMI2 variants are picked at run time); everything
-  else is Go. See [Performance](#performance).
+- **Speed without cgo.** Decoding uses assembly for the hot loops on amd64 and arm64; compression is Go with a few small assembly
+  helpers on amd64. Both can be switched off (see [Assembly and `unsafe`](#assembly-and-unsafe)). See [Performance](#performance).
 
 ```
 go get github.com/vearutop/zstd-go
@@ -159,16 +159,16 @@ Payloads are real GitHub events cut to four sizes (`tiny` 0.1 KB, `slim` 0.3 KB,
 
 - Encoding with a dictionary is **3 to 25x faster than klauspost** (10 to 25x at `default`). klauspost's cost per call grows with the dictionary size,
   the port's does not: with a 64 KiB dictionary on all cores, `default`, slim payloads take 0.46 µs with the port and 85 µs with klauspost
-  (libzstd 0.22 µs; measured in an earlier run).
+  (libzstd 0.22 µs).
 - libzstd is up to 1.5x faster than the port at encoding (level with it on tiny payloads, 1.1 to 1.3x at slim, 1.3 to 1.5x at full).
 - Decoding with a dictionary is **1.2 to 1.4x faster than klauspost** and 1.2 to 1.3x behind libzstd. On all cores the port decodes at libzstd's
   speed (tiny: 82 ns, libzstd 83 ns, klauspost 1.04 µs; full: 253 ns, 224 ns, 1.17 µs). Without a dictionary the port needs 0.87 to 1.02x
-  klauspost's time and 1.25 to 1.45x libzstd's (earlier run).
+  klauspost's time (JSON payloads) and 1.25 to 1.5x libzstd's.
 - Compressed size, `default`, tiny: 0.508 with the port (and libzstd), 0.579 with klauspost; slim 0.335 against 0.390; without a dictionary
   tiny payloads do not shrink at all (1.00 to 1.07).
 - Allocations per encode: none for the port and libzstd; klauspost allocates about 8.7 KB per tiny payload.
 - klauspost's own sample files (`benchdecoder.zip`, 12 files, serial and parallel): the port decodes in 0.96x of klauspost's time and 1.11x of libzstd's
-  (geometric means, earlier run).
+  (geometric means).
 
 ### Generated records (with a dictionary) and mid-size blocks (without), one core
 
@@ -251,8 +251,7 @@ Decoding:
 | decode, stream | 409 ms · 105% | **391 ms · 100%** |  |
 | decode, pipelined | **278 ms · 100%** | 312 ms · 112% |  |
 
-Decoding is level with klauspost and libzstd in the one-shot mode, 5% behind klauspost in the synchronous stream mode and faster in the pipelined one
-(the port was 1.25x, 1.3x and 1.7x behind in the first run, at 541, 555 and 552 ms). Compression of large inputs without a dictionary is where the port
+Decoding is level with klauspost and libzstd in the one-shot mode, 5% behind klauspost in the synchronous stream mode and faster in the pipelined one. Compression of large inputs without a dictionary is where the port
 is behind libzstd (1.2 to 1.8x); against klauspost it is level or faster at equal size. The port's strengths are the small-payload and dictionary cases
 above and seekability. Memory per compression of the 211 MB file (`fastest`): port 4.7 MiB, klauspost 9.3 MiB.
 
@@ -344,7 +343,7 @@ Two things make the default build faster than plain safe Go; both can be switche
   On other architectures `rd_checked.go` provides the same helpers with ordinary bounds checks.
 
 **Why.** The encoder's hot loops index hash tables with a hash that is in range by construction; Go cannot prove it, and the bounds checks
-and calls were a large part of the instruction count (the safe port executed 2.2-2.9x libzstd's instructions before they were removed).
+and calls were a large part of the instruction count (a build with checked accesses and the per-position code of a straight port executed 2.2-2.9x libzstd's instructions).
 
 **What keeps it safe.**
 
@@ -378,7 +377,7 @@ Not ported / road map:
 
 - long-distance matching (libzstd turns it on automatically only for windows of 128 MiB and more, i.e. sources above 64 MiB),
   dictionaries larger than the match-finder tables (only the suffix is loaded), the dedicated dictionary search, `targetCBlockSize`;
-- the dictionary trainer (a start lives on the `zdict-wip` branch);
+- the dictionary trainer (work in progress in [pull request #3](https://github.com/vearutop/zstd-go/pull/3), not byte-exact yet);
 - legacy zstd formats v0.5-0.7, stable-output mode and the bufferless/block API of the decoder;
 
 Tests: `go test -short ./...` (CI); `go test -tags libzstd .` needs libzstd 1.5.7 and a C compiler (`internal/ref`, edit the `#cgo` paths).
