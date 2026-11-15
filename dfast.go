@@ -345,6 +345,10 @@ func (e *encoder) dfastNoDict(cp cParams, start, iend int, lowestValid uint32, i
 	hBitsL, hBitsS, mls := cp.hashLog, cp.chainLog, cp.minMatch
 	hashLong, hashSmall := e.long, e.short
 	hsL, hsS := newHasher(hBitsL, 8), newHasher(hBitsS, mls)
+	// the tables are accessed without bounds checks (see rd_fast.go): check once per block that every hash fits
+	if len(hashLong) < 1<<hBitsL || len(hashSmall) < 1<<hBitsS || len(buf) < iend {
+		panic("zstd: internal error: tables or buffer smaller than the block needs")
+	}
 	idx := func(p int) uint32 { return uint32(p + windowStartIndex) }
 	endIndex := idx(iend)
 	prefixLowestIndex := getLowestPrefixIndex(lowestValid, endIndex, cp.windowLog, isDict)

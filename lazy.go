@@ -247,6 +247,14 @@ func (e *encoder) rowUpdateImpl(start, end, mls, rowLog, rowMask uint32, useCach
 	e.sink = sink
 }
 
+// checkRowTables panics unless the hash and tag tables hold every row a hash of the current parameters can select: the row code reads
+// and writes them without bounds checks (see rd_fast.go), so the invariant is checked here, once per block, instead of per access.
+func (e *encoder) checkRowTables() {
+	if n := 1 << e.cp.hashLog; len(e.long) < n || len(e.tag) < n {
+		panic("zstd: internal error: row tables smaller than the hash")
+	}
+}
+
 // rowUpdateInternal is ZSTD_row_update_internal (ip is a position).
 func (e *encoder) rowUpdateInternal(ip int, mls, rowLog, rowMask uint32, useCache bool) {
 	idx := e.nextToUpdate
@@ -420,6 +428,7 @@ func (e *encoder) loadLazyDict(L int) {
 		return
 	}
 	if e.useRow {
+		e.checkRowTables()
 		clear(e.tag)
 		rowLog := rowLogOf(e.cp)
 		e.rowUpdateInternal(L-hashReadSize, min(e.cp.minMatch, 6), rowLog, 1<<rowLog-1, false)
@@ -439,6 +448,12 @@ func (e *encoder) lazyGeneric(L, blockStart, iend, depth, mode int) {
 	buf := e.buf
 	cp := &e.cp
 	row := e.useRow
+	if row {
+		e.checkRowTables()
+	}
+	if len(buf) < iend {
+		panic("zstd: internal error: block ends past the buffer")
+	}
 	ilimit := iend - 8
 	if row {
 		ilimit = iend - 8 - rowHashCacheSize
