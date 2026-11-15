@@ -360,12 +360,16 @@ where a checked build would panic. That is why the escape hatches below exist.
 
 **Avoiding them.**
 
-| Build | Assembly | `unsafe` in this module | Notes |
-|---|---|---|---|
-| default | yes | yes (amd64, arm64) | fastest |
-| `-tags zstdcheck` | yes | only the assembly glue | the Go match finders keep their bounds checks, so a broken invariant panics |
-| `-tags purego` | no | none | pure Go; also used automatically on architectures other than amd64/arm64 |
-| `-tags "purego appengine"` | no | none, and none in dependencies | additionally drops `cespare/xxhash`'s `unsafe` |
+| Build | Assembly | `unsafe` in this module | Compression time (Silesia, levels 1 / 3 / 5 / 9) | Decoding (Silesia, one-shot) |
+|---|---|---|---|---|
+| default | yes | yes (amd64, arm64) | 1.30 / 2.23 / 5.55 / 10.9 s | 442 ms |
+| `-tags zstdcheck` | yes | only the assembly glue | +8% / +14% / +17% / +18% | same |
+| `-tags purego` | no | none | +9% / +16% / +22% / +25% | 1.8x (800 ms) |
+| `-tags "purego appengine"` | no | none, and none in dependencies | same as `purego` | same as `purego` |
+
+Costs are from one run on the Xeon E5-2620 v4 (instructions: `zstdcheck` executes 11 to 27% more than the default build). `purego` is also what
+architectures other than amd64 and arm64 get. Decoding loses its assembly sequence decoder and Huffman loop under `purego`, which is where the 1.8x comes from
+(pipelined decoding: 698 ms against 291 ms); the compressor, which has little assembly, loses only the checks and the SSE2 row-tag compare.
 
 `zstdcheck` is the one to run in tests or when debugging a suspected memory problem: same assembly, checked Go code, identical output.
 `purego` is for environments that forbid assembly or `unsafe` (some sandboxes, `GOOS=js`, strict audits). Output is identical in all builds.

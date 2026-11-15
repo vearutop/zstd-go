@@ -11,3 +11,4 @@ dist/
 /bench/data/
 /bench/dist/
 /bench/*.tar.gz
+/bench/logs/
