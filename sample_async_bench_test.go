@@ -44,7 +44,7 @@ func BenchmarkSampleAsync(b *testing.B) {
 		}
 		return n
 	}
-	total := int64(scan(zstd.NewReader(bytes.NewReader(data), nil)))
+	total := int64(scan(zstd.NewReader(bytes.NewReader(data))))
 	run := func(b *testing.B, f func()) {
 		b.SetBytes(total)
 		c0, v0 := cpuTime()
@@ -58,7 +58,7 @@ func BenchmarkSampleAsync(b *testing.B) {
 	for _, c := range []int{1, 2, 3, 4} {
 		b.Run(fmt.Sprintf("port/c%d", c), func(b *testing.B) {
 			run(b, func() {
-				r := zstd.NewReader(bytes.NewReader(data), nil)
+				r := zstd.NewReader(bytes.NewReader(data))
 				r.Concurrency = c
 				scan(r)
 				r.Close()

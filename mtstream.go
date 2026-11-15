@@ -7,11 +7,11 @@ import (
 )
 
 // Multithreaded streaming (ZSTD_compressStream2 with nbWorkers > 0), the job layout of ZSTDMT_compressStream_generic: input
-// is collected into a section; a full section becomes a job at once, Flush turns a partial one into a job, End makes the last
+// is collected into a section; a full section becomes a job at once, eFlush turns a partial one into a job, eEnd makes the last
 // job (possibly empty, when the input ended exactly on a section boundary of an earlier call). Every job after the first sees
 // the tail of the previous job (at most targetPrefixSize bytes) as history, exactly as in Compress2 (mt.go), so the bytes are
 // the same as libzstd's. Memory is bounded: at most nbWorkers jobs (input and output) are alive, finished ones are appended
-// to dst in order as the calls go by; Flush and End wait for everything.
+// to dst in order as the calls go by; eFlush and eEnd wait for everything.
 
 type mtTask struct {
 	in, out, pre []byte // input, output and overlap prefix buffers, recycled once the output has been appended
@@ -31,7 +31,7 @@ type mtStream struct {
 	ended    bool // the last job was submitted
 	sum      *xxhash.Digest
 	queue    []*mtTask
-	encs     chan *Encoder
+	encs     chan *encoder
 	bufs     chan []byte // free input buffers
 	outs     chan []byte // free output buffers
 	pres     chan []byte // free prefix buffers
@@ -41,7 +41,7 @@ func newMTStream(r *request, pledged uint64) *mtStream {
 	section, prefix := mtGeometry(r.cp, r.jobSize, r.overlapLog)
 	m := &mtStream{
 		r: r, section: section, prefixMx: prefix, workers: r.nbWorkers, total: pledged,
-		encs: make(chan *Encoder, r.nbWorkers), bufs: make(chan []byte, r.nbWorkers+1),
+		encs: make(chan *encoder, r.nbWorkers), bufs: make(chan []byte, r.nbWorkers+1),
 		outs: make(chan []byte, r.nbWorkers+1), pres: make(chan []byte, r.nbWorkers+2),
 	}
 	if r.fp.checksum {
@@ -72,11 +72,11 @@ func give(pool chan []byte, b []byte) {
 }
 
 // compress is CompressStream2 for a multithreaded frame; it consumes all of src.
-func (m *mtStream) compress(dst, src []byte, op Directive) ([]byte, error) {
+func (m *mtStream) compress(dst, src []byte, op directive) ([]byte, error) {
 	for len(src) > 0 {
 		k := min(m.section-len(m.cur), len(src))
 		if m.total != contentSizeUnknown && m.consumed+uint64(k) > m.total {
-			return dst, ErrPledgedSize
+			return dst, errPledgedSize
 		}
 		m.cur = append(m.cur, src[:k]...)
 		if m.sum != nil {
@@ -85,16 +85,16 @@ func (m *mtStream) compress(dst, src []byte, op Directive) ([]byte, error) {
 		m.consumed += uint64(k)
 		src = src[k:]
 		if len(m.cur) == m.section {
-			dst = m.submit(dst, op == End && len(src) == 0)
+			dst = m.submit(dst, op == eEnd && len(src) == 0)
 		}
 	}
 	switch op {
-	case Flush:
+	case eFlush:
 		if len(m.cur) > 0 {
 			dst = m.submit(dst, false)
 		}
 		dst = m.collect(dst, len(m.queue))
-	case End:
+	case eEnd:
 		if !m.ended {
 			dst = m.submit(dst, true) // also an empty job: the frame needs its last block
 		}
@@ -103,7 +103,7 @@ func (m *mtStream) compress(dst, src []byte, op Directive) ([]byte, error) {
 			dst = binary.LittleEndian.AppendUint32(dst, uint32(m.sum.Sum64()))
 		}
 		if m.total != contentSizeUnknown && m.consumed != m.total {
-			return dst, ErrPledgedSize
+			return dst, errPledgedSize
 		}
 	}
 	return dst, nil
@@ -128,11 +128,11 @@ func (m *mtStream) submit(dst []byte, last bool) []byte {
 		m.cur = make([]byte, 0, m.section)
 	}
 	go func() {
-		var enc *Encoder
+		var enc *encoder
 		select {
 		case enc = <-m.encs:
 		default:
-			enc = NewEncoder(nil)
+			enc = newEncoder(nil)
 		}
 		t.out = enc.mtJob(m.r, job, prefix, m.total, first, last, outBuf)
 		select {

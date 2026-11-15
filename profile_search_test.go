@@ -25,7 +25,7 @@ func compData(tb testing.TB) []byte {
 			tb.Skip(err)
 		}
 		defer f.Close()
-		data, err := io.ReadAll(zstd.NewReader(f, nil))
+		data, err := io.ReadAll(zstd.NewReader(f))
 		if err != nil {
 			tb.Fatal(err)
 		}
@@ -44,7 +44,7 @@ func compData(tb testing.TB) []byte {
 		tb.Skip(err)
 	}
 	defer f.Close()
-	s := bufio.NewScanner(zstd.NewReader(f, nil))
+	s := bufio.NewScanner(zstd.NewReader(f))
 	s.Buffer(make([]byte, 64<<10), 10<<20)
 	var in bytes.Buffer
 	for s.Scan() {
@@ -220,7 +220,7 @@ func BenchmarkCompressMT(b *testing.B) {
 	for _, pr := range []struct {
 		name string
 		p    zstd.Params
-	}{{"Fastest", zstd.ProfileFastest()}, {"BestCompression", zstd.ProfileBestCompression()}} {
+	}{{"Fastest", zstd.ProfileFastestParams()}, {"BestCompression", zstd.ProfileBestCompressionParams()}} {
 		for _, job := range []int{0, 1 << 20, 2 << 20, 4 << 20} {
 			for _, w := range []int{0, 1, 2, 4, 8, 16, 32} {
 				if w == 0 && job != 0 {
@@ -255,7 +255,7 @@ func BenchmarkStreamMT(b *testing.B) {
 	}
 	for _, w := range []int{0, 2, 4, 8, 16, 32} {
 		b.Run(fmt.Sprintf("workers%d", w), func(b *testing.B) {
-			p := zstd.ProfileFastest()
+			p := zstd.ProfileFastestParams()
 			p.NbWorkers, p.JobSize = w, 4<<20
 			var cw countWriter
 			var peak uint64

@@ -27,14 +27,14 @@ func BenchmarkSampleStream(b *testing.B) {
 	}
 	var total int64
 	{
-		r := zstd.NewReader(bytes.NewReader(data), nil)
+		r := zstd.NewReader(bytes.NewReader(data))
 		total, _ = io.Copy(io.Discard, r)
 	}
 	b.Run("port", func(b *testing.B) {
 		b.SetBytes(total)
 		buf := make([]byte, 64<<10)
 		for i := 0; i < b.N; i++ {
-			r := zstd.NewReader(bytes.NewReader(data), nil)
+			r := zstd.NewReader(bytes.NewReader(data))
 			for {
 				if _, err := r.Read(buf); err != nil {
 					break
@@ -82,11 +82,11 @@ func BenchmarkSampleScan(b *testing.B) {
 		}
 		return n
 	}
-	total := int64(scan(zstd.NewReader(bytes.NewReader(data), nil)))
+	total := int64(scan(zstd.NewReader(bytes.NewReader(data))))
 	b.Run("port", func(b *testing.B) {
 		b.SetBytes(total)
 		for i := 0; i < b.N; i++ {
-			scan(zstd.NewReader(bytes.NewReader(data), nil))
+			scan(zstd.NewReader(bytes.NewReader(data)))
 		}
 	})
 	b.Run("klauspost", func(b *testing.B) {

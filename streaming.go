@@ -3,37 +3,38 @@ package zstd
 import (
 	"errors"
 	"io"
+	"slices"
 
 	"github.com/cespare/xxhash/v2"
 )
 
 // Writer is a streaming compressor: input is cut into independent frames of FrameSize bytes (each uses the
-// dictionary), so memory stays bounded and the output is seekable. For a single small value use Encoder.EncodeAll.
+// dictionary), so memory stays bounded and the output is seekable. For a single small value use encoder.EncodeAll.
 // Frames do not reference each other, so matches across frame boundaries are lost.
 type Writer struct {
 	// FrameSize is the input bytes per frame; 0 means 128 KiB. Set before the first Write.
 	FrameSize int
-	// Level is the compression level (see Encoder.Level); 0 keeps the Encoder default. Set before the first Write.
+	// Level is the compression level (see encoder.Level); 0 keeps the encoder default. Set before the first Write.
 	Level int
 	// With Params.NbWorkers > 0, FrameSize above 512 KiB and Concurrency < 2, each frame is compressed as one multithreaded
 	// stream while it arrives, so FrameSize can be large (100 MB and more, seekable) at a few jobs' worth of memory (about 70 MB
 	// of heap for 4 workers) instead of a whole frame. Such frames record no content size in their header. With Concurrency >= 2
 	// every frame is still buffered whole.
-	// Params, when not the zero value, configures each frame like Encoder.SetParams + Compress2 (explicit window, hash and
+	// Params, when not the zero value, configures each frame like encoder.SetParams + Compress2 (explicit window, hash and
 	// chain logs, checksum, strategy ...) and takes precedence over Level. Set before the first Write. A larger WindowLog and
 	// HashLog than the level's default (level 1: 19 and 14) often shrink repetitive data by several percent at about the same speed.
 	Params Params
 	// Concurrency >= 2 compresses that many frames in parallel (set before the first Write). The output is byte-identical to
 	// the synchronous Writer's, written in order; Write blocks while that many frames are in flight. Each in-flight frame holds
 	// up to FrameSize bytes of input, its output and an encoder's tables, so use frames of 1 MiB or more and expect a few frames per core
-	// of input to scale. Frames do not share history: on 59 MB of logs 4 MiB frames compress 2% and 1 MiB frames 9% worse than 16 MiB ones. Flush waits until everything written so far has reached the underlying writer. A Writer
+	// of input to scale. Frames do not share history: on 59 MB of logs 4 MiB frames compress 2% and 1 MiB frames 9% worse than 16 MiB ones. eFlush waits until everything written so far has reached the underlying writer. A Writer
 	// dropped without Close stops its goroutines and writes nothing more. 0 or 1: synchronous.
 	Concurrency int
-	// Seekable makes Close append a seek table (see OpenSeekable). Set before the first Write.
+	// Seekable makes Close append a seek table (see Reader.ReadSeeker). Set before the first Write.
 	Seekable bool
 
 	w     io.Writer
-	e     *Encoder
+	e     *encoder
 	buf   []byte
 	out   []byte
 	table []seekEntry
@@ -54,8 +55,31 @@ type Writer struct {
 
 type seekEntry struct{ c, d, sum uint32 }
 
-// NewWriter returns a Writer over w; d may be nil.
-func NewWriter(w io.Writer, d *Dict) *Writer { return &Writer{w: w, e: NewEncoder(d)} }
+// WriterOption configures a Writer in NewWriter.
+type WriterOption func(*Writer)
+
+// WithWriterDict sets the dictionary (nil: none).
+func WithWriterDict(d *Dict) WriterOption { return func(z *Writer) { z.e.dict = d } }
+
+// ProfileFastest configures the Writer with the fastest preset (see profileFastest).
+func ProfileFastest() WriterOption { return func(z *Writer) { z.Params = profileFastest() } }
+
+// ProfileDefault configures the Writer with the default preset (see profileDefault).
+func ProfileDefault() WriterOption { return func(z *Writer) { z.Params = profileDefault() } }
+
+// ProfileBestCompression configures the Writer with the best-compression preset (see profileBestCompression).
+func ProfileBestCompression() WriterOption {
+	return func(z *Writer) { z.Params = profileBestCompression() }
+}
+
+// NewWriter returns a Writer over w configured by opts.
+func NewWriter(w io.Writer, opts ...WriterOption) *Writer {
+	z := &Writer{w: w, e: newEncoder(nil)}
+	for _, o := range opts {
+		o(z)
+	}
+	return z
+}
 
 func (z *Writer) size() int {
 	if z.FrameSize <= 0 {
@@ -91,6 +115,13 @@ func (z *Writer) Write(p []byte) (n int, err error) {
 	}
 	fs := z.size()
 	for len(p) > 0 {
+		if z.async == nil && len(z.buf) == 0 && len(p) >= fs { // a whole frame at hand: compress it in place, no copy
+			if err = z.frame(p[:fs]); err != nil {
+				return n, err
+			}
+			p, n = p[fs:], n+fs
+			continue
+		}
 		k := min(fs-len(z.buf), len(p))
 		z.buf = append(z.buf, p[:k]...)
 		p, n = p[k:], n+k
@@ -127,6 +158,24 @@ func (z *Writer) Flush() error {
 	if z.err != nil || len(z.buf) == 0 {
 		return z.err
 	}
+	err := z.frame(z.buf)
+	z.buf = z.buf[:0]
+	return err
+}
+
+// frame compresses src as one frame and writes it.
+func (z *Writer) frame(src []byte) error {
+	if z.err != nil {
+		return z.err
+	}
+	z.out = slices.Grow(z.out[:0], min(len(src)/2+64, 2*drainSize)) // a large frame is written out in pieces (encoder.drain)
+	var size int
+	z.e.drain, z.e.drainErr = func(b []byte) error {
+		size += len(b)
+		_, err := z.w.Write(b)
+		return err
+	}, nil
+	defer func() { z.e.drain = nil }()
 	if z.Params != (Params{}) {
 		if !z.pset {
 			if z.err = z.e.SetParams(z.Params); z.err != nil {
@@ -134,20 +183,23 @@ func (z *Writer) Flush() error {
 			}
 			z.pset = true
 		}
-		if z.out, z.err = z.e.Compress2(z.out[:0], z.buf); z.err != nil {
+		if z.out, z.err = z.e.Compress2(z.out, src); z.err != nil {
 			return z.err
 		}
 	} else {
 		if z.Level != 0 {
 			z.e.Level = z.Level
 		}
-		z.out = z.e.EncodeAll(z.buf, z.out[:0])
+		z.out = z.e.EncodeAll(src, z.out)
 	}
+	if z.err = z.e.drainErr; z.err != nil {
+		return z.err
+	}
+	size += len(z.out)
 	if z.Seekable {
-		z.table = append(z.table, seekEntry{uint32(len(z.out)), uint32(len(z.buf)), uint32(xxhash.Sum64(z.buf))})
+		z.table = append(z.table, seekEntry{uint32(size), uint32(len(src)), uint32(xxhash.Sum64(src))})
 	}
 	z.n++
-	z.buf = z.buf[:0]
 	_, z.err = z.w.Write(z.out)
 	return z.err
 }
@@ -195,7 +247,7 @@ func (z *Writer) writeMT(p []byte) (n int, err error) {
 	fs := z.size()
 	for len(p) > 0 {
 		k := min(fs-z.fin, len(p))
-		if z.out, z.err = z.e.CompressStream2(z.out[:0], p[:k], Continue); z.err != nil {
+		if z.out, z.err = z.e.CompressStream2(z.out[:0], p[:k], eContinue); z.err != nil {
 			return n, z.err
 		}
 		if z.Seekable {
@@ -220,7 +272,7 @@ func (z *Writer) emitMT() error {
 
 // endFrameMT finishes the current frame and records it in the seek table.
 func (z *Writer) endFrameMT() (err error) {
-	if z.out, err = z.e.CompressStream2(z.out[:0], nil, End); err != nil {
+	if z.out, err = z.e.CompressStream2(z.out[:0], nil, eEnd); err != nil {
 		return err
 	}
 	if err = z.emitMT(); err != nil {

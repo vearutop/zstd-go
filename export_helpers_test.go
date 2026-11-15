@@ -1,5 +1,10 @@
 package zstd
 
+import (
+	"bytes"
+	"io"
+)
+
 // ParseHeaderForTest exposes parseHeader to the external test package.
 func ParseHeaderForTest(b []byte) (size uint64, n int, err error) {
 	h, n, err := parseHeader(b)
@@ -40,4 +45,20 @@ func ViolatesWindowForTest(d *Decoder, frame []byte) bool {
 	defer func() { offTrace = nil }()
 	d.DecodeAll(frame, nil) //nolint:errcheck // only the offsets seen on the way matter
 	return bad
+}
+
+// SeekView is what Reader.ReadSeeker returns.
+type SeekView interface {
+	io.ReadSeeker
+	io.ReaderAt
+	Size() int64
+}
+
+// OpenSeekableForTest is Reader.ReadSeeker over b.
+func OpenSeekableForTest(b []byte, dec *Decoder) (SeekView, error) {
+	rs, err := NewReader(bytes.NewReader(b), WithDecoder(dec)).ReadSeeker()
+	if err != nil {
+		return nil, err
+	}
+	return rs.(SeekView), nil
 }

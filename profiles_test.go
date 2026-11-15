@@ -13,9 +13,9 @@ var profiles = []struct {
 	name string
 	p    func() zstd.Params
 }{
-	{"Fastest", zstd.ProfileFastest},
-	{"Default", zstd.ProfileDefault},
-	{"BestCompression", zstd.ProfileBestCompression},
+	{"Fastest", zstd.ProfileFastestParams},
+	{"Default", zstd.ProfileDefaultParams},
+	{"BestCompression", zstd.ProfileBestCompressionParams},
 }
 
 // TestProfiles: every preset is accepted by the encoder, round-trips through Writer and Reader, and the wider ones beat plain
@@ -28,7 +28,7 @@ func TestProfiles(t *testing.T) {
 	for _, pr := range profiles {
 		t.Run(pr.name, func(t *testing.T) {
 			var out bytes.Buffer
-			w := zstd.NewWriter(&out, nil)
+			w := zstd.NewWriter(&out)
 			w.FrameSize, w.Params = 16<<20, pr.p()
 			if _, err := w.Write(data); err != nil {
 				t.Fatal(err)
@@ -37,7 +37,7 @@ func TestProfiles(t *testing.T) {
 				t.Fatal(err)
 			}
 			size := out.Len()
-			got, err := io.ReadAll(zstd.NewReader(&out, nil))
+			got, err := io.ReadAll(zstd.NewReader(&out))
 			if err != nil || !bytes.Equal(got, data) {
 				t.Fatalf("round trip: %v", err)
 			}
@@ -49,13 +49,13 @@ func TestProfiles(t *testing.T) {
 }
 
 func TestProfileFastest(t *testing.T) {
-	p := zstd.ProfileFastest()
+	p := zstd.ProfileFastestParams()
 	if p != (zstd.Params{Level: 1, WindowLog: 22, HashLog: 17}) {
 		t.Fatalf("unexpected preset %+v", p)
 	}
 	data := ringData(rand.New(rand.NewSource(9)), 3<<20, 1<<21) // matches up to 2 MiB back: beyond level 1's window
 	var out bytes.Buffer
-	w := zstd.NewWriter(&out, nil)
+	w := zstd.NewWriter(&out)
 	w.FrameSize, w.Params = 16<<20, p
 	if _, err := w.Write(data); err != nil {
 		t.Fatal(err)
@@ -64,7 +64,7 @@ func TestProfileFastest(t *testing.T) {
 		t.Fatal(err)
 	}
 	size := out.Len()
-	got, err := io.ReadAll(zstd.NewReader(&out, nil))
+	got, err := io.ReadAll(zstd.NewReader(&out))
 	if err != nil || !bytes.Equal(got, data) {
 		t.Fatalf("round trip: %v", err)
 	}

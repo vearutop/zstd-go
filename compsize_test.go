@@ -30,7 +30,7 @@ func TestCompressionSizes(t *testing.T) {
 		t.Skip(err)
 	}
 	defer f.Close()
-	s := bufio.NewScanner(zstd.NewReader(f, nil))
+	s := bufio.NewScanner(zstd.NewReader(f))
 	s.Buffer(make([]byte, 64<<10), 10<<20)
 	var in bytes.Buffer
 	nl := 0
@@ -81,7 +81,7 @@ func TestCompressionSizes(t *testing.T) {
 	for _, fs := range []int{128 << 10, 4 << 20, 16 << 20, 64 << 20} {
 		for _, lvl := range []int{1, 3} {
 			var o bytes.Buffer
-			zw := zstd.NewWriter(&o, nil)
+			zw := zstd.NewWriter(&o)
 			zw.FrameSize, zw.Level = fs, lvl
 			zw.Write(data)
 			zw.Close()
@@ -115,7 +115,7 @@ func TestCompressionSweep(t *testing.T) {
 			t.Skip(err)
 		}
 		defer f.Close()
-		if data, err = io.ReadAll(zstd.NewReader(f, nil)); err != nil {
+		if data, err = io.ReadAll(zstd.NewReader(f)); err != nil {
 			t.Fatal(err)
 		}
 	} else {
@@ -124,7 +124,7 @@ func TestCompressionSweep(t *testing.T) {
 			t.Skip(err)
 		}
 		defer f.Close()
-		s := bufio.NewScanner(zstd.NewReader(f, nil))
+		s := bufio.NewScanner(zstd.NewReader(f))
 		s.Buffer(make([]byte, 64<<10), 10<<20)
 		var in bytes.Buffer
 		for s.Scan() {
@@ -200,7 +200,7 @@ func BenchmarkCompressFrontier(b *testing.B) {
 			b.Skip(err)
 		}
 		defer f.Close()
-		data, _ = io.ReadAll(zstd.NewReader(f, nil))
+		data, _ = io.ReadAll(zstd.NewReader(f))
 	} else if name := os.Getenv("ZSTD_SAMPLE"); name != "" {
 		filter := os.Getenv("FILTER")
 		if filter == "" {
@@ -211,7 +211,7 @@ func BenchmarkCompressFrontier(b *testing.B) {
 			b.Skip(err)
 		}
 		defer f.Close()
-		s := bufio.NewScanner(zstd.NewReader(f, nil))
+		s := bufio.NewScanner(zstd.NewReader(f))
 		s.Buffer(make([]byte, 64<<10), 10<<20)
 		var in bytes.Buffer
 		for s.Scan() {
@@ -282,7 +282,7 @@ func BenchmarkCompressFrontier(b *testing.B) {
 // piece is a frame), but the match-finding and entropy conditions are the ones a job sees.
 func TestJobOverlapRatio(t *testing.T) {
 	data := compData(t)
-	p := zstd.ProfileFastest()
+	p := zstd.ProfileFastestParams()
 	single := func() int {
 		e := zstd.NewEncoder(nil)
 		e.SetParams(p)

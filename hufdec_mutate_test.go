@@ -31,7 +31,7 @@ func TestAsmMutatedFrames(t *testing.T) {
 	}
 	cases, diffs := 0, 0
 	for _, level := range []int{1, 3, 5, 9, 15} {
-		e := NewEncoder(nil)
+		e := newEncoder(nil)
 		e.Level = level
 		for _, size := range []int{300, 5000, 70000, 400 << 10} {
 			frame := e.EncodeAll(src[:size], nil)

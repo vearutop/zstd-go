@@ -61,8 +61,8 @@ func TestWriterConcurrentMatchesSync(t *testing.T) {
 		{"default", func(w *zstd.Writer) {}, nil},
 		{"level1", func(w *zstd.Writer) { w.Level = 1 }, nil},
 		{"level9", func(w *zstd.Writer) { w.Level = 9 }, nil},
-		{"fastest", func(w *zstd.Writer) { w.Params = zstd.ProfileFastest() }, nil},
-		{"best", func(w *zstd.Writer) { w.Params = zstd.ProfileBestCompression() }, nil},
+		{"fastest", func(w *zstd.Writer) { w.Params = zstd.ProfileFastestParams() }, nil},
+		{"best", func(w *zstd.Writer) { w.Params = zstd.ProfileBestCompressionParams() }, nil},
 		{"params-sum", func(w *zstd.Writer) { w.Params = zstd.Params{Level: 3, Checksum: true} }, nil},
 		{"seekable", func(w *zstd.Writer) { w.Seekable = true }, nil},
 		{"dict", func(w *zstd.Writer) { w.Level = 3 }, dict},
@@ -79,11 +79,11 @@ func TestWriterConcurrentMatchesSync(t *testing.T) {
 					conc := 2 + n%5
 					n++
 					var want, got bytes.Buffer
-					sw := zstd.NewWriter(&want, c.dict)
+					sw := zstd.NewWriter(&want, zstd.WithWriterDict(c.dict))
 					sw.FrameSize = fs
 					c.set(sw)
 					writerScript(t, sw, data, int64(n), flushes)
-					pw := zstd.NewWriter(&got, c.dict)
+					pw := zstd.NewWriter(&got, zstd.WithWriterDict(c.dict))
 					pw.FrameSize = fs
 					pw.Concurrency = conc
 					c.set(pw)
@@ -102,7 +102,7 @@ func TestWriterConcurrentMatchesSync(t *testing.T) {
 func TestWriterConcurrentFlush(t *testing.T) {
 	data := ringData(rand.New(rand.NewSource(22)), 3<<20, 1<<16)
 	var out bytes.Buffer
-	w := zstd.NewWriter(&out, nil)
+	w := zstd.NewWriter(&out)
 	w.FrameSize, w.Concurrency = 100<<10, 4
 	for off := 0; off < len(data); off += 400 << 10 {
 		end := min(off+400<<10, len(data))
@@ -112,7 +112,7 @@ func TestWriterConcurrentFlush(t *testing.T) {
 		if err := w.Flush(); err != nil {
 			t.Fatal(err)
 		}
-		got, err := io.ReadAll(zstd.NewReader(bytes.NewReader(out.Bytes()), nil))
+		got, err := io.ReadAll(zstd.NewReader(bytes.NewReader(out.Bytes())))
 		if err != nil || !bytes.Equal(got, data[:end]) {
 			t.Fatalf("after Flush at %d: %v, %d bytes decoded, want %d", end, err, len(got), end)
 		}
@@ -143,7 +143,7 @@ func TestWriterConcurrentErrors(t *testing.T) {
 	base := runtime.NumGoroutine()
 	data := ringData(rand.New(rand.NewSource(23)), 4<<20, 1<<16)
 	boom := errors.New("disk full")
-	w := zstd.NewWriter(&failWriter{left: 50 << 10, err: boom}, nil)
+	w := zstd.NewWriter(&failWriter{left: 50 << 10, err: boom})
 	w.FrameSize, w.Concurrency = 256<<10, 3
 	var err error
 	for off := 0; off < len(data) && err == nil; off += 100 << 10 {
@@ -160,7 +160,7 @@ func TestWriterConcurrentErrors(t *testing.T) {
 	}
 	waitGoroutines(t, base, "after a write error")
 
-	bad := zstd.NewWriter(io.Discard, nil)
+	bad := zstd.NewWriter(io.Discard)
 	bad.Params, bad.FrameSize, bad.Concurrency = zstd.Params{WindowLog: 99}, 1000, 2
 	bad.Write(make([]byte, 5000))
 	if err := bad.Close(); err == nil {
@@ -173,7 +173,7 @@ func TestWriterConcurrentErrors(t *testing.T) {
 func TestWriterConcurrentGoroutines(t *testing.T) {
 	base := runtime.NumGoroutine()
 	data := ringData(rand.New(rand.NewSource(24)), 2<<20, 1<<16)
-	w := zstd.NewWriter(io.Discard, nil)
+	w := zstd.NewWriter(io.Discard)
 	w.FrameSize, w.Concurrency = 64<<10, 4
 	w.Write(data)
 	w.Close()
@@ -181,7 +181,7 @@ func TestWriterConcurrentGoroutines(t *testing.T) {
 
 	var sink countingWriter
 	func() {
-		w := zstd.NewWriter(&sink, nil)
+		w := zstd.NewWriter(&sink)
 		w.FrameSize, w.Concurrency = 64<<10, 4
 		w.Write(data[:1<<20])
 	}()
@@ -197,9 +197,9 @@ func TestWriterConcurrentGoroutines(t *testing.T) {
 func TestWriterConcurrentEmpty(t *testing.T) {
 	for _, seekable := range []bool{false, true} {
 		var a, b bytes.Buffer
-		sw := zstd.NewWriter(&a, nil)
+		sw := zstd.NewWriter(&a)
 		sw.Seekable = seekable
-		pw := zstd.NewWriter(&b, nil)
+		pw := zstd.NewWriter(&b)
 		pw.Seekable, pw.Concurrency = seekable, 3
 		for _, w := range []*zstd.Writer{sw, pw} {
 			w.Write(nil)
@@ -224,7 +224,7 @@ func BenchmarkWriterConcurrency(b *testing.B) {
 	for _, pr := range []struct {
 		name string
 		p    zstd.Params
-	}{{"Fastest", zstd.ProfileFastest()}, {"BestCompression", zstd.ProfileBestCompression()}} {
+	}{{"Fastest", zstd.ProfileFastestParams()}, {"BestCompression", zstd.ProfileBestCompressionParams()}} {
 		for _, fs := range []int{1 << 20, 4 << 20, 16 << 20} {
 			for _, conc := range []int{1, 2, 4, 8, 16, 32} {
 				b.Run(fmt.Sprintf("%s/frame%dM/conc%d", pr.name, fs>>20, conc), func(b *testing.B) {
@@ -232,7 +232,7 @@ func BenchmarkWriterConcurrency(b *testing.B) {
 					var size int
 					for i := 0; i < b.N; i++ {
 						var c countingWriter
-						w := zstd.NewWriter(&c, nil)
+						w := zstd.NewWriter(&c)
 						w.FrameSize, w.Params, w.Concurrency = fs, pr.p, conc
 						w.Write(data)
 						w.Close()

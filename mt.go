@@ -57,16 +57,16 @@ func mtGeometry(cp cParams, jobSize, overlapLog int) (section, prefix int) {
 }
 
 // compressMT is ZSTD_compress2 with nbWorkers > 0 for a source larger than ZSTDMT_JOBSIZE_MIN, r being the resolved request.
-func (e *Encoder) compressMT(dst, src []byte, r *request) ([]byte, error) {
+func (e *encoder) compressMT(dst, src []byte, r *request) ([]byte, error) {
 	if r.dict != nil && r.cd == nil {
-		return dst, ErrUnsupported // a RefPrefix becomes a CDict in libzstd's multithreaded mode: not ported
+		return dst, ErrUnsupported // a RefPrefix becomes a preparedDict in libzstd's multithreaded mode: not ported
 	}
 	n := len(src)
 	section, prefixMax := mtGeometry(r.cp, r.jobSize, r.overlapLog)
 	nJobs := (n + section - 1) / section
 	workers := min(r.nbWorkers, nJobs)
 	for len(e.mtEnc) < workers {
-		e.mtEnc = append(e.mtEnc, NewEncoder(nil))
+		e.mtEnc = append(e.mtEnc, newEncoder(nil))
 	}
 	outs := make([][]byte, nJobs)
 	var sum uint64
@@ -115,7 +115,7 @@ func (e *Encoder) compressMT(dst, src []byte, r *request) ([]byte, error) {
 
 // mtJob is ZSTDMT_compressionJob: the blocks of job (preceded by the frame header for the first job) compressed with prefix as
 // history. total is the size of the whole frame content. out is a buffer to reuse for the result (nil: allocate).
-func (e *Encoder) mtJob(r *request, job, prefix []byte, total uint64, first, last bool, out []byte) []byte {
+func (e *encoder) mtJob(r *request, job, prefix []byte, total uint64, first, last bool, out []byte) []byte {
 	jr := *r
 	if first {
 		jr.alias = len(job) > 0 && jr.dict == nil // read the source in place

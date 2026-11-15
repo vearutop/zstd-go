@@ -24,21 +24,23 @@ type Dict struct {
 	cdicts        map[int]*cdict // prepared per level
 	cdAdv         map[cdictKey]*cdict
 	raw           []byte
-	pool          sync.Pool // *Encoder
+	pool          sync.Pool // *encoder
+	decOnce       sync.Once
+	dec           *Decoder // knows only this dictionary: Dict.Decode
 }
 
 // LoadDict parses a dictionary. Without the zstd magic, b is used as raw content (id 0).
-func LoadDict(b []byte) (*Dict, error) { return LoadDictType(b, DictAuto) }
+func LoadDict(b []byte) (*Dict, error) { return loadDictType(b, dictAuto) }
 
-// LoadDictType is LoadDict with the ZSTD_dictContentType_e of ZSTD_CCtx_loadDictionary_advanced: DictRaw uses b as raw
-// content even when it carries the zstd magic, DictFull requires a zstd-format dictionary.
-func LoadDictType(b []byte, typ DictContentType) (*Dict, error) {
+// loadDictType is LoadDict with the ZSTD_dictContentType_e of ZSTD_CCtx_loadDictionary_advanced: dictRaw uses b as raw
+// content even when it carries the zstd magic, dictFull requires a zstd-format dictionary.
+func loadDictType(b []byte, typ dictContentType) (*Dict, error) {
 	d := &Dict{reps: [3]uint32{1, 4, 8}, raw: b}
 	isZstd := len(b) >= 8 && binary.LittleEndian.Uint32(b) == dictMagic
-	if typ == DictFull && !isZstd {
+	if typ == dictFull && !isZstd {
 		return nil, errors.New("zstd: not a zstd-format dictionary")
 	}
-	if isZstd && typ != DictRaw {
+	if isZstd && typ != dictRaw {
 		d.id = binary.LittleEndian.Uint32(b[4:])
 		var rem []byte
 		ht, hsz, hasZero, ok := hufReadCTable(b[8:])
@@ -152,15 +154,43 @@ func (d *Dict) loadable() bool { return len(d.raw) >= 8 && len(d.content) >= 8 }
 // ID returns the dictionary id (0 for raw content).
 func (d *Dict) ID() uint32 { return d.id }
 
-// Compress appends a frame of src to dst, using a pooled Encoder; safe for concurrent use.
-func (d *Dict) Compress(dst, src []byte) []byte {
-	e, ok := d.pool.Get().(*Encoder)
-	if !ok {
-		e = NewEncoder(d)
+// noDictPool holds the encoders of a nil Dict.
+var noDictPool sync.Pool // *encoder
+
+// Encode appends a frame of src to dst at the default level (3), using a pooled encoder; safe for concurrent use.
+// A nil Dict encodes without a dictionary.
+func (d *Dict) Encode(dst, src []byte) []byte { return d.EncodeLevel(dst, src, 0) }
+
+// EncodeLevel is Encode at a libzstd compression level (-50 to 22; 0 is the default, 3). The frame has a content size and a
+// checksum. The dictionary's tables are prepared once per level used.
+func (d *Dict) EncodeLevel(dst, src []byte, level int) []byte {
+	pool := &noDictPool
+	if d != nil {
+		pool = &d.pool
 	}
+	e, ok := pool.Get().(*encoder)
+	if !ok {
+		e = newEncoder(d)
+	}
+	e.Level = level
 	dst = e.EncodeAll(src, dst)
-	d.pool.Put(e)
+	pool.Put(e)
 	return dst
+}
+
+var noDictDecoder = sync.OnceValue(func() *Decoder { return mustDecoder() })
+
+// Decode appends the decompressed content of the frames in src to dst, with this dictionary chosen by the caller: it is how
+// frames made with a raw-content dictionary (which carries no id, so a Decoder holding several of them cannot tell them apart) are
+// decoded, and the simplest way to keep one Dict per tenant or schema. A frame that names another dictionary id fails with
+// an error. A nil Dict decodes without a dictionary. Safe for concurrent use; use a Decoder when you need MaxSize or the other
+// settings.
+func (d *Dict) Decode(dst, src []byte) ([]byte, error) {
+	if d == nil {
+		return noDictDecoder().Decode(dst, src)
+	}
+	d.decOnce.Do(func() { d.dec = mustDecoder(d) })
+	return d.dec.Decode(dst, src)
 }
 
 // dictNCountRepeat is ZSTD_dictNCountRepeat: the table may be used blindly only if it codes every symbol up to max.

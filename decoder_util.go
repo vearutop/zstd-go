@@ -4,15 +4,9 @@ import "encoding/binary"
 
 // Frame inspection utilities, ports of the corresponding zstd_decompress.c functions (without legacy-format support).
 
-// Content size sentinels (ZSTD_CONTENTSIZE_UNKNOWN / ZSTD_CONTENTSIZE_ERROR).
-const (
-	ContentSizeUnknown uint64 = ^uint64(0)
-	ContentSizeError   uint64 = ^uint64(0) - 1
-)
-
-// FrameHeader mirrors ZSTD_FrameHeader.
-type FrameHeader struct {
-	ContentSize  uint64 // ContentSizeUnknown when absent; for skippable frames the payload size
+// pubFrameHeader mirrors ZSTD_FrameHeader.
+type pubFrameHeader struct {
+	ContentSize  uint64 // contentSizeUnknown when absent; for skippable frames the payload size
 	WindowSize   uint64
 	BlockSizeMax uint32
 	Skippable    bool
@@ -21,17 +15,17 @@ type FrameHeader struct {
 	Checksum     bool
 }
 
-// GetFrameHeader is ZSTD_getFrameHeader_advanced: need > 0 asks for that many bytes of src, err is set for invalid input.
-func GetFrameHeader(src []byte, magicless bool) (h FrameHeader, need int, err error) {
+// pubGetFrameHeader is ZSTD_getFrameHeader_advanced: need > 0 asks for that many bytes of src, err is set for invalid input.
+func pubGetFrameHeader(src []byte, magicless bool) (h pubFrameHeader, need int, err error) {
 	fh, need, err := getFrameHeader(src, magicless)
 	if err != nil || need > 0 {
-		return FrameHeader{}, need, err
+		return pubFrameHeader{}, need, err
 	}
-	return FrameHeader{ContentSize: fh.size, WindowSize: fh.window, BlockSizeMax: fh.blockMax, Skippable: fh.skippable, HeaderSize: uint32(fh.hdrSize), DictID: fh.dictID, Checksum: fh.checksum}, 0, nil
+	return pubFrameHeader{ContentSize: fh.size, WindowSize: fh.window, BlockSizeMax: fh.blockMax, Skippable: fh.skippable, HeaderSize: uint32(fh.hdrSize), DictID: fh.dictID, Checksum: fh.checksum}, 0, nil
 }
 
-// IsFrame is ZSTD_isFrame (zstd and skippable frames only).
-func IsFrame(src []byte) bool {
+// isFrame is ZSTD_isFrame (zstd and skippable frames only).
+func isFrame(src []byte) bool {
 	if len(src) < 4 {
 		return false
 	}
@@ -39,14 +33,14 @@ func IsFrame(src []byte) bool {
 	return m == magicNumber || m&magicSkippableMask == magicSkippableBase
 }
 
-// IsSkippableFrame is ZSTD_isSkippableFrame.
-func IsSkippableFrame(src []byte) bool {
+// isSkippableFrame is ZSTD_isSkippableFrame.
+func isSkippableFrame(src []byte) bool {
 	return len(src) >= 4 && binary.LittleEndian.Uint32(src)&magicSkippableMask == magicSkippableBase
 }
 
-// ReadSkippableFrame is ZSTD_readSkippableFrame: it appends the payload of the skippable frame at the start of src to dst
+// readSkippableFrame is ZSTD_readSkippableFrame: it appends the payload of the skippable frame at the start of src to dst
 // and returns the magic variant (0-15). Like libzstd it fails if the payload does not fit in capacity bytes.
-func ReadSkippableFrame(dst, src []byte, capacity int) (out []byte, variant uint32, err error) {
+func readSkippableFrame(dst, src []byte, capacity int) (out []byte, variant uint32, err error) {
 	if len(src) < 8 {
 		return dst, 0, errSrcSize
 	}
@@ -55,7 +49,7 @@ func ReadSkippableFrame(dst, src []byte, capacity int) (out []byte, variant uint
 	if err != nil {
 		return dst, 0, err
 	}
-	if !IsSkippableFrame(src) {
+	if !isSkippableFrame(src) {
 		return dst, 0, errReserved
 	}
 	if n-8 > capacity {
@@ -64,16 +58,16 @@ func ReadSkippableFrame(dst, src []byte, capacity int) (out []byte, variant uint
 	return append(dst, src[8:n]...), magic - magicSkippableBase, nil
 }
 
-// DictIDFromDict is ZSTD_getDictID_fromDict (0 for raw content or too short input).
-func DictIDFromDict(dict []byte) uint32 {
+// dictIDFromDict is ZSTD_getDictID_fromDict (0 for raw content or too short input).
+func dictIDFromDict(dict []byte) uint32 {
 	if len(dict) < 8 || binary.LittleEndian.Uint32(dict) != dictMagic {
 		return 0
 	}
 	return binary.LittleEndian.Uint32(dict[4:])
 }
 
-// DictIDFromFrame is ZSTD_getDictID_fromFrame (0 if unknown or the header cannot be read).
-func DictIDFromFrame(src []byte) uint32 {
+// dictIDFromFrame is ZSTD_getDictID_fromFrame (0 if unknown or the header cannot be read).
+func dictIDFromFrame(src []byte) uint32 {
 	h, need, err := getFrameHeader(src, false)
 	if err != nil || need > 0 {
 		return 0
@@ -83,7 +77,7 @@ func DictIDFromFrame(src []byte) uint32 {
 
 type frameSizeInfo struct {
 	compressed int
-	bound      uint64 // ContentSizeError on failure
+	bound      uint64 // contentSizeError on failure
 	nbBlocks   int
 	hdr        frameHeader
 	err        error
@@ -107,7 +101,7 @@ func getcBlockSize(src []byte) (cSize int, last bool, typ uint32, origSize int, 
 
 // findFrameSizeInfo is ZSTD_findFrameSizeInfo.
 func findFrameSizeInfo(src []byte, magicless bool) frameSizeInfo {
-	fail := func(err error) frameSizeInfo { return frameSizeInfo{err: err, bound: ContentSizeError} }
+	fail := func(err error) frameSizeInfo { return frameSizeInfo{err: err, bound: contentSizeError} }
 	if !magicless && len(src) >= 8 && binary.LittleEndian.Uint32(src)&magicSkippableMask == magicSkippableBase {
 		n, err := readSkippableFrameSize(src)
 		if err != nil {
@@ -151,17 +145,17 @@ func findFrameSizeInfo(src []byte, magicless bool) frameSizeInfo {
 	return frameSizeInfo{compressed: pos, bound: bound, nbBlocks: nb, hdr: h}
 }
 
-// FindFrameCompressedSize is ZSTD_findFrameCompressedSize: the size of the frame (or skippable frame) at the start of src.
-func FindFrameCompressedSize(src []byte) (int, error) {
+// findFrameCompressedSize is ZSTD_findFrameCompressedSize: the size of the frame (or skippable frame) at the start of src.
+func findFrameCompressedSize(src []byte) (int, error) {
 	fi := findFrameSizeInfo(src, false)
 	return fi.compressed, fi.err
 }
 
-// GetFrameContentSize is ZSTD_getFrameContentSize: the content size of the first frame, ContentSizeUnknown, or ContentSizeError.
-func GetFrameContentSize(src []byte) uint64 {
+// getFrameContentSize is ZSTD_getFrameContentSize: the content size of the first frame, contentSizeUnknown, or contentSizeError.
+func getFrameContentSize(src []byte) uint64 {
 	h, need, err := getFrameHeader(src, false)
 	if err != nil || need > 0 {
-		return ContentSizeError
+		return contentSizeError
 	}
 	if h.skippable {
 		return 0
@@ -169,54 +163,54 @@ func GetFrameContentSize(src []byte) uint64 {
 	return h.size
 }
 
-// GetDecompressedSize is ZSTD_getDecompressedSize: the content size if known, 0 otherwise.
-func GetDecompressedSize(src []byte) uint64 {
-	if r := GetFrameContentSize(src); r < ContentSizeError {
+// getDecompressedSize is ZSTD_getDecompressedSize: the content size if known, 0 otherwise.
+func getDecompressedSize(src []byte) uint64 {
+	if r := getFrameContentSize(src); r < contentSizeError {
 		return r
 	}
 	return 0
 }
 
-// FindDecompressedSize is ZSTD_findDecompressedSize: the total content size of all frames in src (ContentSizeError if
-// any frame is invalid or its size unknown-sum overflows; ContentSizeUnknown if a frame has no size recorded).
-func FindDecompressedSize(src []byte) uint64 {
+// findDecompressedSize is ZSTD_findDecompressedSize: the total content size of all frames in src (contentSizeError if
+// any frame is invalid or its size unknown-sum overflows; contentSizeUnknown if a frame has no size recorded).
+func findDecompressedSize(src []byte) uint64 {
 	var total uint64
 	for len(src) >= 5 {
 		if binary.LittleEndian.Uint32(src)&magicSkippableMask == magicSkippableBase {
 			n, err := readSkippableFrameSize(src)
 			if err != nil {
-				return ContentSizeError
+				return contentSizeError
 			}
 			src = src[n:]
 			continue
 		}
-		fcs := GetFrameContentSize(src)
-		if fcs >= ContentSizeError {
+		fcs := getFrameContentSize(src)
+		if fcs >= contentSizeError {
 			return fcs
 		}
 		if total+fcs < total {
-			return ContentSizeError
+			return contentSizeError
 		}
 		total += fcs
-		n, err := FindFrameCompressedSize(src)
+		n, err := findFrameCompressedSize(src)
 		if err != nil {
-			return ContentSizeError
+			return contentSizeError
 		}
 		src = src[n:]
 	}
 	if len(src) > 0 {
-		return ContentSizeError
+		return contentSizeError
 	}
 	return total
 }
 
-// DecompressBound is ZSTD_decompressBound: an upper bound of the decompressed size of all frames in src.
-func DecompressBound(src []byte) uint64 {
+// decompressBound is ZSTD_decompressBound: an upper bound of the decompressed size of all frames in src.
+func decompressBound(src []byte) uint64 {
 	var bound uint64
 	for len(src) > 0 {
 		fi := findFrameSizeInfo(src, false)
-		if fi.err != nil || fi.bound == ContentSizeError {
-			return ContentSizeError
+		if fi.err != nil || fi.bound == contentSizeError {
+			return contentSizeError
 		}
 		src = src[fi.compressed:]
 		bound += fi.bound
@@ -224,8 +218,8 @@ func DecompressBound(src []byte) uint64 {
 	return bound
 }
 
-// DecompressionMargin is ZSTD_decompressionMargin: the extra space an in-place decompression needs.
-func DecompressionMargin(src []byte) (int, error) {
+// decompressionMargin is ZSTD_decompressionMargin: the extra space an in-place decompression needs.
+func decompressionMargin(src []byte) (int, error) {
 	margin := 0
 	maxBlock := uint32(0)
 	for len(src) > 0 {
@@ -237,7 +231,7 @@ func DecompressionMargin(src []byte) (int, error) {
 		if need > 0 {
 			return 0, errSrcSize
 		}
-		if fi.err != nil || fi.bound == ContentSizeError {
+		if fi.err != nil || fi.bound == contentSizeError {
 			return 0, errCorrupt
 		}
 		if !h.skippable {

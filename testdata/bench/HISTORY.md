@@ -1,4 +1,12 @@
-# Benchmarks
+# Benchmark history
+
+A log of measurements taken while the port was optimized, kept for the findings behind the code, not as current numbers: most tables
+here were taken on other machines, library versions and earlier code, and some are superseded (the decoder figures before the
+sequence assembly of klauspost/compress was adopted, the single-thread compression speeds before the match-finder work, the
+multithreaded tables the later ones replace). The current numbers are in the README. What still guides optimization work:
+the L2-miss finding of the single-thread compression section, the lessons of the streaming-decode section (compare with the klauspost
+version the application uses; tune on real data; check amd64 codegen of hot loops), the parameter-search method of the presets
+section and the scaling of `Writer.Concurrency`, `Params.NbWorkers` and `StreamWriter`.
 
 `go test -tags libzstd -run xxx -bench 'Levels' -benchtime 300x .` compares the port with libzstd 1.5.7 (cgo, `internal/ref`) per level:
 

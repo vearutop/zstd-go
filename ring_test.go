@@ -104,7 +104,7 @@ func TestStreamRing(t *testing.T) {
 					}
 					zstd.SetRingExtraForTest(extra)
 					desc := fmt.Sprintf("wl=%d level=%d mode=%s extra=%d", wl, level, mode, extra)
-					r := zstd.NewReader(&chunkReader{bytes.NewReader(frame), rng, 1 + rng.Intn(5000)}, dec)
+					r := zstd.NewReader(&chunkReader{bytes.NewReader(frame), rng, 1 + rng.Intn(5000)}, zstd.WithDecoder(dec))
 					var got bytes.Buffer
 					buf := make([]byte, 1+rng.Intn(70000))
 					for {

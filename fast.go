@@ -1,7 +1,7 @@
 package zstd
 
 // Port of libzstd's fast match finder (zstd_fast.c): noDict, dictMatchState and extDict loops and the table fills.
-// Same buffer model as dfast.go: positions are offsets into Encoder.buf, libzstd indices are position+2.
+// Same buffer model as dfast.go: positions are offsets into encoder.buf, libzstd indices are position+2.
 
 // fillCDictFast is ZSTD_fillHashTableForCDict (ZSTD_dtlm_full): a tagged single table.
 func fillCDictFast(cd *cdict, content []byte) {
@@ -23,7 +23,7 @@ func fillCDictFast(cd *cdict, content []byte) {
 }
 
 // fillCCtxFast is ZSTD_fillHashTableForCCtx (ZSTD_dtlm_fast).
-func (e *Encoder) fillCCtxFast(content []byte) {
+func (e *encoder) fillCCtxFast(content []byte) {
 	// the last position read is iend-2+8 = len-2: the content needs no padding, and no copy
 	iend := len(content) - hashReadSize
 	hs := newHasher(e.cp.hashLog, e.cp.minMatch)
@@ -42,7 +42,7 @@ func (e *Encoder) fillCCtxFast(content []byte) {
 const fastStepIncr = 1 << (searchStrength - 1) // kStepIncr of the noDict and extDict loops
 
 // fastNoDict is ZSTD_compressBlock_fast_noDict_generic for the block buf[start:iend].
-func (e *Encoder) fastNoDict(cp cParams, start, iend int, lowestValid uint32, isDict bool) {
+func (e *encoder) fastNoDict(cp cParams, start, iend int, lowestValid uint32, isDict bool) {
 	buf := e.buf
 	hashTable, hlog, mls := e.long, cp.hashLog, cp.minMatch
 	idx := func(p int) uint32 { return uint32(p + windowStartIndex) }
@@ -195,7 +195,7 @@ matchLabel:
 }
 
 // fastDict is ZSTD_compressBlock_fast_dictMatchState_generic (attached dictionary), block buf[start:iend].
-func (e *Encoder) fastDict(cd *cdict, cp cParams, L, start, iend int) {
+func (e *encoder) fastDict(cd *cdict, cp cParams, L, start, iend int) {
 	buf := e.buf
 	hashTable, hlog, mls := e.long, cp.hashLog, cp.minMatch
 	idx := func(p int) uint32 { return uint32(p + windowStartIndex) }
@@ -305,7 +305,7 @@ cleanup:
 }
 
 // fastExtDict is ZSTD_compressBlock_fast_extDict_generic (dictionary in the window, copy mode).
-func (e *Encoder) fastExtDict(cp cParams, start, iend int, lowLimit, dictLimit uint32) {
+func (e *encoder) fastExtDict(cp cParams, start, iend int, lowLimit, dictLimit uint32) {
 	buf := e.buf
 	hashTable, hlog, mls := e.long, cp.hashLog, cp.minMatch
 	idx := func(p int) uint32 { return uint32(p + windowStartIndex) }

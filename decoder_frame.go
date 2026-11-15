@@ -24,13 +24,13 @@ const (
 var ErrTooLarge = &Error{ErrDstSizeTooSmall, "zstd: decompressed size exceeds limit"}
 
 // Decoder decompresses whole frames (single-shot, no goroutines); safe for concurrent use as long as its fields are not
-// changed concurrently. DecodeAll behaves like ZSTD_decompress / ZSTD_decompress_usingDDict.
+// changed concurrently. Decode behaves like ZSTD_decompress / ZSTD_decompress_usingDDict.
 //
 // Dictionary selection follows ZSTD_d_refMultipleDDicts: a frame with dictionary id N uses the dictionary registered under N
 // (a frame without id uses the id-0 raw-content dictionary, if there is one); otherwise the last dictionary given to
 // NewDecoder is used, which is then required to match the frame's id when the frame has one.
 type Decoder struct {
-	// MaxSize limits the decompressed bytes appended by one DecodeAll call; 0 means no limit (libzstd's dstCapacity).
+	// MaxSize limits the decompressed bytes appended by one Decode call; 0 means no limit (libzstd's dstCapacity).
 	MaxSize int
 	// Magicless selects the ZSTD_f_zstd1_magicless frame format (frames without the 4-byte magic number).
 	Magicless bool
@@ -47,7 +47,18 @@ type Decoder struct {
 	pool  sync.Pool // *decState
 }
 
-// NewDecoder returns a decoder that knows the given dictionaries.
+// mustDecoder is NewDecoder for callers that cannot fail: it never returns an error today.
+func mustDecoder(dicts ...*Dict) *Decoder {
+	d, err := NewDecoder(dicts...)
+	if err != nil {
+		panic(err)
+	}
+	return d
+}
+
+// NewDecoder returns a decoder that knows the given dictionaries; a frame is decoded with the one whose id it names. Dictionaries
+// with the same id (all raw-content dictionaries have id 0) cannot be told apart: only the last of them is used, so decode frames
+// of raw-content dictionaries with Dict.Decode instead.
 func NewDecoder(dicts ...*Dict) (*Decoder, error) { //nolint:unparam // the error is part of the API
 	d := &Decoder{dicts: map[uint32]*Dict{}}
 	for _, dc := range dicts {
@@ -282,7 +293,7 @@ func parseHeader(b []byte) (h frameHeader, n int, err error) {
 }
 
 // ContentSize returns the content size recorded in the first frame's header, if any.
-func ContentSize(frame []byte) (uint64, bool) {
+func contentSize(frame []byte) (uint64, bool) {
 	h, _, err := parseHeader(frame)
 	return h.size, err == nil && h.hasSize
 }
@@ -302,8 +313,8 @@ func readSkippableFrameSize(src []byte) (int, error) {
 	return int(n) + 8, nil
 }
 
-// DecodeAll appends the decompressed content of all frames in src to dst (skippable frames are ignored).
-func (d *Decoder) DecodeAll(src, dst []byte) ([]byte, error) {
+// Decode appends the decompressed content of all frames in src to dst (skippable frames are ignored).
+func (d *Decoder) Decode(dst, src []byte) ([]byte, error) {
 	return d.decodeAll(src, dst, d.MaxSize, d.MaxSize > 0, 0, dictSel{})
 }
 
@@ -324,7 +335,7 @@ func (st *decState) begin(dict *Dict) (dc []byte) {
 	return dc
 }
 
-// decodeAll is DecodeAll with an explicit capacity (limited: the output may not exceed maxSize bytes).
+// decodeAll is Decode with an explicit capacity (limited: the output may not exceed maxSize bytes).
 // dictSel overrides the decoder's dictionary choice (a stream's RefPrefix): the dictionary d, possibly none.
 type dictSel struct {
 	on bool

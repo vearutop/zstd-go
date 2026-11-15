@@ -3,15 +3,16 @@ package zstd
 import (
 	"encoding/binary"
 	"math/bits"
-	"unsafe"
+
+	"github.com/vearutop/zstd-go/internal/kseq"
 )
 
-// FSE decoding table (libzstd FSE_DTable): sym, nbBits and the next-state base per state.
+// FSE decoding table entry, one per state. Its layout is klauspost/compress's decSymbol (nb | xb<<8 | ns<<16 | base<<32),
+// which internal/kseq's assembly reads directly.
 type dEntry struct {
-	ns   uint16
-	sym  uint8
-	nb   uint8
-	xb   uint8  // extra bits to read for the symbol
+	nb   uint8  // bits to read for the next state
+	xb   uint8  // extra bits to read for the symbol (the symbol itself for the Huffman weights table, kindOF)
+	ns   uint16 // next state base
 	base uint32 // value of the symbol before the extra bits (match length already includes the minimum 3)
 }
 
@@ -21,21 +22,32 @@ const (
 	kindML
 )
 
-// fuse fills the symbol's baseline and extra-bit count.
-func (e *dEntry) fuse(kind int) {
+// fuse fills the baseline and extra-bit count of symbol sym.
+func (e *dEntry) fuse(kind int, sym uint8) {
 	switch kind {
 	case kindLL:
-		e.base, e.xb = llBase[e.sym], llBits[e.sym]
+		e.base, e.xb = llBase[sym], llBits[sym]
 	case kindML:
-		e.base, e.xb = mlBase[e.sym]+3, mlBits[e.sym]
+		e.base, e.xb = mlBase[sym]+3, mlBits[sym]
 	default:
-		e.base, e.xb = 1<<e.sym, e.sym
+		e.base, e.xb = ofBase(sym), sym
 	}
 }
 
+// ofBase is the baseline of offset code sym in klauspost's convention (the one internal/kseq expects): the offset itself
+// for codes 2 and up ((1<<sym) - 3 + extra bits), and 0..2 for the repeat codes 0 and 1.
+func ofBase(sym uint8) uint32 {
+	if sym < 2 {
+		return uint32(sym)
+	}
+	return 1<<sym - 3
+}
+
 type dTable struct {
-	log uint8
-	e   []dEntry
+	log   uint8
+	maxXb uint8 // the largest extra-bits count of any symbol in the table (the 56-bit sequence decoder needs it)
+	e     []dEntry
+	sy    [1 << 9]uint8 // the symbol of each state while the table is built
 }
 
 // buildDTable is a port of FSE_buildDTable.
@@ -45,7 +57,24 @@ func buildDTable(norm []int16, log uint8, kind int) *dTable {
 	return dt
 }
 
+// xbOf is the extra-bits count of symbol s.
+func xbOf(kind int, s uint8) uint8 {
+	switch kind {
+	case kindLL:
+		return llBits[s]
+	case kindML:
+		return mlBits[s]
+	}
+	return s
+}
+
 func (dt *dTable) build(norm []int16, log uint8, kind int) {
+	dt.maxXb = 0
+	for s, n := range norm {
+		if n != 0 {
+			dt.maxXb = max(dt.maxXb, xbOf(kind, uint8(s)))
+		}
+	}
 	size := 1 << log
 	mask := size - 1
 	step := (size >> 1) + (size >> 3) + 3
@@ -58,7 +87,7 @@ func (dt *dTable) build(norm []int16, log uint8, kind int) {
 	high := size - 1
 	for s, n := range norm {
 		if n == -1 {
-			dt.e[high].sym = uint8(s)
+			dt.sy[high] = uint8(s)
 			high--
 			next[s] = 1
 		} else {
@@ -69,7 +98,7 @@ func (dt *dTable) build(norm []int16, log uint8, kind int) {
 	pos := 0
 	for s, n := range norm {
 		for i := 0; i < int(n); i++ {
-			e[pos].sym = uint8(s)
+			dt.sy[pos] = uint8(s)
 			pos = (pos + step) & mask
 			for pos > high {
 				pos = (pos + step) & mask
@@ -80,7 +109,7 @@ func (dt *dTable) build(norm []int16, log uint8, kind int) {
 	switch kind {
 	case kindLL:
 		for u := range e {
-			s := e[u].sym
+			s := dt.sy[u]
 			n := uint32(next[s])
 			next[s]++
 			nb := log - uint8(bits.Len32(n)-1)
@@ -89,7 +118,7 @@ func (dt *dTable) build(norm []int16, log uint8, kind int) {
 		}
 	case kindML:
 		for u := range e {
-			s := e[u].sym
+			s := dt.sy[u]
 			n := uint32(next[s])
 			next[s]++
 			nb := log - uint8(bits.Len32(n)-1)
@@ -98,20 +127,21 @@ func (dt *dTable) build(norm []int16, log uint8, kind int) {
 		}
 	default:
 		for u := range e {
-			s := e[u].sym
+			s := dt.sy[u]
 			n := uint32(next[s])
 			next[s]++
 			nb := log - uint8(bits.Len32(n)-1)
 			d := &e[u]
-			d.ns, d.nb, d.base, d.xb = uint16(n<<nb)-uint16(size), nb, 1<<s, s
+			d.ns, d.nb, d.base, d.xb = uint16(n<<nb)-uint16(size), nb, ofBase(s), s
 		}
 	}
 }
 
 func (dt *dTable) rle(sym uint8, kind int) {
 	dt.log = 0
-	dt.e = append(dt.e[:0], dEntry{sym: sym})
-	dt.e[0].fuse(kind)
+	dt.e = append(dt.e[:0], dEntry{})
+	dt.e[0].fuse(kind, sym)
+	dt.maxXb = xbOf(kind, sym)
 }
 
 var (
@@ -383,8 +413,8 @@ func (st *decState) hufLits(data []byte, regen int, four, newTable bool) ([]byte
 }
 
 func growB(b []byte, n int) []byte {
-	if cap(b) < n+16 {
-		return make([]byte, n, max(n, 4096)+16)
+	if cap(b) < n+32 { // 32: the assembly's literal copies may run this far past the end
+		return make([]byte, n, max(n, 4096)+32)
 	}
 	return b[:n]
 }
@@ -437,6 +467,11 @@ func (st *decState) sequences(in []byte, nb int, lits, out []byte, base int, dc 
 	if len(in) < 1 || in[len(in)-1] == 0 {
 		return out, corrupt()
 	}
+	if useSeqKernel && kseq.Available && nb > 0 && seqTrace == nil && offTrace == nil {
+		if res, ok := st.seqKernel(in, nb, lits, out, base, dc); ok {
+			return res, nil
+		}
+	}
 	st.buf = append(append(st.buf[:0], make([]byte, rbitsPad)...), in...)
 	last := in[len(in)-1]
 	r := newRbits(st.buf, last)
@@ -448,31 +483,15 @@ func (st *decState) sequences(in []byte, nb int, lits, out []byte, base int, dc 
 	li := 0
 	litFull := lits[:cap(lits)] // reading past len is safe and lets us copy 16 bytes at a time
 	offT, seqT := offTrace, seqTrace
-	asmAt := 0 // first sequence the assembly fast path may start at (seqdec.go)
-	if offT != nil || seqT != nil {
-		asmAt = nb
-	}
 	for i := 0; i < nb; i++ {
-		if useSeqAsm && i >= asmAt && i < nb-1 {
-			c := seqCtx{
-				v: r.v, br: uint64(r.br), off: r.off, buf: unsafe.SliceData(r.buf),
-				llt: unsafe.SliceData(ll.e), oft: unsafe.SliceData(of.e), mlt: unsafe.SliceData(ml.e),
-				sl: uint64(sl), so: uint64(so), sm: uint64(sm), reps: st.reps,
-				out: unsafe.SliceData(out), n: len(out), ocap: cap(out),
-				lits: unsafe.SliceData(lits), litLen: len(lits), litCap: cap(lits), li: li,
-				base: base, blockStart: st.blockStart, outLim: st.outLim, rem: nb - 1 - i,
-			}
-			seqDecAsm(&c)
-			r.v, r.br, r.off = c.v, uint(c.br), c.off
-			sl, so, sm, st.reps, li, out = uint32(c.sl), uint32(c.so), uint32(c.sm), c.reps, c.li, out[:c.n]
-			k := nb - 1 - i - c.rem
-			if i += k; k == 0 {
-				asmAt = i + seqAsmBackoff // ponytail: fixed back-off after a non-simple sequence, so runs of them don't pay the call
-			}
-		}
 		le, oe, me := &ll.e[sl], &of.e[so], &ml.e[sm]
-		r.refill() // >= 57 bits: offset extra (<= 31) + match length extra (<= 16)
-		offBase := oe.base + r.get(oe.xb)
+		r.refill()                        // >= 57 bits: offset extra (<= 31) + match length extra (<= 16)
+		offBase := oe.base + r.get(oe.xb) // klauspost's convention (ofBase): the offset itself above code 1, else a repeat code 0..2
+		if oe.xb > 1 {
+			offBase += 3
+		} else {
+			offBase++
+		}
 		mlen := int(me.base) + int(r.get(me.xb))
 		r.refill() // literal length extra (<= 16) + the three state updates (<= 26)
 		llen := int(le.base) + int(r.get(le.xb))

@@ -1,0 +1,504 @@
+host: Linux 5.9.11-gentoo x86_64
+zstd-go: 9a22ecd+dirty
+klauspost-compress: v1.20.4
+libzstd: 1.5.7
+goos: linux
+goarch: amd64
+pkg: github.com/vearutop/zstd-go
+cpu: Intel(R) Xeon(R) CPU E5-2620 v4 @ 2.10GHz
+                                                    │      port      │                  klauspost                   │                libzstd                 │             klauspost-scan              │                    │
+                                                    │     sec/op     │      sec/op       vs base                    │    sec/op      vs base                 │    sec/op     vs base                   │   sec/op     vs base   │
+CorpusCompress/file=silesia.tar/tier=fastest-32        1486.5m ±  3%     1490.4m ±   4%           ~ (p=0.699 n=6)      968.6m ±  5%  -34.84% (p=0.002 n=6)
+CorpusCompress/file=silesia.tar/tier=default-32          2.957 ±  1%       2.018 ±   2%     -31.74% (p=0.002 n=6)       1.835 ±  3%  -37.93% (p=0.002 n=6)
+CorpusCompress/file=silesia.tar/tier=better-32          10.900 ±  1%       2.950 ±   1%     -72.93% (p=0.002 n=6)       4.199 ±  2%  -61.48% (p=0.002 n=6)
+CorpusCompress/file=silesia.tar/tier=best-32            15.883 ±  1%      11.437 ±   1%     -27.99% (p=0.002 n=6)       6.168 ±  2%  -61.17% (p=0.002 n=6)
+CorpusDecode/file=silesia.tar/mode=oneshot-32           540.9m ±  2%      436.5m ±   0%     -19.31% (p=0.002 n=6)      435.6m ±  0%  -19.46% (p=0.002 n=6)
+CorpusDecode/file=silesia.tar/mode=stream-32            555.4m ±  1%      416.0m ±   6%     -25.11% (p=0.002 n=6)
+CorpusDecode/file=silesia.tar/mode=stream-async-32      552.1m ± 14%      319.6m ±   6%     -42.11% (p=0.002 n=6)
+DecodeSmall/file=kppkn.gtb/par=serial-32                545.8µ ±  4%      460.2µ ±   2%     -15.68% (p=0.002 n=6)      409.5µ ±  0%  -24.98% (p=0.002 n=6)
+DecodeSmall/file=kppkn.gtb/par=parallel-32              32.20µ ±  1%      26.20µ ±   1%     -18.64% (p=0.002 n=6)      24.39µ ±  1%  -24.26% (p=0.002 n=6)
+DecodeSmall/file=geo.protodata/par=serial-32            125.9µ ±  0%      126.0µ ±   2%           ~ (p=0.065 n=6)      100.6µ ±  2%  -20.11% (p=0.002 n=6)
+DecodeSmall/file=geo.protodata/par=parallel-32          7.391µ ±  1%      7.213µ ±   0%      -2.42% (p=0.002 n=6)      5.935µ ±  0%  -19.70% (p=0.002 n=6)
+DecodeSmall/file=plrabn12.txt/par=serial-32             1.586m ±  8%      1.373m ±   0%     -13.47% (p=0.002 n=6)      1.237m ±  0%  -22.02% (p=0.002 n=6)
+DecodeSmall/file=plrabn12.txt/par=parallel-32           97.14µ ±  1%      81.09µ ±   1%     -16.52% (p=0.002 n=6)      78.71µ ±  1%  -18.98% (p=0.002 n=6)
+DecodeSmall/file=lcet10.txt/par=serial-32              1173.8µ ±  2%      988.2µ ±   0%     -15.81% (p=0.002 n=6)      931.5µ ±  1%  -20.64% (p=0.002 n=6)
+DecodeSmall/file=lcet10.txt/par=parallel-32             70.08µ ±  1%      58.23µ ±   1%     -16.91% (p=0.002 n=6)      58.55µ ±  0%  -16.46% (p=0.002 n=6)
+DecodeSmall/file=asyoulik.txt/par=serial-32             373.2µ ±  0%      456.7µ ±   3%     +22.38% (p=0.002 n=6)      289.2µ ±  0%  -22.50% (p=0.002 n=6)
+DecodeSmall/file=asyoulik.txt/par=parallel-32           21.72µ ±  0%      24.42µ ±   1%     +12.39% (p=0.002 n=6)      17.97µ ±  0%  -17.25% (p=0.002 n=6)
+DecodeSmall/file=alice29.txt/par=serial-32              509.3µ ±  0%      433.9µ ±   3%     -14.81% (p=0.002 n=6)      400.4µ ±  1%  -21.38% (p=0.002 n=6)
+DecodeSmall/file=alice29.txt/par=parallel-32            29.99µ ±  1%      25.35µ ±   0%     -15.47% (p=0.002 n=6)      25.08µ ±  0%  -16.36% (p=0.002 n=6)
+DecodeSmall/file=html_x_4/par=serial-32                 235.6µ ±  4%      167.8µ ±   2%     -28.78% (p=0.002 n=6)      168.0µ ±  5%  -28.70% (p=0.002 n=6)
+DecodeSmall/file=html_x_4/par=parallel-32              13.274µ ±  1%      9.235µ ±   2%     -30.43% (p=0.002 n=6)      9.738µ ±  0%  -26.64% (p=0.002 n=6)
+DecodeSmall/file=paper-100k.pdf/par=serial-32           35.87µ ±  0%      30.93µ ±   0%     -13.78% (p=0.002 n=6)      31.36µ ±  0%  -12.56% (p=0.002 n=6)
+DecodeSmall/file=paper-100k.pdf/par=parallel-32         2.148µ ±  0%      2.001µ ±   5%      -6.82% (p=0.002 n=6)      1.857µ ±  0%  -13.53% (p=0.002 n=6)
+DecodeSmall/file=fireworks.jpeg/par=serial-32           20.88µ ±  0%      21.52µ ±   1%      +3.06% (p=0.002 n=6)      21.97µ ±  0%   +5.23% (p=0.002 n=6)
+DecodeSmall/file=fireworks.jpeg/par=parallel-32         1.278µ ±  0%      1.639µ ±   2%     +28.30% (p=0.002 n=6)      1.385µ ±  0%   +8.41% (p=0.002 n=6)
+DecodeSmall/file=urls.10K/par=serial-32                 1.385m ±  0%      1.112m ±   0%     -19.75% (p=0.002 n=6)      1.067m ±  0%  -22.97% (p=0.002 n=6)
+DecodeSmall/file=urls.10K/par=parallel-32               78.00µ ±  0%      62.17µ ±   1%     -20.29% (p=0.002 n=6)      63.18µ ±  1%  -19.00% (p=0.002 n=6)
+DecodeSmall/file=html/par=serial-32                     165.0µ ±  0%      140.9µ ±   0%     -14.62% (p=0.002 n=6)      107.3µ ±  5%  -34.96% (p=0.002 n=6)
+DecodeSmall/file=html/par=parallel-32                   9.512µ ±  1%      7.977µ ±   2%     -16.14% (p=0.002 n=6)      6.382µ ±  1%  -32.91% (p=0.002 n=6)
+DecodeSmall/file=comp-data.bin/par=serial-32           11.910µ ±  3%     11.562µ ±   0%      -2.92% (p=0.002 n=6)      9.039µ ±  2%  -24.11% (p=0.002 n=6)
+DecodeSmall/file=comp-data.bin/par=parallel-32          692.1n ±  1%     1361.5n ±   3%     +96.71% (p=0.002 n=6)      524.4n ±  1%  -24.23% (p=0.002 n=6)
+PureCompress/case=records/level=1/par=serial-32        14.274µ ±  0%     47.215µ ±   2%    +230.77% (p=0.002 n=6)      8.033µ ±  7%  -43.72% (p=0.002 n=6)
+PureCompress/case=records/level=1/par=parallel-32       973.7n ±  1%     3373.5n ±   8%    +246.44% (p=0.002 n=6)      447.4n ±  1%  -54.06% (p=0.002 n=6)
+PureCompress/case=records/level=3/par=serial-32        14.357µ ±  2%    256.992µ ±  24%   +1690.07% (p=0.002 n=6)      9.130µ ±  7%  -36.41% (p=0.002 n=6)
+PureCompress/case=records/level=3/par=parallel-32      1042.5n ±  4%    32499.0n ±  12%   +3017.41% (p=0.002 n=6)      583.3n ±  3%  -44.05% (p=0.002 n=6)
+PureCompress/case=records/level=6/par=serial-32        109.93µ ±  4%     430.57µ ±   9%    +291.67% (p=0.002 n=6)      52.94µ ±  2%  -51.85% (p=0.002 n=6)
+PureCompress/case=records/level=6/par=parallel-32       5.649µ ±  2%     78.474µ ±   1%   +1289.28% (p=0.002 n=6)      2.703µ ±  2%  -52.15% (p=0.002 n=6)
+PureCompress/case=records/level=9/par=serial-32         215.0µ ±  1%      403.1µ ±  15%     +87.46% (p=0.002 n=6)      101.3µ ±  1%  -52.90% (p=0.002 n=6)
+PureCompress/case=records/level=9/par=parallel-32      10.915µ ±  1%     79.758µ ±   2%    +630.72% (p=0.002 n=6)      5.056µ ±  2%  -53.68% (p=0.002 n=6)
+PureCompress/case=records/level=12/par=serial-32       127.63µ ±  3%   17885.80µ ± 100%  +13914.12% (p=0.002 n=6)      67.56µ ±  9%  -47.06% (p=0.002 n=6)
+PureCompress/case=records/level=12/par=parallel-32      5.314µ ±  1%   4218.173µ ±  16%  +79278.48% (p=0.002 n=6)      4.698µ ± 20%        ~ (p=0.394 n=6)
+PureCompress/case=records/level=19/par=serial-32        608.7µ ±  3%    12890.5µ ±  23%   +2017.82% (p=0.002 n=6)      384.6µ ±  7%  -36.80% (p=0.002 n=6)
+PureCompress/case=records/level=19/par=parallel-32      36.16µ ±  5%    4148.33µ ±  34%  +11373.11% (p=0.002 n=6)      22.34µ ± 13%  -38.21% (p=0.002 n=6)
+PureCompress/case=blob/level=1/par=serial-32            936.4µ ±  0%     1229.6µ ±  16%     +31.32% (p=0.002 n=6)      544.4µ ± 19%  -41.86% (p=0.002 n=6)
+PureCompress/case=blob/level=1/par=parallel-32          57.82µ ±  0%      47.63µ ±   1%     -17.62% (p=0.002 n=6)      30.57µ ±  1%  -47.13% (p=0.002 n=6)
+PureCompress/case=blob/level=3/par=serial-32           1290.7µ ±  0%     1609.6µ ±  23%     +24.71% (p=0.002 n=6)      688.5µ ±  2%  -46.66% (p=0.002 n=6)
+PureCompress/case=blob/level=3/par=parallel-32          77.98µ ±  0%      60.51µ ±   0%     -22.41% (p=0.002 n=6)      35.26µ ±  0%  -54.78% (p=0.002 n=6)
+PureCompress/case=blob/level=6/par=serial-32            5.751m ±  0%      2.530m ±   7%     -56.00% (p=0.002 n=6)      2.267m ±  3%  -60.59% (p=0.002 n=6)
+PureCompress/case=blob/level=6/par=parallel-32          386.3µ ±  2%      102.6µ ±   2%     -73.45% (p=0.002 n=6)      126.4µ ±  2%  -67.28% (p=0.002 n=6)
+PureCompress/case=blob/level=9/par=serial-32           10.379m ±  0%      2.459m ±   8%     -76.31% (p=0.002 n=6)      4.084m ±  0%  -60.65% (p=0.002 n=6)
+PureCompress/case=blob/level=9/par=parallel-32          657.0µ ±  0%      102.7µ ±   2%     -84.37% (p=0.002 n=6)      226.8µ ±  2%  -65.48% (p=0.002 n=6)
+PureCompress/case=blob/level=12/par=serial-32          15.532m ±  0%      5.671m ±   9%     -63.49% (p=0.002 n=6)     10.146m ±  5%  -34.68% (p=0.002 n=6)
+PureCompress/case=blob/level=12/par=parallel-32         856.4µ ±  1%      284.8µ ±   1%     -66.74% (p=0.002 n=6)      505.0µ ±  4%  -41.04% (p=0.002 n=6)
+PureCompress/case=blob/level=19/par=serial-32         121.857m ±  0%      5.946m ±  25%     -95.12% (p=0.002 n=6)     67.735m ±  2%  -44.41% (p=0.002 n=6)
+PureCompress/case=blob/level=19/par=parallel-32        7972.2µ ±  5%      287.1µ ±   1%     -96.40% (p=0.002 n=6)     3834.7µ ±  1%  -51.90% (p=0.002 n=6)
+PureCompress/case=text/level=1/par=serial-32            17.71m ±  0%      18.33m ±   1%      +3.53% (p=0.002 n=6)      11.30m ±  0%  -36.20% (p=0.002 n=6)
+PureCompress/case=text/level=1/par=parallel-32         1062.0µ ±  0%      956.9µ ±   1%      -9.89% (p=0.002 n=6)      598.3µ ±  1%  -43.67% (p=0.002 n=6)
+PureCompress/case=text/level=3/par=serial-32            25.05m ±  0%      24.69m ±   9%           ~ (p=1.000 n=6)      14.35m ±  0%  -42.69% (p=0.002 n=6)
+PureCompress/case=text/level=3/par=parallel-32         1513.8µ ±  1%     1512.3µ ±   1%           ~ (p=0.818 n=6)      727.8µ ±  1%  -51.92% (p=0.002 n=6)
+PureCompress/case=text/level=6/par=serial-32           117.32m ±  0%      30.02m ±   1%     -74.41% (p=0.002 n=6)      45.98m ±  0%  -60.81% (p=0.002 n=6)
+PureCompress/case=text/level=6/par=parallel-32          8.699m ±  4%      2.401m ±   1%     -72.40% (p=0.002 n=6)      2.854m ±  3%  -67.20% (p=0.002 n=6)
+PureCompress/case=text/level=9/par=serial-32           175.99m ±  1%      30.03m ±   4%     -82.94% (p=0.002 n=6)      68.40m ±  0%  -61.14% (p=0.002 n=6)
+PureCompress/case=text/level=9/par=parallel-32         13.425m ±  4%      2.850m ±   2%     -78.77% (p=0.002 n=6)      4.478m ±  3%  -66.64% (p=0.002 n=6)
+PureCompress/case=text/level=12/par=serial-32          334.03m ±  1%      97.75m ±   6%     -70.74% (p=0.002 n=6)     128.06m ±  1%  -61.66% (p=0.002 n=6)
+PureCompress/case=text/level=12/par=parallel-32        29.629m ±  6%      7.957m ±   1%     -73.14% (p=0.002 n=6)      9.288m ±  7%  -68.65% (p=0.002 n=6)
+PureDecompress/case=records/level=1/par=serial-32       6.679µ ±  1%      5.176µ ±   1%     -22.51% (p=0.002 n=6)      3.203µ ±  1%  -52.04% (p=0.002 n=6)
+PureDecompress/case=records/level=1/par=parallel-32     413.9n ±  0%     1238.0n ±  43%    +199.07% (p=0.002 n=6)      220.6n ±  9%  -46.71% (p=0.002 n=6)
+PureDecompress/case=records/level=3/par=serial-32       7.272µ ± 14%      5.350µ ±  12%     -26.44% (p=0.002 n=6)      3.434µ ±  4%  -52.77% (p=0.002 n=6)
+PureDecompress/case=records/level=3/par=parallel-32     435.9n ±  5%     1531.5n ±  19%    +251.38% (p=0.002 n=6)      218.2n ± 12%  -49.94% (p=0.002 n=6)
+PureDecompress/case=records/level=9/par=serial-32       5.831µ ±  5%      4.671µ ±   8%     -19.89% (p=0.002 n=6)      2.930µ ±  8%  -49.75% (p=0.002 n=6)
+PureDecompress/case=records/level=9/par=parallel-32     323.6n ±  3%     1270.0n ±   6%    +292.46% (p=0.002 n=6)      182.8n ±  5%  -43.51% (p=0.002 n=6)
+PureDecompress/case=blob/level=1/par=serial-32          310.1µ ±  7%      254.6µ ±  13%     -17.91% (p=0.002 n=6)      245.8µ ±  6%  -20.73% (p=0.002 n=6)
+PureDecompress/case=blob/level=1/par=parallel-32        17.94µ ±  3%      14.63µ ±   3%     -18.43% (p=0.002 n=6)      14.99µ ±  7%  -16.44% (p=0.002 n=6)
+PureDecompress/case=blob/level=3/par=serial-32          302.4µ ± 12%      247.8µ ±   4%     -18.05% (p=0.002 n=6)      241.4µ ±  4%  -20.16% (p=0.002 n=6)
+PureDecompress/case=blob/level=3/par=parallel-32        16.84µ ±  9%      13.56µ ±   5%     -19.49% (p=0.002 n=6)      14.17µ ± 10%  -15.86% (p=0.002 n=6)
+PureDecompress/case=blob/level=9/par=serial-32          246.3µ ± 12%      202.6µ ±   5%     -17.74% (p=0.002 n=6)      205.9µ ± 10%  -16.37% (p=0.004 n=6)
+PureDecompress/case=blob/level=9/par=parallel-32        13.09µ ±  1%      11.48µ ±   8%     -12.29% (p=0.002 n=6)      12.12µ ±  5%   -7.42% (p=0.002 n=6)
+PureDecompress/case=text/level=1/par=serial-32          5.905m ±  6%      5.109m ±  11%     -13.49% (p=0.009 n=6)      4.949m ±  5%  -16.20% (p=0.002 n=6)
+PureDecompress/case=text/level=1/par=parallel-32        356.1µ ± 13%      311.2µ ±   4%     -12.60% (p=0.002 n=6)      338.1µ ±  2%        ~ (p=0.065 n=6)
+PureDecompress/case=text/level=3/par=serial-32          6.211m ± 17%      4.188m ±   3%     -32.57% (p=0.002 n=6)      4.100m ±  0%  -33.98% (p=0.002 n=6)
+PureDecompress/case=text/level=3/par=parallel-32        379.9µ ±  2%      315.6µ ±   3%     -16.93% (p=0.002 n=6)      334.7µ ±  2%  -11.91% (p=0.002 n=6)
+PureDecompress/case=text/level=9/par=serial-32          4.466m ± 31%      5.009m ±  10%           ~ (p=0.485 n=6)      3.727m ± 23%        ~ (p=0.132 n=6)
+PureDecompress/case=text/level=9/par=parallel-32        297.0µ ± 19%      233.1µ ±   2%     -21.49% (p=0.002 n=6)      250.1µ ±  1%  -15.79% (p=0.002 n=6)
+StreamWrite/level=fastest/conc=1-32                     589.4m ±  1%      513.5m ±   5%     -12.87% (p=0.002 n=6)
+StreamWrite/level=fastest/conc=32-32                    114.7m ± 23%      380.4m ±  13%    +231.58% (p=0.002 n=6)
+StreamWrite/level=default/conc=1-32                     610.5m ±  2%      683.4m ±   0%     +11.95% (p=0.002 n=6)
+StreamWrite/level=default/conc=32-32                    112.5m ±  5%      537.7m ±  12%    +377.93% (p=0.002 n=6)
+StreamWrite/level=best/conc=1-32                         4.065 ±  1%       4.647 ±   5%     +14.31% (p=0.002 n=6)
+StreamWrite/level=best/conc=32-32                       551.2m ±  4%     4567.9m ±   5%    +728.73% (p=0.002 n=6)
+StreamRead/mode=sync-32                                 146.9m ±  2%      127.8m ±   5%     -13.03% (p=0.002 n=6)
+StreamRead/mode=async-32                               170.07m ± 27%      86.02m ±  13%     -49.42% (p=0.002 n=6)
+SeekableRead/frame=256KiB-32                            617.7µ ±  2%
+SeekableRead/frame=1024KiB-32                           1.631m ±  1%                                                                                           45.802m ± 3%  +2708.90% (p=0.002 n=6)
+SeekableRead/frame=16384KiB-32                          20.18m ±  2%
+SeekableSearch/frame=256KiB-32                          11.39m ±  5%
+SeekableSearch/frame=1024KiB-32                         20.06m ±  5%                                                                                            83.19m ± 2%   +314.74% (p=0.002 n=6)
+SeekableSearch/frame=16384KiB-32                        268.0m ±  5%
+LogsStreamDecode/port-32                                                                                                                                                                                 10.36m ± 0%
+LogsStreamDecode/klauspost-32                                                                                                                                                                            7.966m ± 2%
+geomean                                                 824.8µ            799.7µ            +14.58%               ¹    197.1µ        -38.36%               ¹    61.73m        +979.34%               ¹   9.085m       ? ¹ ²
+¹ benchmark set differs from baseline; geomeans may not be comparable
+² ratios must be >0 to compute geomean
+
+                                                    │       port       │                klauspost                 │                  libzstd                   │                     │
+                                                    │       B/s        │       B/s        vs base                 │       B/s         vs base                  │     B/s       vs base   │
+CorpusCompress/file=silesia.tar/tier=fastest-32          136.0Mi ±  3%     135.6Mi ±  4%          ~ (p=0.699 n=6)      208.7Mi ±  5%   +53.45% (p=0.002 n=6)
+CorpusCompress/file=silesia.tar/tier=default-32          68.36Mi ±  1%    100.15Mi ±  2%    +46.50% (p=0.002 n=6)     110.15Mi ±  3%   +61.12% (p=0.002 n=6)
+CorpusCompress/file=silesia.tar/tier=better-32           18.54Mi ±  1%     68.51Mi ±  1%   +269.45% (p=0.002 n=6)      48.14Mi ±  2%  +159.60% (p=0.002 n=6)
+CorpusCompress/file=silesia.tar/tier=best-32             12.73Mi ±  1%     17.67Mi ±  1%    +38.85% (p=0.002 n=6)      32.77Mi ±  2%  +157.51% (p=0.002 n=6)
+CorpusDecode/file=silesia.tar/mode=oneshot-32            373.7Mi ±  2%     463.1Mi ±  0%    +23.93% (p=0.002 n=6)      464.0Mi ±  0%   +24.17% (p=0.002 n=6)
+CorpusDecode/file=silesia.tar/mode=stream-32             363.9Mi ±  1%     485.9Mi ±  6%    +33.52% (p=0.002 n=6)
+CorpusDecode/file=silesia.tar/mode=stream-async-32       366.1Mi ± 16%     632.7Mi ±  7%    +72.83% (p=0.002 n=6)
+DecodeSmall/file=kppkn.gtb/par=serial-32                 322.1Mi ±  4%     382.0Mi ±  2%    +18.60% (p=0.002 n=6)      429.3Mi ±  0%   +33.29% (p=0.002 n=6)
+DecodeSmall/file=kppkn.gtb/par=parallel-32               5.331Gi ±  1%     6.552Gi ±  1%    +22.91% (p=0.002 n=6)      7.039Gi ±  0%   +32.03% (p=0.002 n=6)
+DecodeSmall/file=geo.protodata/par=serial-32             898.3Mi ±  0%     897.3Mi ±  2%          ~ (p=0.065 n=6)     1124.4Mi ±  2%   +25.17% (p=0.002 n=6)
+DecodeSmall/file=geo.protodata/par=parallel-32           14.94Gi ±  1%     15.31Gi ±  0%     +2.47% (p=0.002 n=6)      18.61Gi ±  0%   +24.53% (p=0.002 n=6)
+DecodeSmall/file=plrabn12.txt/par=serial-32              289.7Mi ±  7%     334.8Mi ±  0%    +15.57% (p=0.002 n=6)      371.4Mi ±  0%   +28.23% (p=0.002 n=6)
+DecodeSmall/file=plrabn12.txt/par=parallel-32            4.620Gi ±  1%     5.534Gi ±  1%    +19.79% (p=0.002 n=6)      5.702Gi ±  1%   +23.42% (p=0.002 n=6)
+DecodeSmall/file=lcet10.txt/par=serial-32                346.7Mi ±  2%     411.9Mi ±  0%    +18.78% (p=0.002 n=6)      436.9Mi ±  1%   +26.01% (p=0.002 n=6)
+DecodeSmall/file=lcet10.txt/par=parallel-32              5.671Gi ±  1%     6.825Gi ±  1%    +20.35% (p=0.002 n=6)      6.789Gi ±  0%   +19.71% (p=0.002 n=6)
+DecodeSmall/file=asyoulik.txt/par=serial-32              319.9Mi ±  0%     261.4Mi ±  3%    -18.29% (p=0.002 n=6)      412.8Mi ±  0%   +29.03% (p=0.002 n=6)
+DecodeSmall/file=asyoulik.txt/par=parallel-32            5.367Gi ±  0%     4.775Gi ±  1%    -11.03% (p=0.002 n=6)      6.486Gi ±  0%   +20.85% (p=0.002 n=6)
+DecodeSmall/file=alice29.txt/par=serial-32               284.8Mi ±  0%     334.3Mi ±  3%    +17.38% (p=0.002 n=6)      362.3Mi ±  1%   +27.20% (p=0.002 n=6)
+DecodeSmall/file=alice29.txt/par=parallel-32             4.724Gi ±  1%     5.588Gi ±  0%    +18.30% (p=0.002 n=6)      5.647Gi ±  0%   +19.55% (p=0.002 n=6)
+DecodeSmall/file=html_x_4/par=serial-32                  1.619Gi ±  4%     2.273Gi ±  2%    +40.41% (p=0.002 n=6)      2.271Gi ±  5%   +40.25% (p=0.002 n=6)
+DecodeSmall/file=html_x_4/par=parallel-32                28.74Gi ±  1%     41.31Gi ±  2%    +43.74% (p=0.002 n=6)      39.17Gi ±  0%   +36.30% (p=0.002 n=6)
+DecodeSmall/file=paper-100k.pdf/par=serial-32            2.659Gi ±  0%     3.084Gi ±  0%    +15.98% (p=0.002 n=6)      3.041Gi ±  0%   +14.37% (p=0.002 n=6)
+DecodeSmall/file=paper-100k.pdf/par=parallel-32          44.41Gi ±  0%     47.67Gi ±  5%     +7.34% (p=0.002 n=6)      51.35Gi ±  0%   +15.62% (p=0.002 n=6)
+DecodeSmall/file=fireworks.jpeg/par=serial-32            5.491Gi ±  0%     5.328Gi ±  1%     -2.97% (p=0.002 n=6)      5.218Gi ±  0%    -4.97% (p=0.002 n=6)
+DecodeSmall/file=fireworks.jpeg/par=parallel-32          89.72Gi ±  0%     69.95Gi ±  2%    -22.04% (p=0.002 n=6)      82.78Gi ±  0%    -7.74% (p=0.002 n=6)
+DecodeSmall/file=urls.10K/par=serial-32                  483.3Mi ±  0%     602.3Mi ±  0%    +24.61% (p=0.002 n=6)      627.5Mi ±  0%   +29.83% (p=0.002 n=6)
+DecodeSmall/file=urls.10K/par=parallel-32                8.383Gi ±  0%    10.517Gi ±  1%    +25.46% (p=0.002 n=6)     10.350Gi ±  1%   +23.46% (p=0.002 n=6)
+DecodeSmall/file=html/par=serial-32                      591.8Mi ±  0%     693.1Mi ±  0%    +17.12% (p=0.002 n=6)      909.8Mi ±  5%   +53.74% (p=0.002 n=6)
+DecodeSmall/file=html/par=parallel-32                    10.03Gi ±  1%     11.96Gi ±  2%    +19.24% (p=0.002 n=6)      14.94Gi ±  1%   +49.04% (p=0.002 n=6)
+DecodeSmall/file=comp-data.bin/par=serial-32             326.4Mi ±  3%     336.2Mi ±  0%     +3.01% (p=0.002 n=6)      430.0Mi ±  2%   +31.76% (p=0.002 n=6)
+DecodeSmall/file=comp-data.bin/par=parallel-32           5.484Gi ±  1%     2.789Gi ±  3%    -49.15% (p=0.002 n=6)      7.238Gi ±  1%   +31.97% (p=0.002 n=6)
+PureCompress/case=records/level=1/par=serial-32          65.81Mi ±  0%     19.90Mi ±  2%    -69.76% (p=0.002 n=6)     116.97Mi ±  6%   +77.75% (p=0.002 n=6)
+PureCompress/case=records/level=1/par=parallel-32        964.7Mi ±  1%     278.5Mi ±  9%    -71.13% (p=0.002 n=6)     2099.8Mi ±  1%  +117.68% (p=0.002 n=6)
+PureCompress/case=records/level=3/par=serial-32         65.432Mi ±  2%     3.657Mi ± 32%    -94.41% (p=0.002 n=6)    102.892Mi ±  7%   +57.25% (p=0.002 n=6)
+PureCompress/case=records/level=3/par=parallel-32       901.09Mi ±  3%     28.91Mi ± 13%    -96.79% (p=0.002 n=6)    1610.56Mi ±  3%   +78.73% (p=0.002 n=6)
+PureCompress/case=records/level=6/par=serial-32          8.550Mi ±  4%     2.184Mi ±  8%    -74.46% (p=0.002 n=6)     17.743Mi ±  1%  +107.53% (p=0.002 n=6)
+PureCompress/case=records/level=6/par=parallel-32       166.32Mi ±  2%     11.97Mi ±  1%    -92.80% (p=0.002 n=6)     347.50Mi ±  2%  +108.93% (p=0.002 n=6)
+PureCompress/case=records/level=9/par=serial-32          4.368Mi ±  1%     2.332Mi ± 17%    -46.62% (p=0.002 n=6)      9.274Mi ±  1%  +112.34% (p=0.002 n=6)
+PureCompress/case=records/level=9/par=parallel-32        86.06Mi ±  1%     11.78Mi ±  2%    -86.32% (p=0.002 n=6)     185.80Mi ±  2%  +115.89% (p=0.002 n=6)
+PureCompress/case=records/level=12/par=serial-32       7534.18Ki ±  3%     53.71Ki ± 45%    -99.29% (p=0.002 n=6)   14233.40Ki ±  8%   +88.92% (p=0.002 n=6)
+PureCompress/case=records/level=12/par=parallel-32    181010.7Ki ±  1%     224.6Ki ± 13%    -99.88% (p=0.002 n=6)   204819.3Ki ± 25%         ~ (p=0.394 n=6)
+PureCompress/case=records/level=19/par=serial-32       1577.15Ki ±  3%     73.24Ki ± 20%    -95.36% (p=0.002 n=6)    2500.00Ki ±  6%   +58.51% (p=0.002 n=6)
+PureCompress/case=records/level=19/par=parallel-32     26606.4Ki ±  5%     229.5Ki ± 53%    -99.14% (p=0.002 n=6)    43081.1Ki ± 12%   +61.92% (p=0.002 n=6)
+PureCompress/case=blob/level=1/par=serial-32            104.29Mi ±  0%     79.44Mi ± 19%    -23.83% (p=0.002 n=6)     179.38Mi ± 16%   +71.99% (p=0.002 n=6)
+PureCompress/case=blob/level=1/par=parallel-32           1.650Gi ±  0%     2.002Gi ±  1%    +21.38% (p=0.002 n=6)      3.120Gi ±  1%   +89.14% (p=0.002 n=6)
+PureCompress/case=blob/level=3/par=serial-32             75.66Mi ±  0%     60.67Mi ± 19%    -19.81% (p=0.002 n=6)     141.84Mi ±  2%   +87.46% (p=0.002 n=6)
+PureCompress/case=blob/level=3/par=parallel-32           1.223Gi ±  0%     1.576Gi ±  0%    +28.89% (p=0.002 n=6)      2.705Gi ±  0%  +121.16% (p=0.002 n=6)
+PureCompress/case=blob/level=6/par=serial-32             16.98Mi ±  0%     38.60Mi ±  8%   +127.36% (p=0.002 n=6)      43.08Mi ±  3%  +153.79% (p=0.002 n=6)
+PureCompress/case=blob/level=6/par=parallel-32           252.8Mi ±  2%     952.1Mi ±  2%   +276.64% (p=0.002 n=6)      772.5Mi ±  2%  +205.62% (p=0.002 n=6)
+PureCompress/case=blob/level=9/par=serial-32             9.413Mi ±  0%    39.754Mi ±  8%   +322.34% (p=0.002 n=6)     23.909Mi ±  0%  +154.00% (p=0.002 n=6)
+PureCompress/case=blob/level=9/par=parallel-32           148.6Mi ±  0%     950.9Mi ±  2%   +539.74% (p=0.002 n=6)      430.6Mi ±  2%  +189.68% (p=0.002 n=6)
+PureCompress/case=blob/level=12/par=serial-32            6.289Mi ±  0%    17.228Mi ±  9%   +173.92% (p=0.002 n=6)      9.627Mi ±  5%   +53.07% (p=0.002 n=6)
+PureCompress/case=blob/level=12/par=parallel-32          114.0Mi ±  1%     342.9Mi ±  1%   +200.67% (p=0.002 n=6)      193.4Mi ±  4%   +69.60% (p=0.002 n=6)
+PureCompress/case=blob/level=19/par=serial-32            820.3Ki ±  0%   16821.3Ki ± 20%  +1950.60% (p=0.002 n=6)     1474.6Ki ±  2%   +79.76% (p=0.002 n=6)
+PureCompress/case=blob/level=19/par=parallel-32          12.25Mi ±  5%    340.09Mi ±  1%  +2675.21% (p=0.002 n=6)      25.46Mi ±  1%  +107.78% (p=0.002 n=6)
+PureCompress/case=text/level=1/par=serial-32             113.0Mi ±  0%     109.1Mi ±  1%     -3.41% (p=0.002 n=6)      177.1Mi ±  0%   +56.75% (p=0.002 n=6)
+PureCompress/case=text/level=1/par=parallel-32           1.839Gi ±  0%     2.041Gi ±  1%    +10.98% (p=0.002 n=6)      3.265Gi ±  1%   +77.51% (p=0.002 n=6)
+PureCompress/case=text/level=3/par=serial-32             79.86Mi ±  0%     81.49Mi ±  9%          ~ (p=1.000 n=6)     139.33Mi ±  0%   +74.48% (p=0.002 n=6)
+PureCompress/case=text/level=3/par=parallel-32           1.290Gi ±  1%     1.292Gi ±  1%          ~ (p=0.818 n=6)      2.683Gi ±  1%  +107.98% (p=0.002 n=6)
+PureCompress/case=text/level=6/par=serial-32             17.05Mi ±  0%     66.62Mi ±  1%   +290.83% (p=0.002 n=6)      43.50Mi ±  0%  +155.16% (p=0.002 n=6)
+PureCompress/case=text/level=6/par=parallel-32           229.9Mi ±  4%     833.0Mi ±  1%   +262.28% (p=0.002 n=6)      700.9Mi ±  3%  +204.83% (p=0.002 n=6)
+PureCompress/case=text/level=9/par=serial-32             11.36Mi ±  0%     66.62Mi ±  5%   +486.32% (p=0.002 n=6)      29.24Mi ±  0%  +157.32% (p=0.002 n=6)
+PureCompress/case=text/level=9/par=parallel-32           149.0Mi ±  4%     701.7Mi ±  2%   +371.01% (p=0.002 n=6)      446.6Mi ±  3%  +199.77% (p=0.002 n=6)
+PureCompress/case=text/level=12/par=serial-32            5.989Mi ±  1%    20.461Mi ±  7%   +241.64% (p=0.002 n=6)     15.616Mi ±  1%  +160.75% (p=0.002 n=6)
+PureCompress/case=text/level=12/par=parallel-32          67.52Mi ±  6%    251.35Mi ±  1%   +272.28% (p=0.002 n=6)     215.35Mi ±  6%  +218.96% (p=0.002 n=6)
+PureDecompress/case=records/level=1/par=serial-32        140.7Mi ±  1%     181.5Mi ±  1%    +29.04% (p=0.002 n=6)      293.3Mi ±  1%  +108.52% (p=0.002 n=6)
+PureDecompress/case=records/level=1/par=parallel-32     2269.3Mi ±  0%     759.1Mi ± 30%    -66.55% (p=0.002 n=6)     4258.8Mi ± 10%   +87.67% (p=0.002 n=6)
+PureDecompress/case=records/level=3/par=serial-32        129.2Mi ± 12%     175.6Mi ± 14%    +35.94% (p=0.002 n=6)      273.5Mi ±  4%  +111.74% (p=0.002 n=6)
+PureDecompress/case=records/level=3/par=parallel-32     2155.4Mi ±  5%     613.5Mi ± 24%    -71.54% (p=0.002 n=6)     4305.0Mi ± 14%   +99.73% (p=0.002 n=6)
+PureDecompress/case=records/level=9/par=serial-32        161.1Mi ±  5%     201.1Mi ±  7%    +24.83% (p=0.002 n=6)      320.6Mi ±  9%   +98.98% (p=0.002 n=6)
+PureDecompress/case=records/level=9/par=parallel-32     2903.3Mi ±  3%     739.8Mi ±  6%    -74.52% (p=0.002 n=6)     5137.9Mi ±  5%   +76.97% (p=0.002 n=6)
+PureDecompress/case=blob/level=1/par=serial-32           315.0Mi ±  6%     383.6Mi ± 11%    +21.78% (p=0.002 n=6)      397.3Mi ±  6%   +26.12% (p=0.002 n=6)
+PureDecompress/case=blob/level=1/par=parallel-32         5.316Gi ±  3%     6.517Gi ±  3%    +22.59% (p=0.002 n=6)      6.363Gi ±  8%   +19.68% (p=0.002 n=6)
+PureDecompress/case=blob/level=3/par=serial-32           323.0Mi ± 11%     394.1Mi ±  4%    +22.01% (p=0.002 n=6)      404.5Mi ±  4%   +25.24% (p=0.002 n=6)
+PureDecompress/case=blob/level=3/par=parallel-32         5.664Gi ± 10%     7.037Gi ±  5%    +24.23% (p=0.002 n=6)      6.734Gi ± 11%   +18.89% (p=0.002 n=6)
+PureDecompress/case=blob/level=9/par=serial-32           396.6Mi ± 14%     482.1Mi ±  5%    +21.57% (p=0.002 n=6)      474.2Mi ± 11%   +19.58% (p=0.004 n=6)
+PureDecompress/case=blob/level=9/par=parallel-32         7.285Gi ±  1%     8.306Gi ±  9%    +14.02% (p=0.002 n=6)      7.869Gi ±  4%    +8.02% (p=0.002 n=6)
+PureDecompress/case=text/level=1/par=serial-32           338.8Mi ±  6%     391.5Mi ± 10%    +15.55% (p=0.009 n=6)      404.1Mi ±  5%   +19.29% (p=0.002 n=6)
+PureDecompress/case=text/level=1/par=parallel-32         5.485Gi ± 11%     6.276Gi ±  3%    +14.41% (p=0.002 n=6)      5.776Gi ±  2%         ~ (p=0.065 n=6)
+PureDecompress/case=text/level=3/par=serial-32           322.0Mi ± 21%     477.6Mi ±  3%    +48.30% (p=0.002 n=6)      487.8Mi ±  0%   +51.47% (p=0.002 n=6)
+PureDecompress/case=text/level=3/par=parallel-32         5.141Gi ±  2%     6.189Gi ±  3%    +20.38% (p=0.002 n=6)      5.836Gi ±  2%   +13.52% (p=0.002 n=6)
+PureDecompress/case=text/level=9/par=serial-32           450.8Mi ± 24%     399.3Mi ± 12%          ~ (p=0.485 n=6)      539.8Mi ± 19%         ~ (p=0.132 n=6)
+PureDecompress/case=text/level=9/par=parallel-32         6.598Gi ± 17%     8.377Gi ±  2%    +26.96% (p=0.002 n=6)      7.809Gi ±  1%   +18.35% (p=0.002 n=6)
+StreamWrite/level=fastest/conc=1-32                      108.6Mi ±  1%     124.6Mi ±  4%    +14.77% (p=0.002 n=6)
+StreamWrite/level=fastest/conc=32-32                     558.8Mi ± 29%     168.2Mi ± 11%    -69.90% (p=0.002 n=6)
+StreamWrite/level=default/conc=1-32                     104.84Mi ±  2%     93.65Mi ±  0%    -10.67% (p=0.002 n=6)
+StreamWrite/level=default/conc=32-32                     568.9Mi ±  5%     119.1Mi ± 11%    -79.07% (p=0.002 n=6)
+StreamWrite/level=best/conc=1-32                         15.75Mi ±  1%     13.78Mi ±  5%    -12.51% (p=0.002 n=6)
+StreamWrite/level=best/conc=32-32                       116.11Mi ±  3%     14.01Mi ±  5%    -87.93% (p=0.002 n=6)
+StreamRead/mode=sync-32                                  435.7Mi ±  2%     501.3Mi ±  5%    +15.05% (p=0.002 n=6)
+StreamRead/mode=async-32                                 376.4Mi ± 37%     744.0Mi ± 15%    +97.69% (p=0.002 n=6)
+LogsStreamDecode/port-32                                                                                                                                         616.6Mi ± 0%
+LogsStreamDecode/klauspost-32                                                                                                                                    801.9Mi ± 2%
+geomean                                                  334.1Mi           291.5Mi          -12.77%                    575.0Mi         +62.22%               ¹   703.2Mi       ? ¹ ²
+¹ benchmark set differs from baseline; geomeans may not be comparable
+² ratios must be >0 to compute geomean
+
+                                                   │    port     │             klauspost              │               libzstd               │
+                                                   │    ratio    │    ratio     vs base               │    ratio     vs base                │
+CorpusCompress/file=silesia.tar/tier=fastest-32      345.5m ± 0%   347.8m ± 0%   +0.67% (p=0.002 n=6)   345.5m ± 0%       ~ (p=1.000 n=6) ¹
+CorpusCompress/file=silesia.tar/tier=default-32      312.0m ± 0%   318.3m ± 0%   +2.02% (p=0.002 n=6)   312.0m ± 0%       ~ (p=1.000 n=6) ¹
+CorpusCompress/file=silesia.tar/tier=better-32       288.9m ± 0%   303.9m ± 0%   +5.19% (p=0.002 n=6)   288.9m ± 0%       ~ (p=1.000 n=6) ¹
+CorpusCompress/file=silesia.tar/tier=best-32         278.7m ± 0%   280.2m ± 0%   +0.54% (p=0.002 n=6)   278.7m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=records/level=1/par=serial-32      313.3m ± 0%   315.9m ± 0%   +0.83% (p=0.002 n=6)   313.3m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=records/level=1/par=parallel-32    313.3m ± 0%   315.9m ± 0%   +0.83% (p=0.002 n=6)   313.3m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=records/level=3/par=serial-32      274.9m ± 0%   303.0m ± 0%  +10.22% (p=0.002 n=6)   274.9m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=records/level=3/par=parallel-32    274.9m ± 0%   303.0m ± 0%  +10.24% (p=0.002 n=6)   274.9m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=records/level=6/par=serial-32      281.4m ± 0%   274.9m ± 0%   -2.31% (p=0.002 n=6)   281.4m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=records/level=6/par=parallel-32    281.4m ± 0%   275.0m ± 0%   -2.27% (p=0.002 n=6)   281.4m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=records/level=9/par=serial-32      256.3m ± 0%   274.9m ± 0%   +7.26% (p=0.002 n=6)   256.3m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=records/level=9/par=parallel-32    256.3m ± 0%   275.0m ± 0%   +7.28% (p=0.002 n=6)   256.3m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=records/level=12/par=serial-32     243.0m ± 0%   266.4m ± 0%   +9.63% (p=0.002 n=6)   243.0m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=records/level=12/par=parallel-32   243.0m ± 0%   266.4m ± 0%   +9.63% (p=0.002 n=6)   243.0m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=records/level=19/par=serial-32     234.5m ± 0%   266.4m ± 0%  +13.60% (p=0.002 n=6)   234.5m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=records/level=19/par=parallel-32   234.5m ± 0%   266.1m ± 0%  +13.50% (p=0.002 n=6)   234.5m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=blob/level=1/par=serial-32         266.5m ± 0%   272.0m ± 0%   +2.06% (p=0.002 n=6)   266.5m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=blob/level=1/par=parallel-32       266.5m ± 0%   272.0m ± 0%   +2.06% (p=0.002 n=6)   266.5m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=blob/level=3/par=serial-32         253.1m ± 0%   255.1m ± 0%   +0.79% (p=0.002 n=6)   253.1m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=blob/level=3/par=parallel-32       253.1m ± 0%   255.1m ± 0%   +0.79% (p=0.002 n=6)   253.1m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=blob/level=6/par=serial-32         248.7m ± 0%   239.0m ± 0%   -3.90% (p=0.002 n=6)   248.7m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=blob/level=6/par=parallel-32       248.7m ± 0%   239.0m ± 0%   -3.90% (p=0.002 n=6)   248.7m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=blob/level=9/par=serial-32         224.3m ± 0%   239.0m ± 0%   +6.55% (p=0.002 n=6)   224.3m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=blob/level=9/par=parallel-32       224.3m ± 0%   239.0m ± 0%   +6.55% (p=0.002 n=6)   224.3m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=blob/level=12/par=serial-32        215.1m ± 0%   227.5m ± 0%   +5.76% (p=0.002 n=6)   215.1m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=blob/level=12/par=parallel-32      215.1m ± 0%   227.5m ± 0%   +5.76% (p=0.002 n=6)   215.1m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=blob/level=19/par=serial-32        201.6m ± 0%   227.5m ± 0%  +12.85% (p=0.002 n=6)   201.6m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=blob/level=19/par=parallel-32      201.6m ± 0%   227.5m ± 0%  +12.85% (p=0.002 n=6)   201.6m ± 0%       ~ (p=1.000 n=6)
+PureCompress/case=text/level=1/par=serial-32         256.4m ± 0%   266.0m ± 0%   +3.74% (p=0.002 n=6)   256.4m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=text/level=1/par=parallel-32       256.4m ± 0%   266.0m ± 0%   +3.74% (p=0.002 n=6)   256.4m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=text/level=3/par=serial-32         240.8m ± 0%   242.4m ± 0%   +0.66% (p=0.002 n=6)   240.8m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=text/level=3/par=parallel-32       240.8m ± 0%   242.4m ± 0%   +0.66% (p=0.002 n=6)   240.8m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=text/level=6/par=serial-32         233.0m ± 0%   224.7m ± 0%   -3.56% (p=0.002 n=6)   233.0m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=text/level=6/par=parallel-32       233.0m ± 0%   224.7m ± 0%   -3.56% (p=0.002 n=6)   233.0m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=text/level=9/par=serial-32         212.3m ± 0%   224.7m ± 0%   +5.84% (p=0.002 n=6)   212.3m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=text/level=9/par=parallel-32       212.3m ± 0%   224.7m ± 0%   +5.84% (p=0.002 n=6)   212.3m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=text/level=12/par=serial-32        195.2m ± 0%   208.7m ± 0%   +6.92% (p=0.002 n=6)   195.2m ± 0%       ~ (p=1.000 n=6) ¹
+PureCompress/case=text/level=12/par=parallel-32      195.2m ± 0%   208.7m ± 0%   +6.92% (p=0.002 n=6)   195.2m ± 0%       ~ (p=1.000 n=6) ¹
+StreamWrite/level=fastest/conc=1-32                  275.7m ± 0%   276.3m ± 0%   +0.22% (p=0.002 n=6)
+StreamWrite/level=fastest/conc=32-32                 275.7m ± 0%   276.3m ± 0%   +0.22% (p=0.002 n=6)
+StreamWrite/level=default/conc=1-32                  276.1m ± 0%   278.4m ± 0%   +0.83% (p=0.002 n=6)
+StreamWrite/level=default/conc=32-32                 276.1m ± 0%   278.4m ± 0%   +0.83% (p=0.002 n=6)
+StreamWrite/level=best/conc=1-32                     254.5m ± 0%   256.6m ± 0%   +0.83% (p=0.002 n=6)
+StreamWrite/level=best/conc=32-32                    254.5m ± 0%   256.6m ± 0%   +0.83% (p=0.002 n=6)
+geomean                                              251.0m        260.2m        +3.66%                 248.3m       +0.00%               ²
+¹ all samples are equal
+² benchmark set differs from baseline; geomeans may not be comparable
+
+                                                    │         port         │                     klauspost                      │                     libzstd                     │            klauspost-scan             │                     │
+                                                    │         B/op         │       B/op         vs base                         │       B/op        vs base                       │     B/op      vs base                 │     B/op      vs base   │
+CorpusCompress/file=silesia.tar/tier=fastest-32          4.674Mi ±    0%        9.317Mi ±   0%        +99.32% (p=0.002 n=6)       101.961Mi ± 100%  +2081.24% (p=0.002 n=6)
+CorpusCompress/file=silesia.tar/tier=default-32          4.687Mi ±    0%       19.292Mi ±   0%       +311.64% (p=0.002 n=6)       203.922Mi ±   0%  +4251.11% (p=0.002 n=6)
+CorpusCompress/file=silesia.tar/tier=better-32           6.423Mi ±    0%       22.036Mi ±   0%       +243.07% (p=0.002 n=6)       203.922Mi ±   0%  +3074.82% (p=0.002 n=6)
+CorpusCompress/file=silesia.tar/tier=best-32             14.22Mi ±    0%        52.57Mi ±   0%       +269.73% (p=0.002 n=6)        203.92Mi ±   0%  +1334.31% (p=0.002 n=6)
+CorpusDecode/file=silesia.tar/mode=oneshot-32           102.25Mi ±    0%        68.16Mi ±   0%        -33.34% (p=0.002 n=6)         67.38Mi ±   0%    -34.11% (p=0.002 n=6)
+CorpusDecode/file=silesia.tar/mode=stream-32             4.894Mi ±    0%        7.497Mi ±   0%        +53.20% (p=0.002 n=6)
+CorpusDecode/file=silesia.tar/mode=stream-async-32       4.979Mi ±    0%       23.475Mi ±   0%       +371.51% (p=0.002 n=6)
+DecodeSmall/file=kppkn.gtb/par=serial-32                   0.000 ±    0%          0.000 ±    ?              ~ (p=1.000 n=6)           0.000 ±   0%          ~ (p=1.000 n=6) ¹
+DecodeSmall/file=kppkn.gtb/par=parallel-32                 0.000 ±     ?          0.000 ±   0%              ~ (p=1.000 n=6)           0.000 ±   0%          ~ (p=1.000 n=6)
+DecodeSmall/file=geo.protodata/par=serial-32               0.000 ±    0%          0.000 ±   0%              ~ (p=1.000 n=6) ¹         0.000 ±   0%          ~ (p=1.000 n=6) ¹
+DecodeSmall/file=geo.protodata/par=parallel-32             0.000 ±     ?          0.000 ±   0%              ~ (p=1.000 n=6)           0.000 ±   0%          ~ (p=1.000 n=6)
+DecodeSmall/file=plrabn12.txt/par=serial-32                0.000 ±    0%          0.000 ±   0%              ~ (p=1.000 n=6) ¹         0.000 ±   0%          ~ (p=1.000 n=6) ¹
+DecodeSmall/file=plrabn12.txt/par=parallel-32              4.500 ±     ?          0.000 ±   0%              ~ (p=0.182 n=6)           0.000 ±   0%          ~ (p=0.182 n=6)
+DecodeSmall/file=lcet10.txt/par=serial-32                  0.000 ±    0%          0.000 ±    ?              ~ (p=1.000 n=6)           0.000 ±   0%          ~ (p=1.000 n=6) ¹
+DecodeSmall/file=lcet10.txt/par=parallel-32                3.000 ±     ?          0.000 ±   0%              ~ (p=0.182 n=6)           0.000 ±   0%          ~ (p=0.182 n=6)
+DecodeSmall/file=asyoulik.txt/par=serial-32                0.000 ±    0%          0.000 ±   0%              ~ (p=1.000 n=6) ¹         0.000 ±   0%          ~ (p=1.000 n=6) ¹
+DecodeSmall/file=asyoulik.txt/par=parallel-32              2.000 ±   50%          0.000 ±   0%       -100.00% (p=0.002 n=6)           0.000 ±   0%   -100.00% (p=0.002 n=6)
+DecodeSmall/file=alice29.txt/par=serial-32                  0.00 ±    0%          66.50 ±  37%              ? (p=0.002 n=6)            0.00 ±   0%          ~ (p=1.000 n=6) ¹
+DecodeSmall/file=alice29.txt/par=parallel-32               0.000 ±     ?          9.000 ±  33%              ? (p=0.002 n=6)           0.000 ±   0%          ~ (p=0.455 n=6)
+DecodeSmall/file=html_x_4/par=serial-32                    0.000 ±    0%          0.000 ±    ?              ~ (p=1.000 n=6)           0.000 ±   0%          ~ (p=1.000 n=6) ¹
+DecodeSmall/file=html_x_4/par=parallel-32                  0.000 ±     ?          0.000 ±   0%              ~ (p=1.000 n=6)           0.000 ±   0%          ~ (p=1.000 n=6)
+DecodeSmall/file=paper-100k.pdf/par=serial-32              0.000 ±    0%          0.000 ±   0%              ~ (p=1.000 n=6) ¹         0.000 ±   0%          ~ (p=1.000 n=6) ¹
+DecodeSmall/file=paper-100k.pdf/par=parallel-32            0.000 ±    0%          0.000 ±   0%              ~ (p=1.000 n=6) ¹         0.000 ±   0%          ~ (p=1.000 n=6) ¹
+DecodeSmall/file=fireworks.jpeg/par=serial-32              0.000 ±    0%          0.000 ±   0%              ~ (p=1.000 n=6) ¹         0.000 ±   0%          ~ (p=1.000 n=6) ¹
+DecodeSmall/file=fireworks.jpeg/par=parallel-32            0.000 ±    0%          0.000 ±   0%              ~ (p=1.000 n=6) ¹         0.000 ±   0%          ~ (p=1.000 n=6) ¹
+DecodeSmall/file=urls.10K/par=serial-32                    0.000 ±    0%          0.000 ±   0%              ~ (p=1.000 n=6) ¹         0.000 ±   0%          ~ (p=1.000 n=6) ¹
+DecodeSmall/file=urls.10K/par=parallel-32                  3.500 ±     ?          0.000 ±   0%              ~ (p=0.182 n=6)           0.000 ±   0%          ~ (p=0.182 n=6)
+DecodeSmall/file=html/par=serial-32                        0.000 ±    0%          0.000 ±    ?              ~ (p=1.000 n=6)           0.000 ±   0%          ~ (p=1.000 n=6) ¹
+DecodeSmall/file=html/par=parallel-32                      0.000 ±    0%          0.000 ±   0%              ~ (p=1.000 n=6) ¹         0.000 ±   0%          ~ (p=1.000 n=6) ¹
+DecodeSmall/file=comp-data.bin/par=serial-32               0.000 ±    0%          0.000 ±   0%              ~ (p=1.000 n=6) ¹         0.000 ±   0%          ~ (p=1.000 n=6) ¹
+DecodeSmall/file=comp-data.bin/par=parallel-32             0.000 ±    0%          0.000 ±   0%              ~ (p=1.000 n=6) ¹         0.000 ±   0%          ~ (p=1.000 n=6) ¹
+PureCompress/case=records/level=1/par=serial-32            112.0 ±    0%         5451.0 ±   2%      +4766.96% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=1/par=parallel-32          112.0 ±    0%            0.0 ±   0%       -100.00% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=3/par=serial-32            112.0 ±    0%        58994.0 ±  20%     +52573.21% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=3/par=parallel-32          112.0 ±    0%            0.0 ±   0%       -100.00% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=6/par=serial-32            115.0 ±    0%       142056.5 ±   7%    +123427.39% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=6/par=parallel-32        116.000 ±    1%          1.000 ±   0%        -99.14% (p=0.002 n=6)           0.000 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=9/par=serial-32            115.5 ±    0%       110672.0 ±  39%     +95719.91% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=9/par=parallel-32        116.000 ±    0%          1.000 ±   0%        -99.14% (p=0.002 n=6)           0.000 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=12/par=serial-32           113.5 ±    0%     16761552.5 ±  73%  +14767787.67% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=12/par=parallel-32        113.00 ±    0%          62.00 ±   6%        -45.13% (p=0.002 n=6)            0.00 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=19/par=serial-32           280.0 ±    1%     15016232.0 ±  25%   +5362840.00% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=19/par=parallel-32        287.00 ±    0%          57.00 ±  30%        -80.14% (p=0.002 n=6)            0.00 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=1/par=serial-32               123.0 ±    2%       221559.5 ±  36%    +180029.67% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=1/par=parallel-32             133.0 ±    0%            0.0 ±   0%       -100.00% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=3/par=serial-32               112.0 ±    8%        31827.0 ±  16%     +28316.96% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=3/par=parallel-32             112.0 ±    0%            0.0 ±   0%       -100.00% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=6/par=serial-32               112.0 ±   36%      1007931.5 ±  30%    +899838.84% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=6/par=parallel-32          112.0000 ±    0%         0.5000 ±    ?        -99.55% (p=0.002 n=6)          0.0000 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=9/par=serial-32               133.5 ±   16%      1031039.0 ±  13%    +772213.86% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=9/par=parallel-32             113.0 ±    0%            0.0 ±    ?       -100.00% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=12/par=serial-32              112.0 ±   96%      2666239.5 ±  17%   +2380470.98% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=12/par=parallel-32          113.000 ±    0%          6.000 ±  33%        -94.69% (p=0.002 n=6)           1.000 ±   0%    -99.12% (p=0.002 n=6)
+PureCompress/case=blob/level=19/par=serial-32            644.9Ki ±    0%       2784.1Ki ±   5%       +331.75% (p=0.002 n=6)           0.0Ki ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=19/par=parallel-32       660613.000 ±    0%         14.000 ±  21%       -100.00% (p=0.002 n=6)           8.000 ±  12%   -100.00% (p=0.002 n=6)
+PureCompress/case=text/level=1/par=serial-32               112.0 ±    0%      5014639.0 ±  13%   +4477256.25% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=text/level=1/par=parallel-32           114.000 ±    4%          2.000 ±   0%        -98.25% (p=0.002 n=6)           1.000 ±   0%    -99.12% (p=0.002 n=6)
+PureCompress/case=text/level=3/par=serial-32               112.0 ±    0%     10731109.5 ±  14%   +9581247.77% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=text/level=3/par=parallel-32           115.000 ±    0%          3.000 ±   0%        -97.39% (p=0.002 n=6)           1.000 ±   0%    -99.13% (p=0.002 n=6)
+PureCompress/case=text/level=6/par=serial-32               112.0 ±  417%     14936852.0 ±   5%  +13336375.00% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=text/level=6/par=parallel-32           131.000 ±    1%          5.000 ±  20%        -96.18% (p=0.002 n=6)           6.000 ±   0%    -95.42% (p=0.002 n=6)
+PureCompress/case=text/level=9/par=serial-32               112.0 ± 1252%     15351764.0 ±   8%  +13706832.14% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=text/level=9/par=parallel-32           143.500 ±    2%          6.500 ±   8%        -95.47% (p=0.002 n=6)          10.000 ±   0%    -93.03% (p=0.002 n=6)
+PureCompress/case=text/level=12/par=serial-32              813.0 ±  259%     17614096.0 ±   0%   +2166455.47% (p=0.002 n=6)             0.0 ±   0%   -100.00% (p=0.002 n=6)
+PureCompress/case=text/level=12/par=parallel-32           184.00 ±    4%          18.00 ±   6%        -90.22% (p=0.002 n=6)           22.00 ±  14%    -88.04% (p=0.002 n=6)
+PureDecompress/case=records/level=1/par=serial-32          0.000 ±    0%          0.000 ±   0%              ~ (p=1.000 n=6) ¹         0.000 ±   0%          ~ (p=1.000 n=6) ¹
+PureDecompress/case=records/level=1/par=parallel-32        0.000 ±    0%          0.000 ±   0%              ~ (p=1.000 n=6) ¹         0.000 ±   0%          ~ (p=1.000 n=6) ¹
+PureDecompress/case=records/level=3/par=serial-32          0.000 ±    0%          0.000 ±   0%              ~ (p=1.000 n=6) ¹         0.000 ±   0%          ~ (p=1.000 n=6) ¹
+PureDecompress/case=records/level=3/par=parallel-32        0.000 ±    0%          0.000 ±   0%              ~ (p=1.000 n=6) ¹         0.000 ±   0%          ~ (p=1.000 n=6) ¹
+PureDecompress/case=records/level=9/par=serial-32          0.000 ±    0%          0.000 ±   0%              ~ (p=1.000 n=6) ¹         0.000 ±   0%          ~ (p=1.000 n=6) ¹
+PureDecompress/case=records/level=9/par=parallel-32        0.000 ±    0%          0.000 ±   0%              ~ (p=1.000 n=6) ¹         0.000 ±   0%          ~ (p=1.000 n=6) ¹
+PureDecompress/case=blob/level=1/par=serial-32             2.000 ±    0%        956.000 ±  14%     +47700.00% (p=0.002 n=6)           0.000 ±   0%   -100.00% (p=0.002 n=6)
+PureDecompress/case=blob/level=1/par=parallel-32          45.500 ±   14%          4.000 ±  25%        -91.21% (p=0.002 n=6)           0.000 ±   0%   -100.00% (p=0.002 n=6)
+PureDecompress/case=blob/level=3/par=serial-32               0.0 ±    0%          768.5 ±   9%              ? (p=0.002 n=6)             0.0 ±   0%          ~ (p=1.000 n=6) ¹
+PureDecompress/case=blob/level=3/par=parallel-32           33.50 ±   13%           0.00 ±    ?       -100.00% (p=0.002 n=6)            0.00 ±   0%   -100.00% (p=0.002 n=6)
+PureDecompress/case=blob/level=9/par=serial-32             1.000 ±    0%        636.500 ±  29%     +63550.00% (p=0.002 n=6)           0.000 ±   0%   -100.00% (p=0.002 n=6)
+PureDecompress/case=blob/level=9/par=parallel-32           34.00 ±   15%           0.00 ±    ?       -100.00% (p=0.002 n=6)            0.00 ±   0%   -100.00% (p=0.002 n=6)
+PureDecompress/case=text/level=1/par=serial-32            0.00Ki ±    0%        23.99Ki ±   7%              ? (p=0.002 n=6)          0.00Ki ±   0%          ~ (p=1.000 n=6) ¹
+PureDecompress/case=text/level=1/par=parallel-32        1215.500 ±   21%          2.000 ±  50%        -99.84% (p=0.002 n=6)           0.000 ±   0%   -100.00% (p=0.002 n=6)
+PureDecompress/case=text/level=3/par=serial-32            0.00Ki ±    0%        18.95Ki ±   7%              ? (p=0.002 n=6)          0.00Ki ±   0%          ~ (p=1.000 n=6) ¹
+PureDecompress/case=text/level=3/par=parallel-32         907.000 ±   19%          2.000 ± 100%        -99.78% (p=0.002 n=6)           0.000 ±   0%   -100.00% (p=0.002 n=6)
+PureDecompress/case=text/level=9/par=serial-32            0.00Ki ±    0%        22.99Ki ±  13%              ? (p=0.002 n=6)          0.00Ki ±   0%          ~ (p=1.000 n=6) ¹
+PureDecompress/case=text/level=9/par=parallel-32         907.000 ±   12%          2.000 ±  50%        -99.78% (p=0.002 n=6)           0.000 ±   0%   -100.00% (p=0.002 n=6)
+StreamWrite/level=fastest/conc=1-32                      4.693Mi ±    0%        8.852Mi ±   0%        +88.64% (p=0.002 n=6)
+StreamWrite/level=fastest/conc=32-32                   209.638Mi ±    0%        9.607Mi ±   0%        -95.42% (p=0.002 n=6)
+StreamWrite/level=default/conc=1-32                      6.193Mi ±    0%       18.199Mi ±   0%       +193.87% (p=0.002 n=6)
+StreamWrite/level=default/conc=32-32                    233.65Mi ±    0%        19.28Mi ±   0%        -91.75% (p=0.002 n=6)
+StreamWrite/level=best/conc=1-32                         7.991Mi ±    0%       50.949Mi ±   0%       +537.61% (p=0.002 n=6)
+StreamWrite/level=best/conc=32-32                       250.46Mi ±    0%        52.03Mi ±   0%        -79.23% (p=0.002 n=6)
+StreamRead/mode=sync-32                                  4.671Mi ±    0%        4.667Mi ±   0%         -0.08% (p=0.002 n=6)
+StreamRead/mode=async-32                                 6.503Mi ±    0%       10.946Mi ±   0%        +68.31% (p=0.002 n=6)
+SeekableRead/frame=256KiB-32                             774.6Ki ±    0%
+SeekableRead/frame=1024KiB-32                            1.512Mi ±    0%                                                                                                            1.730Mi ± 0%  +14.42% (p=0.002 n=6)
+SeekableRead/frame=16384KiB-32                           8.637Mi ±    0%
+SeekableSearch/frame=256KiB-32                           39.05Mi ±    1%
+SeekableSearch/frame=1024KiB-32                          46.77Mi ±    0%                                                                                                            31.96Mi ± 1%  -31.66% (p=0.002 n=6)
+SeekableSearch/frame=16384KiB-32                         127.7Mi ±    1%
+LogsStreamDecode/port-32                                                                                                                                                                                                    2.584Mi ± 0%
+LogsStreamDecode/klauspost-32                                                                                                                                                                                               2.409Mi ± 0%
+geomean                                                                  ²                      ?                           ³ ²                     ?                       ³ ² ⁴   7.435Mi       -11.57%               ³   2.495Mi       ? ³ ⁴
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+³ benchmark set differs from baseline; geomeans may not be comparable
+⁴ ratios must be >0 to compute geomean
+
+                                                    │       port       │                 klauspost                  │                  libzstd                   │            klauspost-scan            │                   │
+                                                    │    allocs/op     │   allocs/op    vs base                     │  allocs/op    vs base                      │ allocs/op   vs base                  │ allocs/op   vs base   │
+CorpusCompress/file=silesia.tar/tier=fastest-32        60.000 ±  10%     55.000 ±   0%     -8.33% (p=0.002 n=6)       2.000 ± 100%   -96.67% (p=0.002 n=6)
+CorpusCompress/file=silesia.tar/tier=default-32        59.000 ±   8%     61.000 ±   0%     +3.39% (p=0.048 n=6)       3.500 ±  14%   -94.07% (p=0.002 n=6)
+CorpusCompress/file=silesia.tar/tier=better-32         57.000 ±  18%     60.000 ±   0%          ~ (p=0.234 n=6)       3.000 ±  33%   -94.74% (p=0.002 n=6)
+CorpusCompress/file=silesia.tar/tier=best-32           56.500 ±  29%     58.000 ±   0%          ~ (p=1.000 n=6)       3.000 ±   0%   -94.69% (p=0.002 n=6)
+CorpusDecode/file=silesia.tar/mode=oneshot-32          23.000 ±   0%     23.000 ±   4%          ~ (p=1.000 n=6)       1.000 ±   0%   -95.65% (p=0.002 n=6)
+CorpusDecode/file=silesia.tar/mode=stream-32            53.00 ±   2%      89.50 ±   3%    +68.87% (p=0.002 n=6)
+CorpusDecode/file=silesia.tar/mode=stream-async-32     3187.5 ±   0%      236.0 ±   3%    -92.60% (p=0.002 n=6)
+DecodeSmall/file=kppkn.gtb/par=serial-32                0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=kppkn.gtb/par=parallel-32              0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=geo.protodata/par=serial-32            0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=geo.protodata/par=parallel-32          0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=plrabn12.txt/par=serial-32             0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=plrabn12.txt/par=parallel-32           0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=lcet10.txt/par=serial-32               0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=lcet10.txt/par=parallel-32             0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=asyoulik.txt/par=serial-32             0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=asyoulik.txt/par=parallel-32           0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=alice29.txt/par=serial-32              0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=alice29.txt/par=parallel-32            0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=html_x_4/par=serial-32                 0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=html_x_4/par=parallel-32               0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=paper-100k.pdf/par=serial-32           0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=paper-100k.pdf/par=parallel-32         0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=fireworks.jpeg/par=serial-32           0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=fireworks.jpeg/par=parallel-32         0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=urls.10K/par=serial-32                 0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=urls.10K/par=parallel-32               0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=html/par=serial-32                     0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=html/par=parallel-32                   0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=comp-data.bin/par=serial-32            0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+DecodeSmall/file=comp-data.bin/par=parallel-32          0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+PureCompress/case=records/level=1/par=serial-32         1.000 ±   0%      0.000 ±   0%   -100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=1/par=parallel-32       1.000 ±   0%      0.000 ±   0%   -100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=3/par=serial-32         1.000 ±   0%      0.000 ±   0%   -100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=3/par=parallel-32       1.000 ±   0%      0.000 ±   0%   -100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=6/par=serial-32         1.000 ±   0%      0.000 ±   0%   -100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=6/par=parallel-32       1.000 ±   0%      0.000 ±   0%   -100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=9/par=serial-32         1.000 ±   0%      0.000 ±   0%   -100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=9/par=parallel-32       1.000 ±   0%      0.000 ±   0%   -100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=12/par=serial-32        1.000 ±   0%     14.500 ±  72%  +1350.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=12/par=parallel-32      1.000 ±   0%      0.000 ±   0%   -100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=19/par=serial-32        9.000 ±   0%     13.000 ±  23%    +44.44% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=records/level=19/par=parallel-32      9.000 ±   0%      0.000 ±   0%   -100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=1/par=serial-32            1.000 ±   0%      1.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=1/par=parallel-32          1.000 ±   0%      0.000 ±   0%   -100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=3/par=serial-32            1.000 ±   0%      1.000 ± 100%          ~ (p=1.000 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=3/par=parallel-32          1.000 ±   0%      0.000 ±   0%   -100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=6/par=serial-32            1.000 ±   0%      2.000 ±  50%   +100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=6/par=parallel-32          1.000 ±   0%      0.000 ±   0%   -100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=9/par=serial-32            1.000 ±   0%      2.000 ±  50%   +100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=9/par=parallel-32          1.000 ±   0%      0.000 ±   0%   -100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=12/par=serial-32           1.000 ±   0%      6.500 ±  23%   +550.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=12/par=parallel-32         1.000 ±   0%      0.000 ±   0%   -100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=19/par=serial-32         526.000 ±   0%      7.000 ±   0%    -98.67% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=blob/level=19/par=parallel-32         527.0 ±   0%        0.0 ±   0%   -100.00% (p=0.002 n=6)         0.0 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=text/level=1/par=serial-32            1.000 ±   0%     24.000 ±  12%  +2300.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=text/level=1/par=parallel-32          1.000 ±   0%      0.000 ±   0%   -100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=text/level=3/par=serial-32            1.000 ±   0%     27.000 ±  15%  +2600.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=text/level=3/par=parallel-32          1.000 ±   0%      0.000 ±   0%   -100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=text/level=6/par=serial-32            1.000 ±   0%     38.000 ±   5%  +3700.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=text/level=6/par=parallel-32          1.000 ±   0%      0.000 ±   0%   -100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=text/level=9/par=serial-32            1.000 ± 100%     39.000 ±   8%  +3800.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=text/level=9/par=parallel-32          1.000 ±   0%      0.000 ±   0%   -100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=text/level=12/par=serial-32           1.500 ± 167%     45.000 ±   0%  +2900.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureCompress/case=text/level=12/par=parallel-32         2.000 ±  50%      0.000 ±   0%   -100.00% (p=0.002 n=6)       0.000 ±   0%  -100.00% (p=0.002 n=6)
+PureDecompress/case=records/level=1/par=serial-32       0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+PureDecompress/case=records/level=1/par=parallel-32     0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+PureDecompress/case=records/level=3/par=serial-32       0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+PureDecompress/case=records/level=3/par=parallel-32     0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+PureDecompress/case=records/level=9/par=serial-32       0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+PureDecompress/case=records/level=9/par=parallel-32     0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+PureDecompress/case=blob/level=1/par=serial-32          0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+PureDecompress/case=blob/level=1/par=parallel-32        0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+PureDecompress/case=blob/level=3/par=serial-32          0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+PureDecompress/case=blob/level=3/par=parallel-32        0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+PureDecompress/case=blob/level=9/par=serial-32          0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+PureDecompress/case=blob/level=9/par=parallel-32        0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+PureDecompress/case=text/level=1/par=serial-32          0.000 ±   0%      1.500 ±  33%          ? (p=0.002 n=6)       0.000 ±   0%         ~ (p=1.000 n=6) ¹
+PureDecompress/case=text/level=1/par=parallel-32        0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+PureDecompress/case=text/level=3/par=serial-32          0.000 ±   0%      1.000 ±   0%          ? (p=0.002 n=6)       0.000 ±   0%         ~ (p=1.000 n=6) ¹
+PureDecompress/case=text/level=3/par=parallel-32        0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+PureDecompress/case=text/level=9/par=serial-32          0.000 ±   0%      1.000 ± 100%          ? (p=0.002 n=6)       0.000 ±   0%         ~ (p=1.000 n=6) ¹
+PureDecompress/case=text/level=9/par=parallel-32        0.000 ±   0%      0.000 ±   0%          ~ (p=1.000 n=6) ¹     0.000 ±   0%         ~ (p=1.000 n=6) ¹
+StreamWrite/level=fastest/conc=1-32                     96.00 ±   3%      49.00 ±   0%    -48.96% (p=0.002 n=6)
+StreamWrite/level=fastest/conc=32-32                   1.006k ±   1%     3.140k ±   0%   +212.28% (p=0.002 n=6)
+StreamWrite/level=default/conc=1-32                     96.00 ±   2%      51.00 ±   0%    -46.88% (p=0.002 n=6)
+StreamWrite/level=default/conc=32-32                   1.008k ±   1%     1.608k ±   0%    +59.52% (p=0.002 n=6)
+StreamWrite/level=best/conc=1-32                       105.00 ±  10%      51.00 ±   0%    -51.43% (p=0.002 n=6)
+StreamWrite/level=best/conc=32-32                      1.014k ±   5%     1.608k ±   0%    +58.66% (p=0.002 n=6)
+StreamRead/mode=sync-32                                 26.00 ±   0%      22.00 ±   5%    -15.38% (p=0.002 n=6)
+StreamRead/mode=async-32                                617.0 ±   0%      136.5 ±   1%    -77.88% (p=0.002 n=6)
+SeekableRead/frame=256KiB-32                            17.00 ±   0%
+SeekableRead/frame=1024KiB-32                           17.00 ±   0%                                                                                               34.00 ± 3%  +100.00% (p=0.002 n=6)
+SeekableRead/frame=16384KiB-32                          18.00 ±   0%
+SeekableSearch/frame=256KiB-32                          192.0 ±   0%
+SeekableSearch/frame=1024KiB-32                        195.00 ±   0%                                                                                               36.00 ± 3%   -81.54% (p=0.002 n=6)
+SeekableSearch/frame=16384KiB-32                        199.0 ±   1%
+LogsStreamDecode/port-32                                                                                                                                                                                  17.00 ± 0%
+LogsStreamDecode/klauspost-32                                                                                                                                                                             16.00 ± 0%
+geomean                                                              ²                  ?                       ³ ²                 ?                      ³ ² ⁴   34.99        -39.24%               ³   16.49       ? ³ ⁴
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+³ benchmark set differs from baseline; geomeans may not be comparable
+⁴ ratios must be >0 to compute geomean
+
+                                                │    port    │             klauspost              │              libzstd               │
+                                                │    pct     │    pct      vs base                │    pct      vs base                │
+DecodeSmall/file=kppkn.gtb/par=serial-32          22.48 ± 0%   22.48 ± 0%       ~ (p=1.000 n=6) ¹   22.48 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=kppkn.gtb/par=parallel-32        22.48 ± 0%   22.48 ± 0%       ~ (p=1.000 n=6) ¹   22.48 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=geo.protodata/par=serial-32      11.89 ± 0%   11.89 ± 0%       ~ (p=1.000 n=6) ¹   11.89 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=geo.protodata/par=parallel-32    11.89 ± 0%   11.89 ± 0%       ~ (p=1.000 n=6) ¹   11.89 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=plrabn12.txt/par=serial-32       39.90 ± 0%   39.90 ± 0%       ~ (p=1.000 n=6) ¹   39.90 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=plrabn12.txt/par=parallel-32     39.90 ± 0%   39.90 ± 0%       ~ (p=1.000 n=6) ¹   39.90 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=lcet10.txt/par=serial-32         33.27 ± 0%   33.27 ± 0%       ~ (p=1.000 n=6) ¹   33.27 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=lcet10.txt/par=parallel-32       33.27 ± 0%   33.27 ± 0%       ~ (p=1.000 n=6) ¹   33.27 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=asyoulik.txt/par=serial-32       40.34 ± 0%   40.34 ± 0%       ~ (p=1.000 n=6) ¹   40.34 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=asyoulik.txt/par=parallel-32     40.34 ± 0%   40.34 ± 0%       ~ (p=1.000 n=6) ¹   40.34 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=alice29.txt/par=serial-32        37.75 ± 0%   37.75 ± 0%       ~ (p=1.000 n=6) ¹   37.75 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=alice29.txt/par=parallel-32      37.75 ± 0%   37.75 ± 0%       ~ (p=1.000 n=6) ¹   37.75 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=html_x_4/par=serial-32           3.637 ± 0%   3.637 ± 0%       ~ (p=1.000 n=6) ¹   3.637 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=html_x_4/par=parallel-32         3.637 ± 0%   3.637 ± 0%       ~ (p=1.000 n=6) ¹   3.637 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=paper-100k.pdf/par=serial-32     80.53 ± 0%   80.53 ± 0%       ~ (p=1.000 n=6) ¹   80.53 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=paper-100k.pdf/par=parallel-32   80.53 ± 0%   80.53 ± 0%       ~ (p=1.000 n=6) ¹   80.53 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=fireworks.jpeg/par=serial-32     100.0 ± 0%   100.0 ± 0%       ~ (p=1.000 n=6) ¹   100.0 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=fireworks.jpeg/par=parallel-32   100.0 ± 0%   100.0 ± 0%       ~ (p=1.000 n=6) ¹   100.0 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=urls.10K/par=serial-32           26.25 ± 0%   26.25 ± 0%       ~ (p=1.000 n=6) ¹   26.25 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=urls.10K/par=parallel-32         26.25 ± 0%   26.25 ± 0%       ~ (p=1.000 n=6) ¹   26.25 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=html/par=serial-32               14.49 ± 0%   14.49 ± 0%       ~ (p=1.000 n=6) ¹   14.49 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=html/par=parallel-32             14.49 ± 0%   14.49 ± 0%       ~ (p=1.000 n=6) ¹   14.49 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=comp-data.bin/par=serial-32      31.26 ± 0%   31.26 ± 0%       ~ (p=1.000 n=6) ¹   31.26 ± 0%       ~ (p=1.000 n=6) ¹
+DecodeSmall/file=comp-data.bin/par=parallel-32    31.26 ± 0%   31.26 ± 0%       ~ (p=1.000 n=6) ¹   31.26 ± 0%       ~ (p=1.000 n=6) ¹
+geomean                                           27.51        27.51       +0.00%                   27.51       +0.00%
+¹ all samples are equal

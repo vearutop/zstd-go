@@ -676,7 +676,7 @@ func fseDecodeWeights(src []byte, maxOut int) ([]byte, bool) {
 	var out []byte
 	decode := func(s *uint32) {
 		e := dt.e[*s]
-		out = append(out, e.sym)
+		out = append(out, e.xb) // the weights table is kindOF: xb is the symbol
 		*s = uint32(e.ns) + read(e.nb)
 	}
 	for {

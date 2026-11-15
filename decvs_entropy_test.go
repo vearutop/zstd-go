@@ -153,7 +153,7 @@ func TestHufLiteralsVsLibzstd(t *testing.T) {
 	var n, bad int
 	check := func(data []byte, regen int, four bool) {
 		n++
-		st := &decState{bm: blockMax}
+		st := &decState{bm: blockMax, strictHuf: true} // libzstd's table selection, so corrupt input behaves alike
 		want, code := ref.HufDecompress(data, regen, four, 0)
 		got, err := st.hufLits(data, regen, four, true)
 		if (code != 0) != (err != nil) || (err == nil && !bytes.Equal(want, got)) {
@@ -275,7 +275,7 @@ func TestStreamBoundedMemory(t *testing.T) {
 		data[i] = byte(r.Intn(4)) + byte(i>>14)
 	}
 	f := ref.CompressAdv(data, nil, ref.CParam{Level: 3, WindowLog: 13})
-	s := NewDStream(nil)
+	s := newDStream(nil)
 	out := make([]byte, 100000)
 	pos, total := 0, 0
 	for pos < len(f) || total < len(data) {

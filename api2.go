@@ -1,28 +1,28 @@
 package zstd
 
-// ZSTD_compress2-style API of the Encoder: parameters (ZSTD_CCtx_setParameter), dictionaries
+// ZSTD_compress2-style API of the encoder: parameters (ZSTD_CCtx_setParameter), dictionaries
 // (ZSTD_CCtx_loadDictionary*, ZSTD_CCtx_refPrefix*, ZSTD_CCtx_refCDict) and single-shot compression
 // (ZSTD_compress2: the pledged size is the source size).
 
-// CDict is a dictionary prepared for compression (ZSTD_CDict): the dictionary and its match tables for one set of
+// preparedDict is a dictionary prepared for compression (ZSTD_CDict): the dictionary and its match tables for one set of
 // parameters.
-type CDict struct {
+type preparedDict struct {
 	d  *Dict
 	cd *cdict
 }
 
-// CDictLevel is ZSTD_createCDict(dict, level). With ZSTD_CCtx_refCDict the CDict's level replaces the requested level.
-func (d *Dict) CDictLevel(level int) *CDict {
+// cdictLevel is ZSTD_createCDict(dict, level). With ZSTD_CCtx_refCDict the preparedDict's level replaces the requested level.
+func (d *Dict) cdictLevel(level int) *preparedDict {
 	if level == 0 {
 		level = defaultLevel
 	}
-	return &CDict{d, d.cdict(level)}
+	return &preparedDict{d, d.cdict(level)}
 }
 
-// CDictAdvanced is ZSTD_createCDict_advanced2: the tables are built for the (explicit) parameters p; the CDict has no
+// cdictFromParams is ZSTD_createCDict_advanced2: the tables are built for the (explicit) parameters p; the preparedDict has no
 // compression level of its own (ZSTD_NO_CLEVEL), so compressions with it always use its parameters when the
 // source is small, regardless of the source size cutoff of the level.
-func (d *Dict) CDictAdvanced(p Params) (*CDict, error) {
+func (d *Dict) cdictFromParams(p Params) (*preparedDict, error) {
 	c, err := p.resolved()
 	if err != nil {
 		return nil, err
@@ -30,11 +30,11 @@ func (d *Dict) CDictAdvanced(p Params) (*CDict, error) {
 	if c.DedicatedDictSearch || c.TargetCBlockSize != 0 {
 		return nil, ErrUnsupported
 	}
-	return &CDict{d, d.cdictAdvanced(&c)}, nil
+	return &preparedDict{d, d.cdictAdvanced(&c)}, nil
 }
 
 // SetParams replaces the compression parameters used by Compress2 (all of ZSTD_CCtx_setParameter at once).
-func (e *Encoder) SetParams(p Params) error {
+func (e *encoder) SetParams(p Params) error {
 	if _, err := p.resolved(); err != nil {
 		return err
 	}
@@ -43,19 +43,19 @@ func (e *Encoder) SetParams(p Params) error {
 }
 
 // RefCDict is ZSTD_CCtx_refCDict: it replaces any dictionary set before; c == nil removes the dictionary.
-func (e *Encoder) RefCDict(c *CDict) {
+func (e *encoder) RefCDict(c *preparedDict) {
 	e.clearDicts()
 	e.refCD = c
 }
 
 // LoadDictionary is ZSTD_CCtx_loadDictionary_advanced: the dictionary is digested on the first Compress2 with the
 // parameters of that moment and kept for the following ones. It replaces any dictionary set before.
-func (e *Encoder) LoadDictionary(b []byte, typ DictContentType) error {
+func (e *encoder) LoadDictionary(b []byte, typ dictContentType) error {
 	e.clearDicts()
 	if len(b) == 0 {
 		return nil
 	}
-	d, err := LoadDictType(b, typ)
+	d, err := loadDictType(b, typ)
 	if err != nil {
 		return err
 	}
@@ -63,14 +63,14 @@ func (e *Encoder) LoadDictionary(b []byte, typ DictContentType) error {
 	return nil
 }
 
-// RefPrefix is ZSTD_CCtx_refPrefix_advanced: b is used as a dictionary for the next frame only, without a CDict (use
-// DictRaw for ZSTD_CCtx_refPrefix).
-func (e *Encoder) RefPrefix(b []byte, typ DictContentType) error {
+// RefPrefix is ZSTD_CCtx_refPrefix_advanced: b is used as a dictionary for the next frame only, without a preparedDict (use
+// dictRaw for ZSTD_CCtx_refPrefix).
+func (e *encoder) RefPrefix(b []byte, typ dictContentType) error {
 	e.clearDicts()
 	if len(b) == 0 {
 		return nil
 	}
-	d, err := LoadDictType(b, typ)
+	d, err := loadDictType(b, typ)
 	if err != nil {
 		return err
 	}
@@ -78,12 +78,12 @@ func (e *Encoder) RefPrefix(b []byte, typ DictContentType) error {
 	return nil
 }
 
-func (e *Encoder) clearDicts() { e.refCD, e.local, e.localCD, e.prefix = nil, nil, nil, nil }
+func (e *encoder) clearDicts() { e.refCD, e.local, e.localCD, e.prefix = nil, nil, nil, nil }
 
 // Compress2 appends a frame of src to dst like ZSTD_compress2 with the parameters of SetParams and the dictionary set
-// with RefCDict / LoadDictionary / RefPrefix. Without any of them a dictionary given to NewEncoder is used as
+// with RefCDict / LoadDictionary / RefPrefix. Without any of them a dictionary given to newEncoder is used as
 // ZSTD_createCDict(dict, e.Level) referenced by ZSTD_CCtx_refCDict.
-func (e *Encoder) Compress2(dst, src []byte) ([]byte, error) {
+func (e *encoder) Compress2(dst, src []byte) ([]byte, error) {
 	r, err := e.buildRequest(uint64(len(src)))
 	if err != nil {
 		return dst, err
@@ -101,7 +101,7 @@ func (e *Encoder) Compress2(dst, src []byte) ([]byte, error) {
 
 // buildRequest is ZSTD_CCtx_init_compressStream2: the requested parameters and dictionary resolved for a frame of
 // pledged bytes (contentSizeUnknown if not known).
-func (e *Encoder) buildRequest(pledged uint64) (*request, error) {
+func (e *encoder) buildRequest(pledged uint64) (*request, error) {
 	c, err := e.params.resolved()
 	if err != nil {
 		return nil, err
@@ -124,15 +124,15 @@ func (e *Encoder) buildRequest(pledged uint64) (*request, error) {
 		cdc := e.refCD
 		if cdc == nil && e.local != nil {
 			if e.localCD == nil { // ZSTD_initLocalDict: built once, with the parameters of the first use
-				e.localCD = &CDict{e.local, e.local.cdictAdvanced(&c)}
+				e.localCD = &preparedDict{e.local, e.local.cdictAdvanced(&c)}
 			}
 			cdc = e.localCD
 		} else if cdc == nil && e.dict != nil && len(e.dict.raw) > 0 {
-			cdc = e.dict.CDictLevel(e.level())
+			cdc = e.dict.cdictLevel(e.level())
 		}
 		if cdc != nil {
 			r.dict, r.cd, dictSize = cdc.d, cdc.cd, cdc.cd.dictSize
-			if e.refCD != nil || e.local == nil { // an explicit CDict's level takes priority over the requested one
+			if e.refCD != nil || e.local == nil { // an explicit preparedDict's level takes priority over the requested one
 				c.level = cdc.cd.level
 			}
 			if shouldAttachDict(cdc.cd, c.ForceAttachDict, pledged) {

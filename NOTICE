@@ -1,0 +1,10 @@
+zstd-go includes third-party code.
+
+internal/kseq
+  The assembly sequence decoder (seqdec_amd64.s, seqdec_arm64.s), its Go dispatch code, the struct layouts it relies on and the CPU
+  feature check are taken from github.com/klauspost/compress v1.20.4 (zstd/ and internal/cpuinfo/).
+  Copyright (c) 2012 The Go Authors. All rights reserved.
+  Copyright (c) 2019 Klaus Post. All rights reserved.
+  BSD 3-Clause License, see internal/kseq/LICENSE. Edits: package name, build tags, the CPU feature check, the stricter end-of-stream
+  check and kseq.go, which is new.
+  The klauspost/compress zstd decoder is itself based on work by Yann Collet (Meta), released under the BSD License.
