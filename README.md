@@ -285,8 +285,8 @@ small-frame benchmarks; it cross-compiles libzstd with zig (see the script heade
 klauspost's `benchdecoder.zip`, as in the performance section of klauspost/compress's README (`EXTRA_FILES` adds more, e.g. its GOB
 stream or GitHub JSON). Results print the klauspost and libzstd versions.
 
-Measurements of individual optimizations (assembly, async reader, multithreaded compression, presets) are in
-[BENCHMARKS.md](BENCHMARKS.md); they were taken on other machines and library versions.
+A log of earlier measurements (async reader, multithreaded compression, presets, single-thread speed work) is in
+[testdata/bench/HISTORY.md](testdata/bench/HISTORY.md); its numbers come from other machines and earlier code.
 
 ## Implementation notes and status
 
