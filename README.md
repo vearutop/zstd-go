@@ -251,23 +251,24 @@ here. Raw results: `bench/results/xeon-gold-5118-full-2026-11-14.txt`.
 | Silesia compress `best` (9) | 13.9 s · 242% | 11.9 s · 206% | **5.74 s · 100%** |
 | Silesia decode, one-shot | 366 ms · 104% | 371 ms · 106% | **352 ms · 100%** |
 | Silesia decode, stream | **361 ms · 100%** | 374 ms · 104% |  |
-| Silesia decode, pipelined | 590 (571 to 610) ms · 101% | **584 (442 to 615) ms · 100%** |  |
+| Silesia decode, pipelined † | **528 (511 to 538) ms · 100%** | 584 (442 to 615) ms · 111% |  |
 | 64 MB logs: write `fastest`, 1 core | 537 ms · 124% | **434 ms · 100%** |
 | write `fastest`, 48 cores | **124 ms · 100%** | 507 ms · 409% |
 | write `best`, 48 cores | **0.352 s · 100%** | 4.77 s · 1352% |
 | read, synchronous | **111 ms · 100%** | 112 ms · 101% |
-| read, pipelined | 192 ms · 126% | **153 ms · 100%** |
+| read, pipelined † | **145 ms · 100%** | 150 ms · 103% |
 
 The picture is the same:
 - Dictionary encoding is 12 to 21x faster than klauspost (level with libzstd on tiny and slim payloads, 1.4x behind it on full ones); dictionary
   decoding is 1.3 to 1.5x faster than klauspost and within 2 to 11% of libzstd, and on all cores it matches libzstd (tiny: 67 ns, libzstd 78 ns,
   klauspost 2.1 µs).
 - Silesia decoding is level with klauspost and 4 to 6% behind libzstd; compression is 1.6x klauspost at level 1 and 3, 3.8x at level 6.
-- **The pipelined modes differ between the machines, and the second one is the noisier** (this run also predates the three-stage pipelined reader,
-  so the port's pipelined rows are the old, slower design): on Silesia both libraries were slower pipelined than
-  synchronous (590 ms and 584 ms against 361 ms and 374 ms; klauspost's six runs span 442 to 615 ms), so there is no gap to klauspost to speak of
-  on that run; on the log file the port's pipelined reader is 1.26x behind klauspost's (the first machine, before the change: 1.2 to 1.35x, now level). Pipelined decoding is the
-  measurement most sensitive to other load, and `Reader.Concurrency` is worth benchmarking on your own hardware before you use it.
+- **Pipelined decoding** († measured again after the three-stage pipelined reader, in a quiet-as-possible run: 6 runs; the log-file figures compare both
+  libraries in one session, klauspost's Silesia figure is from the full run, an earlier session): the log-file read is level with klauspost (145
+  against 150 ms; it was 192 against 153 ms in the full run, before the change), and Silesia is 25% faster than before (528 against 708 ms in
+  the same session). On this machine both libraries are *slower* pipelined than synchronous on Silesia (the port 364 ms synchronous, 528 ms
+  pipelined; klauspost 374 and 584 ms in the full run), so `Reader.Concurrency` does not help here. It is worth benchmarking on your own hardware
+  before you use it.
 
 Reproduce (build a bundle, copy it to an idle machine, run it there, compare with benchstat):
 
