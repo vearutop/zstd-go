@@ -75,6 +75,11 @@ func newCDict(content []byte, dictSize uint64, level int) *cdict {
 	return cd
 }
 
+// newCDictWithParams is ZSTD_createCDict_advanced: cp are the (already create-CDict adjusted) compression parameters.
+func newCDictWithParams(content []byte, dictSize uint64, cp cParams) *cdict {
+	return buildCDict(content, dictSize, cp, resolveRowMatchFinder(cp))
+}
+
 // buildCDict is ZSTD_createCDict_advanced_internal + ZSTD_initCDict_internal for the parameters cp (row: the resolved
 // useRowMatchFinder); content is the dictionary content to load (empty when the dictionary is too short to be loaded).
 func buildCDict(content []byte, dictSize uint64, cp cParams, row bool) *cdict {
