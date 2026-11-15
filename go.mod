@@ -1,6 +1,6 @@
 module github.com/vearutop/zstd-go
 
-go 1.27
+go 1.26
 
 require (
 	github.com/bool64/dev v0.2.46
