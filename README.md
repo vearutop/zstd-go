@@ -340,7 +340,46 @@ sources (match finders, Huffman, FSE selection, block splitting, frame header). 
   selects as libzstd does, which matters only for how corrupt streams are rejected.
 - **Configuration surface:** the libzstd-style API (a `ZSTD_CCtx_setParameter` subset, `loadDictionary`, `refPrefix`, `CompressStream2`,
   frame inspection helpers) is implemented but unexported: it is what the differential tests drive. `Writer.Params` reaches the parameters.
-- **amd64 assembly** for the Huffman 4-stream loops and the sequence fast path; other platforms and `-tags purego` use the Go loops.
+- **Assembly and `unsafe`:** see the next section.
+
+### Assembly and `unsafe`
+
+Two things make the default build faster than plain safe Go; both can be switched off with build tags.
+
+**Where.**
+
+- *Assembly* (amd64, and arm64 for the sequence decoder): the sequence decode/execute kernels (`internal/kseq`), the Huffman 4-stream
+  decode loop (`hufdec_amd64.s`), the row match finder's tag compare and prefetch, and `cpuid`. Without assembly the Go loops run.
+- *`unsafe`* (amd64 and arm64, file `rd_fast.go`): unchecked loads and table accesses in the match finders (`rd32`, `rd64`, `p8`, `p32`,
+  `slice8`, `slice32`), the `[]dEntry` to `[]uint64` view handed to the kernel (`seqkernel_asm.go`), the Huffman loop call (`hufdec_amd64.go`), and the glue in `internal/kseq`.
+  On other architectures `rd_checked.go` provides the same helpers with ordinary bounds checks.
+
+**Why.** The encoder's hot loops index hash tables with a hash that is in range by construction; Go cannot prove it, and the bounds checks
+and calls were a large part of the instruction count (the safe port executed 2.2-2.9x libzstd's instructions before they were removed).
+
+**What keeps it safe.**
+
+- Each block checks once, up front, that the tables and the buffer cover every index the loop can produce; if not, it panics
+  (`zstd: internal error: ...`) instead of reading out of bounds. The per-position hash tables are then accessed without checks.
+- Compressed output is compared byte for byte with libzstd (`-tags libzstd`, `TestExact*`) and `FuzzEncodeParams` fuzzes the
+  parameter space (window, hash and chain logs, strategies, dictionaries) under the same guards.
+- Lookups driven by *input data* (FSE, Huffman symbol tables in the Go decoder) stay bounds-checked; a corrupt stream returns an error.
+  The assembly decoder reports failures to the Go loop, which redoes the block and returns the error.
+
+Be clear about the trade: if one of the guarded invariants is ever wrong, the default build reads or writes memory it should not,
+where a checked build would panic. That is why the escape hatches below exist.
+
+**Avoiding them.**
+
+| Build | Assembly | `unsafe` in this module | Notes |
+|---|---|---|---|
+| default | yes | yes (amd64, arm64) | fastest |
+| `-tags zstdcheck` | yes | only the assembly glue | the Go match finders keep their bounds checks, so a broken invariant panics |
+| `-tags purego` | no | none | pure Go; also used automatically on architectures other than amd64/arm64 |
+| `-tags "purego appengine"` | no | none, and none in dependencies | additionally drops `cespare/xxhash`'s `unsafe` |
+
+`zstdcheck` is the one to run in tests or when debugging a suspected memory problem: same assembly, checked Go code, identical output.
+`purego` is for environments that forbid assembly or `unsafe` (some sandboxes, `GOOS=js`, strict audits). Output is identical in all builds.
 
 Not ported / road map:
 
