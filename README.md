@@ -127,7 +127,7 @@ Decoding errors are `*zstd.Error` carrying libzstd's error code (`errors.As`); a
 
 ## Performance
 
-Numbers below are medians of 6 runs of one full benchmark bundle (commit `f4a002c`) on an otherwise idle Linux box (Xeon E5-2620 v4, 2.1 GHz,
+Numbers below are medians of 6 runs of one full benchmark bundle on an otherwise idle Linux box (Xeon E5-2620 v4, 2.1 GHz,
 32 threads, `GOAMD64=v3`), against klauspost/compress v1.20.4 and libzstd 1.5.7 (statically linked through cgo, with its amd64 assembly). The raw
 benchstat input is in [bench/results](bench/results) (`xeon-e5-2620v4-full-2026-11-15.txt`); a second machine follows the last table.
 Times are per operation, in one unit per row. Each cell also shows its time as a percentage of the best (fastest) in the row, which is in bold: 100% is
@@ -257,7 +257,7 @@ above and seekability. Memory per compression of the 211 MB file (`fastest`): po
 
 ### A second machine
 
-A subset of the same bundle (commit `f4a002c`, 4 runs; no records, blob, text or stream-write) on a Xeon Gold 5118 (2.3 GHz, 48 threads,
+A subset of the same bundle (4 runs; no records, blob, text or stream-write) on a Xeon Gold 5118 (2.3 GHz, 48 threads,
 Linux 6.8, a shared box with scheduled jobs: the spread between runs is 4.7% of the median at the median benchmark and 19% at the 90th
 percentile, against 0.9% and 9.4% on the first machine; treat differences under about 10% as noise). Raw results:
 `bench/results/xeon-gold-5118-full-2026-11-15.txt`.
