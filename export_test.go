@@ -83,3 +83,6 @@ type DStream = dStream
 
 // DecodeAll is the (src, dst) spelling the tests use for both this package and klauspost's decoder.
 func (d *Decoder) DecodeAll(src, dst []byte) ([]byte, error) { return d.Decode(dst, src) }
+
+// SetSeqSplitForTest turns the asynchronous reader's decoding of sequences ahead of execution on or off.
+func SetSeqSplitForTest(v bool) { useSeqSplit = v }

@@ -45,8 +45,9 @@ type sequenceDecs struct {
 	maxSyncLen   uint64
 }
 
+// seqVals is one decoded sequence (the assembly addresses the three ints by offset).
 type seqVals struct {
-	ll, ml, mo int
+	LL, ML, MO int
 }
 
 type decodeSyncAsmContext struct {

@@ -37,3 +37,22 @@ func (st *decState) seqKernel(in []byte, nb int, lits, out []byte, base int, dc 
 	st.reps = [3]uint32{uint32(p.Reps[0]), uint32(p.Reps[1]), uint32(p.Reps[2])}
 	return out[:base+len(res)], true
 }
+
+// useSeqSplit makes the asynchronous reader decode each block's sequences in a goroutine of their own (seqdec) and only execute
+// them in the decode goroutine; tests and benchmarks clear it to compare with the fused path.
+var useSeqSplit = true
+
+// execPre executes the sequences that seqdec decoded ahead (pre.seqs). It reports false, with nothing changed but scratch
+// bytes past len(out), when it cannot: the block does not fit the buffer, exceeds the limit or reaches beyond the history; the
+// block is then decoded from its bitstream as usual, which also reports any error.
+func (st *decState) execPre(pre *litJob, out, dc []byte) ([]byte, bool) {
+	if pre.seqs == nil || seqTrace != nil || offTrace != nil || len(out)-st.blockStart+pre.total > st.outLim {
+		return out, false
+	}
+	res, ok := kseq.Execute(&kseq.ExecParams{Seqs: pre.seqs, Literals: pre.lits, Out: out, History: dc, Total: pre.total})
+	if !ok || unsafe.SliceData(res) != unsafe.SliceData(out[:cap(out)]) {
+		return out, false
+	}
+	st.reps = [3]uint32{uint32(pre.repsOut[0]), uint32(pre.repsOut[1]), uint32(pre.repsOut[2])}
+	return res, true
+}

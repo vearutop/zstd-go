@@ -43,9 +43,10 @@ func ofBase(sym uint8) uint32 {
 }
 
 type dTable struct {
-	log uint8
-	e   []dEntry
-	sy  [1 << 9]uint8 // the symbol of each state while the table is built
+	log   uint8
+	maxXb uint8 // the largest extra-bits count of any symbol in the table (the 56-bit sequence decoder needs it)
+	e     []dEntry
+	sy    [1 << 9]uint8 // the symbol of each state while the table is built
 }
 
 // buildDTable is a port of FSE_buildDTable.
@@ -55,7 +56,24 @@ func buildDTable(norm []int16, log uint8, kind int) *dTable {
 	return dt
 }
 
+// xbOf is the extra-bits count of symbol s.
+func xbOf(kind int, s uint8) uint8 {
+	switch kind {
+	case kindLL:
+		return llBits[s]
+	case kindML:
+		return mlBits[s]
+	}
+	return s
+}
+
 func (dt *dTable) build(norm []int16, log uint8, kind int) {
+	dt.maxXb = 0
+	for s, n := range norm {
+		if n != 0 {
+			dt.maxXb = max(dt.maxXb, xbOf(kind, uint8(s)))
+		}
+	}
 	size := 1 << log
 	mask := size - 1
 	step := (size >> 1) + (size >> 3) + 3
@@ -122,6 +140,7 @@ func (dt *dTable) rle(sym uint8, kind int) {
 	dt.log = 0
 	dt.e = append(dt.e[:0], dEntry{})
 	dt.e[0].fuse(kind, sym)
+	dt.maxXb = xbOf(kind, sym)
 }
 
 var (

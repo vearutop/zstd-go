@@ -163,6 +163,16 @@ func TestAsyncMatchesSync(t *testing.T) {
 	t.Logf("%d valid streams", len(cases))
 }
 
+// TestAsyncFusedPath runs the valid streams through the pipeline without the sequence decoding stage (decode does it all).
+func TestAsyncFusedPath(t *testing.T) {
+	zstd.SetSeqSplitForTest(false)
+	defer zstd.SetSeqSplitForTest(true)
+	rng := rand.New(rand.NewSource(1))
+	for _, c := range asyncCases(t) {
+		compareAsync(t, c.name, c.stream, c.dec, rng)
+	}
+}
+
 // TestAsyncMutated damages the streams (flipped bytes, truncation, inserted and appended garbage) and requires the pipeline
 // to deliver the same bytes and the same error as the synchronous Reader. ASYNC_MUT sets the mutations per stream.
 func TestAsyncMutated(t *testing.T) {

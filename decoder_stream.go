@@ -502,6 +502,10 @@ func (s *dStream) cont(src []byte) (int, error) {
 					s.hist = append(s.hist, pre.lits...)
 				default:
 					s.st.blockStart = len(s.hist)
+					if res, ok := s.st.execPre(pre, s.hist, s.dc); ok {
+						s.hist = res
+						break
+					}
 					s.st.pll, s.st.pof, s.st.pml = pre.pll, pre.pof, pre.pml
 					s.hist, err = s.st.sequences(pre.rest, pre.nb, pre.lits, s.hist, 0, s.dc)
 					s.st.pll, s.st.pof, s.st.pml = nil, nil, nil // pool storage: never read after the block

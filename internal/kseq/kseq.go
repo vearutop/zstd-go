@@ -99,3 +99,90 @@ func Decode(p *Params) ([]byte, error) {
 	out := p.Out[:ctx.outPosition]
 	return append(out, p.Literals[ctx.litPosition:]...), nil
 }
+
+// SeqVal is one decoded sequence: literal length, match length and the resolved offset (repeat codes applied).
+type SeqVal = seqVals
+
+// SeqParams describes the sequences of one block for DecodeSeqs.
+type SeqParams struct {
+	In                  []byte
+	LL, OF, ML          []uint64
+	LLLog, OFLog, MLLog uint8
+	MaxBits             uint8    // the sum of the largest extra-bits counts of the three tables
+	LitLen              int      // bytes of literals the block has
+	Reps                [3]int   // in and out
+	Seqs                []SeqVal // len(Seqs) sequences are decoded into it
+	Total               int      // out: bytes the block produces (sequences and the final literals)
+}
+
+// DecodeSeqs decodes len(p.Seqs) sequences without executing them: the bitstream reading and the repeat-offset resolution
+// that need no output (klauspost's sequenceDecs.decode). It updates p.Reps only on success.
+func DecodeSeqs(p *SeqParams) error {
+	var br bitReader
+	if err := br.init(p.In); err != nil {
+		return err
+	}
+	br.fill()
+	llState := p.LL[br.getBits(p.LLLog)]
+	br.fill()
+	ofState := p.OF[br.getBits(p.OFLog)]
+	br.fill()
+	mlState := p.ML[br.getBits(p.MLLog)]
+	s := sequenceDecs{prevOffset: [3]int{p.Reps[0], p.Reps[1], p.Reps[2]}, windowSize: 1 << 30, br: &br}
+	ctx := decodeAsmContext{
+		llTable:   unsafe.Slice((*decSymbol)(unsafe.Pointer(unsafe.SliceData(p.LL))), len(p.LL)),
+		mlTable:   unsafe.Slice((*decSymbol)(unsafe.Pointer(unsafe.SliceData(p.ML))), len(p.ML)),
+		ofTable:   unsafe.Slice((*decSymbol)(unsafe.Pointer(unsafe.SliceData(p.OF))), len(p.OF)),
+		llState:   llState,
+		mlState:   mlState,
+		ofState:   ofState,
+		seqs:      p.Seqs,
+		iteration: len(p.Seqs) - 1,
+		litRemain: p.LitLen,
+	}
+	// one refill per sequence is enough when everything a sequence reads fits in 56 bits
+	lte56 := int(p.MaxBits)+int(p.LLLog)+int(p.OFLog)+int(p.MLLog) <= 56
+	if code := decodeAsm(&s, &br, &ctx, lte56); code != 0 {
+		return fmt.Errorf("sequence decoder returned code %d", code)
+	}
+	if ctx.litRemain < 0 {
+		return errors.New("literal count is too big")
+	}
+	total := s.seqSize + ctx.litRemain
+	if total > maxBlockSize {
+		return fmt.Errorf("output bigger than max block size (%d)", maxBlockSize)
+	}
+	if err := br.close(); err != nil {
+		return err
+	}
+	p.Reps = s.prevOffset
+	p.Total = total
+	return nil
+}
+
+// ExecParams describes the execution of decoded sequences.
+type ExecParams struct {
+	Seqs     []SeqVal
+	Literals []byte // spare capacity (>= 32) selects the faster copies
+	Out      []byte // len(Out)+Total <= cap(Out): the block is written in place after Out
+	History  []byte
+	Total    int // bytes the block produces (SeqParams.Total)
+}
+
+// Execute runs the sequences against the literals, appending the block (final literals included) to p.Out in place. It
+// reports false, leaving p.Out unchanged up to scratch bytes past its length, when the block does not fit in the capacity
+// of Out or a match reaches beyond the history.
+func Execute(p *ExecParams) ([]byte, bool) {
+	t := len(p.Out)
+	if t+p.Total > cap(p.Out) {
+		return p.Out, false
+	}
+	out := p.Out[:t+p.Total]
+	ctx := executeAsmContext{seqs: p.Seqs, out: out, history: p.History, outPosition: t, literals: p.Literals, windowSize: 1 << 30}
+	useSafe := cap(p.Literals) < len(p.Literals)+overAlloc || cap(out) < len(out)+overAlloc
+	if !executeSimpleAsm(&ctx, useSafe) {
+		return p.Out, false
+	}
+	copy(out[ctx.outPosition:], p.Literals[ctx.litPosition:])
+	return out, true
+}
