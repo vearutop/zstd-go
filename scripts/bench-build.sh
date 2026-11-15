@@ -89,7 +89,7 @@ cd "\$(dirname "\$0")"
 out=results-\$(hostname -s)-\$(date +%Y%m%d-%H%M%S)\${TAG:+-\$TAG}.txt
 uptime >&2
 {
-	echo "host: \$(uname -srm) \$(hostname -s)"
+	echo "host: \$(uname -srm)"
 	echo "zstd-go: $(git rev-parse --short HEAD)$(git diff --quiet || echo +dirty)"
 	ZSTD_BENCH_FILES='$files' ZSTD_BENCH_DECODER_ZIP=data/benchdecoder.zip ZSTD_BENCH_EVENTS=data/events ./zstd.test -test.run xxx \\
 		-test.bench "\${2:-Pure|Stream|Seekable|Corpus|DecodeSmall|Dict}" -test.count "\${1:-6}" -test.benchtime "\${BENCHTIME:-1s}" -test.benchmem \\
