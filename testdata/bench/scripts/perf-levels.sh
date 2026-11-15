@@ -1,7 +1,7 @@
 #!/bin/sh
 # Compares test binaries (built with `go test -c`) on compression levels with perf stat: instructions, cycles, branches and time of the
 # port, one run per level. Run it from the bundle directory on Linux, with the corpus in place:
-#   scripts/perf-levels.sh ./zstd.test ./zstd-a.test ...        (LEVELS="3 5 9" by default)
+#   testdata/bench/scripts/perf-levels.sh ./zstd.test ./zstd-a.test ...        (LEVELS="3 5 9" by default)
 set -eu
 export ZSTD_BENCH_FILES=${ZSTD_BENCH_FILES:-data/silesia.tar.zst}
 printf '%-20s %5s %12s %12s %12s %8s\n' binary level instr-G cycles-G branches-G time-s

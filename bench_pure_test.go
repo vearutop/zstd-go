@@ -14,7 +14,7 @@ import (
 
 // One-shot per-level benchmark: port vs klauspost (and libzstd when built with -tags libzstd, see bench_ref_hook_test.go),
 // single goroutine ("serial") and all cores ("parallel"). Names are key=value so that benchstat can put the implementations
-// side by side: benchstat -col /impl. Builds without cgo, so it can be cross-compiled (scripts/bench-build.sh).
+// side by side: benchstat -col /impl. Builds without cgo, so it can be cross-compiled (testdata/bench/scripts/bench-build.sh).
 // libzstdEnc and libzstdDec are set by bench_ref_hook_test.go with -tags libzstd.
 var (
 	libzstdEnc func(dict []byte, level int) func(dst, src []byte) []byte

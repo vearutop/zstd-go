@@ -1,28 +1,28 @@
 #!/bin/sh
-# Builds a self-contained benchmark bundle in bench/dist (and bench/zstd-bench-<os>-<arch>.tar.gz): the test binary, the data
+# Builds a self-contained benchmark bundle in testdata/bench/dist (and testdata/bench/zstd-bench-<os>-<arch>.tar.gz): the test binary, the data
 # and run.sh. Copy it to the machine you want to measure (or unpack the tarball there) and run ./run.sh.
 #
-#   scripts/bench-build.sh                  # linux/amd64, pure Go: port and klauspost
-#   GOARCH=arm64 scripts/bench-build.sh
-#   LIBZSTD=1 scripts/bench-build.sh        # adds libzstd (cgo, -tags libzstd). Cross-compiled with zig (`zig` on PATH, ZIG=path, or a
+#   testdata/bench/scripts/bench-build.sh                  # linux/amd64, pure Go: port and klauspost
+#   GOARCH=arm64 testdata/bench/scripts/bench-build.sh
+#   LIBZSTD=1 testdata/bench/scripts/bench-build.sh        # adds libzstd (cgo, -tags libzstd). Cross-compiled with zig (`zig` on PATH, ZIG=path, or a
 #                                           # pipx venv with the ziglang wheel, e.g. `pipx install cargo-zigbuild`): libzstd
 #                                           # ZSTD_VERSION (default 1.5.7, as in Homebrew) is built from source, with its amd64 asm,
 #                                           # and linked statically, glibc >= 2.17. Without zig, the host C compiler and libzstd are used.
 #
-# Data: Silesia (the corpus of klauspost/compress's README) is fetched once into bench/data and checked against a pinned SHA-256;
+# Data: Silesia (the corpus of klauspost/compress's README) is fetched once into testdata/bench/data and checked against a pinned SHA-256;
 # klauspost's benchdecoder.zip comes from the module cache; the small-payload dictionary data (GitHub events cut into shapes, as JSON
-# and MessagePack, with dictionaries trained by the zstd CLI) is made once into bench/data/events by internal/cmd/benchdata (needs
-# network and the zstd CLI on this machine, `rm -r bench/data/events` to remake it); EXTRA_FILES="a.json b.csv.zst" adds files (plain or .zst).
+# and MessagePack, with dictionaries trained by the zstd CLI) is made once into testdata/bench/data/events by internal/cmd/benchdata (needs
+# network and the zstd CLI on this machine, `rm -r testdata/bench/data/events` to remake it); EXTRA_FILES="a.json b.csv.zst" adds files (plain or .zst).
 set -eu
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../../.."
 
 os=${GOOS:-linux}
 arch=${GOARCH:-amd64}
-dist=bench/dist
+dist=testdata/bench/dist
 rm -rf $dist
-mkdir -p bench/data $dist/data
+mkdir -p testdata/bench/data $dist/data
 
-silesia=bench/data/silesia.tar.zst
+silesia=testdata/bench/data/silesia.tar.zst
 if [ ! -f $silesia ]; then
 	curl -fsSL --retry 3 -o $silesia https://klauspost.com/files/compress/silesia.tar.zst
 fi
@@ -35,28 +35,29 @@ for f in ${EXTRA_FILES:-}; do
 	cp "$f" $dist/data/
 	files="$files:data/$(basename "$f")"
 done
-if [ ! -f bench/data/events/slim-json.items ]; then
-	go run ./internal/cmd/benchdata -out bench/data/events
+if [ ! -f testdata/bench/data/events/slim-json.items ]; then
+	go run ./internal/cmd/benchdata -out testdata/bench/data/events
 fi
-cp -r bench/data/events $dist/data/events
-cp -r testdata $dist/testdata # the tests' dictionary
+cp -r testdata/bench/data/events $dist/data/events
+mkdir -p $dist/testdata
+for f in testdata/*; do [ "$f" = testdata/bench ] || cp -r "$f" $dist/testdata/; done # the tests' dictionary
 
 if [ -n "${LIBZSTD:-}" ]; then
 	zig=${ZIG:-}
 	[ -n "$zig" ] || zig=$(command -v zig || true)
 	if [ -n "$zig" ]; then
-		printf '#!/bin/sh\nexec "%s" "$@"\n' "$zig" > bench/data/zig.sh
+		printf '#!/bin/sh\nexec "%s" "$@"\n' "$zig" > testdata/bench/data/zig.sh
 	else
 		for py in "$HOME"/Library/Application\ Support/pipx/venvs/*/bin/python "$HOME"/.local/share/pipx/venvs/*/bin/python; do
 			if [ -x "$py" ] && "$py" -m ziglang version >/dev/null 2>&1; then
-				printf '#!/bin/sh\nexec "%s" -m ziglang "$@"\n' "$py" > bench/data/zig.sh
+				printf '#!/bin/sh\nexec "%s" -m ziglang "$@"\n' "$py" > testdata/bench/data/zig.sh
 				zig=1
 				break
 			fi
 		done
 	fi
 	if [ -n "$zig" ]; then
-		chmod +x bench/data/zig.sh
+		chmod +x testdata/bench/data/zig.sh
 		zig=$PWD/bench/data/zig.sh
 		v=${ZSTD_VERSION:-1.5.7}
 		zt=$(echo $arch | sed 's/amd64/x86_64/;s/arm64/aarch64/')-$os-gnu.2.17
@@ -69,8 +70,8 @@ if [ -n "${LIBZSTD:-}" ]; then
 			done
 			$zig ar rcs $lib/libzstd.a $lib/o/*.o
 		fi
-		printf '#!/bin/sh\nexec %s cc -target %s "$@"\n' "$zig" "$zt" > bench/data/zigcc.sh
-		chmod +x bench/data/zigcc.sh
+		printf '#!/bin/sh\nexec %s cc -target %s "$@"\n' "$zig" "$zt" > testdata/bench/data/zigcc.sh
+		chmod +x testdata/bench/data/zigcc.sh
 		CGO_ENABLED=1 GOOS=$os GOARCH=$arch CC=$PWD/bench/data/zigcc.sh CGO_CFLAGS="-I$lib/src/lib" CGO_LDFLAGS="-L$lib" \
 			go test -c -tags libzstd -o $dist/zstd.test .
 	else
@@ -98,5 +99,5 @@ uptime >&2
 echo "now, anywhere with benchstat: benchstat -col /impl \$out" >&2
 EOS
 chmod +x $dist/run.sh
-COPYFILE_DISABLE=1 tar -C bench -czf bench/zstd-bench-$os-$arch.tar.gz dist
-echo "bundle: $dist ($(du -sh $dist | cut -f1)), tarball: bench/zstd-bench-$os-$arch.tar.gz" >&2
+COPYFILE_DISABLE=1 tar -C testdata/bench -czf testdata/bench/zstd-bench-$os-$arch.tar.gz dist
+echo "bundle: $dist ($(du -sh $dist | cut -f1)), tarball: testdata/bench/zstd-bench-$os-$arch.tar.gz" >&2

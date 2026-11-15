@@ -16,7 +16,7 @@ import (
 // Small payloads with and without a dictionary, on real data: GitHub events (klauspost/compress's github-june-2days-2019.json) cut into
 // shapes (full ~3.4 KB; nourl ~1.4 KB without the url fields; slim ~0.3 KB with a few scalar fields; tiny ~0.1 KB: id, type, actor, repo), each as JSON and as MessagePack,
 // with dictionaries of 16 and 64 KiB trained by the zstd CLI on events that the items do not contain. internal/cmd/benchdata makes the
-// files (scripts/bench-build.sh runs it); ZSTD_BENCH_EVENTS is their directory, the benchmarks skip without it.
+// files (testdata/bench/scripts/bench-build.sh runs it); ZSTD_BENCH_EVENTS is their directory, the benchmarks skip without it.
 //
 //	set=<shape>-<json|msgpack>/dict=<none|16K|64K>/tier=<fastest|default>/par=<serial|parallel>/impl=<port|klauspost|libzstd>
 //
@@ -32,7 +32,7 @@ type eventSet struct {
 func loadEvents(b *testing.B) []eventSet {
 	dir := os.Getenv("ZSTD_BENCH_EVENTS")
 	if dir == "" {
-		b.Skip("ZSTD_BENCH_EVENTS is not set (run.sh from scripts/bench-build.sh sets it)")
+		b.Skip("ZSTD_BENCH_EVENTS is not set (run.sh from testdata/bench/scripts/bench-build.sh sets it)")
 	}
 	files, _ := filepath.Glob(filepath.Join(dir, "*.items"))
 	if len(files) == 0 {
@@ -196,7 +196,7 @@ func parName(par bool) string {
 // TestDictRatios prints the compression ratio (output bytes per input byte, over all items) of every set, dictionary and tier for
 // the port and klauspost; timing does not matter, so it is the quick way to check the data shapes:
 //
-//	ZSTD_BENCH_EVENTS=bench/data/events go test -run DictRatios -v .
+//	ZSTD_BENCH_EVENTS=testdata/bench/data/events go test -run DictRatios -v .
 func TestDictRatios(t *testing.T) {
 	dir := os.Getenv("ZSTD_BENCH_EVENTS")
 	if dir == "" {

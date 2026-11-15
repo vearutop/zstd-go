@@ -8,7 +8,7 @@ zstdbench-linux-amd64.tar.gz
 .claude/worktrees/
 dist/
 *.log
-/bench/data/
-/bench/dist/
-/bench/*.tar.gz
-/bench/logs/
+/testdata/bench/data/
+/testdata/bench/dist/
+/testdata/bench/*.tar.gz
+/testdata/bench/logs/

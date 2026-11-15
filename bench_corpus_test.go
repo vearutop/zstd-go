@@ -26,7 +26,7 @@ import (
 //
 // The data is read from ZSTD_BENCH_FILES (a path list, ':'-separated; a name ending in .zst is decompressed first, so
 // silesia.tar.zst works) and ZSTD_BENCH_DECODER_ZIP (klauspost/compress/zstd/testdata/benchdecoder.zip); without them the
-// benchmarks skip. scripts/bench-build.sh fetches Silesia and the zip. Compressed inputs of the decode benchmarks are made with the port
+// benchmarks skip. testdata/bench/scripts/bench-build.sh fetches Silesia and the zip. Compressed inputs of the decode benchmarks are made with the port
 // at level 3 without checksum, which is byte-identical to libzstd's.
 
 type tier struct {
@@ -75,7 +75,7 @@ func loadCorpus(b *testing.B) []corpusFile {
 		}
 	})
 	if len(corpusFiles) == 0 {
-		b.Skip("ZSTD_BENCH_FILES is not set (run.sh from scripts/bench-build.sh sets it)")
+		b.Skip("ZSTD_BENCH_FILES is not set (run.sh from testdata/bench/scripts/bench-build.sh sets it)")
 	}
 	return corpusFiles
 }
@@ -203,7 +203,7 @@ func BenchmarkCorpusDecode(b *testing.B) {
 func BenchmarkDecodeSmall(b *testing.B) {
 	path := os.Getenv("ZSTD_BENCH_DECODER_ZIP")
 	if path == "" {
-		b.Skip("ZSTD_BENCH_DECODER_ZIP is not set (run.sh from scripts/bench-build.sh sets it)")
+		b.Skip("ZSTD_BENCH_DECODER_ZIP is not set (run.sh from testdata/bench/scripts/bench-build.sh sets it)")
 	}
 	zr, err := zip.OpenReader(path)
 	if err != nil {

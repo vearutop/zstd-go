@@ -3,7 +3,7 @@
 // fields, slim events with a few scalar fields, tiny flat records), each as JSON and as MessagePack, plus dictionaries trained with the zstd CLI on
 // the half of the events that the benchmarks do not use.
 //
-//	go run ./internal/cmd/benchdata -out bench/data/events
+//	go run ./internal/cmd/benchdata -out testdata/bench/data/events
 //
 // Needs network access (or -src file.json[.zst]) and the zstd CLI. Output per shape and format <set>: <set>.items (uvarint length +
 // payload, the benchmark items) and <set>.<size>.dict.
@@ -32,7 +32,7 @@ import (
 const srcURL = "https://klauspost.com/files/compress/github-june-2days-2019.json.zst"
 
 func main() {
-	out := flag.String("out", "bench/data/events", "output directory")
+	out := flag.String("out", "testdata/bench/data/events", "output directory")
 	src := flag.String("src", "", "source file (.json or .json.zst) instead of downloading the prefix of the public file")
 	prefix := flag.Int("prefix", 8_000_000, "compressed bytes to download")
 	nItems := flag.Int("items", 2048, "benchmark items per set")

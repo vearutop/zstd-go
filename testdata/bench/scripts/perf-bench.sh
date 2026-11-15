@@ -1,7 +1,7 @@
 #!/bin/sh
 # Compares test binaries on one benchmark with perf stat, per iteration: instructions, cycles, branches and time. Run it from the
 # bundle directory on Linux:
-#   N=300000 scripts/perf-bench.sh 'DictEncode/set=slim-json/dict=16K/tier=default/par=serial/impl=port' ./zstd-old.test ./zstd-new.test
+#   N=300000 testdata/bench/scripts/perf-bench.sh 'DictEncode/set=slim-json/dict=16K/tier=default/par=serial/impl=port' ./zstd-old.test ./zstd-new.test
 set -eu
 re=$1
 shift
