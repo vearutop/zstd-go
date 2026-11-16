@@ -10,20 +10,24 @@ import (
 	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
-
-	"github.com/vearutop/zstd-go/internal/seekable"
-
 	zstd "github.com/vearutop/zstd-go"
+	"github.com/vearutop/zstd-go/internal/seekable"
 )
 
-// Types shared with the pure Go package, so that errors.As and the Params in use work with both.
-type (
-	Params     = zstd.Params
-	Error      = zstd.Error
-	ErrorCode  = zstd.ErrorCode
-	Switch     = zstd.Switch
-	AttachPref = zstd.AttachPref
-)
+// Params is the pure Go package's Params: the same ZSTD_c_* parameters, so one value works with both packages.
+type Params = zstd.Params
+
+// Error is the pure Go package's Error, so errors.As works with both packages.
+type Error = zstd.Error
+
+// ErrorCode is the pure Go package's ErrorCode.
+type ErrorCode = zstd.ErrorCode
+
+// Switch is the pure Go package's Switch (ZSTD_paramSwitch_e).
+type Switch = zstd.Switch
+
+// AttachPref is the pure Go package's AttachPref (ZSTD_dictAttachPref_e).
+type AttachPref = zstd.AttachPref
 
 var errNoSamples = errors.New("zstd: TrainDict needs samples and a positive dictSize")
 
@@ -130,7 +134,7 @@ func (d *Dict) Encode(dst, src []byte) []byte { return d.EncodeLevel(dst, src, 0
 // EncodeLevel is Encode at a libzstd compression level (-50 to 22; 0 is the default, 3). The frame has a content size and
 // a checksum. The dictionary's tables are prepared once per level used.
 func (d *Dict) EncodeLevel(dst, src []byte, level int) []byte {
-	c := cctxPool.Get().(*cctx)
+	c := cctxPool.Get().(*cctx) //nolint:errcheck,forcetypeassert // New only returns *cctx
 	defer cctxPool.Put(c)
 	defer c.reset()
 	must(c.set(cparam(pChecksum), 1))
@@ -158,11 +162,11 @@ func (d *Dict) Decode(dst, src []byte) ([]byte, error) {
 	if d == nil {
 		return decoderNoDict.Decode(dst, src)
 	}
-	d.decMu.Do(func() { d.dec, _ = NewDecoder(d) })
+	d.decMu.Do(func() { d.dec = newDecoder(d) })
 	return d.dec.Decode(dst, src)
 }
 
-var decoderNoDict, _ = NewDecoder()
+var decoderNoDict = newDecoder()
 
 func grow(b []byte, extra int) []byte {
 	if cap(b)-len(b) >= extra {
@@ -189,7 +193,11 @@ type Decoder struct {
 }
 
 // NewDecoder returns a decoder that knows the given dictionaries.
-func NewDecoder(dicts ...*Dict) (*Decoder, error) { return &Decoder{dicts: dicts}, nil }
+func NewDecoder(dicts ...*Dict) (*Decoder, error) { //nolint:unparam // the error is part of the API, as in the pure Go package
+	return newDecoder(dicts...), nil
+}
+
+func newDecoder(dicts ...*Dict) *Decoder { return &Decoder{dicts: dicts} }
 
 func (d *Decoder) stream(windowLogMax, maxBlock int) (*dstream, error) {
 	s := newDStream()
@@ -204,8 +212,10 @@ func (d *Decoder) stream(windowLogMax, maxBlock int) (*dstream, error) {
 		}
 	}
 	for _, p := range []struct{ id, v int }{
-		{dWindowLogMax, windowLogMax}, {dMaxBlock, maxBlock},
-		{dFormat, b2i(d.Magicless) * formatMagicless}, {dIgnoreSum, b2i(d.IgnoreChecksum)},
+		{dWindowLogMax, windowLogMax},
+		{dMaxBlock, maxBlock},
+		{dFormat, b2i(d.Magicless) * formatMagicless},
+		{dIgnoreSum, b2i(d.IgnoreChecksum)},
 	} {
 		if p.v == 0 {
 			continue
@@ -222,8 +232,8 @@ func (d *Decoder) Decode(dst, src []byte) ([]byte, error) {
 	if len(src) == 0 {
 		return dst, zstd.NewError(zstd.ErrSrcSizeWrong, "zstd: empty input")
 	}
-	s, _ := d.pool.Get().(*dstream)
-	if s == nil {
+	s, ok := d.pool.Get().(*dstream)
+	if !ok {
 		var err error
 		if s, err = d.stream(0, 0); err != nil {
 			return dst, err
@@ -432,7 +442,7 @@ func WithDecoder(d *Decoder) ReaderOption { return func(z *Reader) { z.dec = d }
 
 // WithReaderDict makes the Reader know the given dictionaries.
 func WithReaderDict(dicts ...*Dict) ReaderOption {
-	return func(z *Reader) { z.dec, _ = NewDecoder(dicts...) }
+	return func(z *Reader) { z.dec = newDecoder(dicts...) }
 }
 
 // Reader is a streaming decompressor over a sequence of frames (skippable frames are skipped). Memory is bounded by the
@@ -534,7 +544,7 @@ func (z *Reader) Read(p []byte) (int, error) {
 }
 
 // Close releases the C context; further Reads fail.
-func (z *Reader) Close() error {
+func (z *Reader) Close() error { //nolint:unparam // io.Closer
 	if z.s != nil {
 		z.s.close()
 		z.s = nil

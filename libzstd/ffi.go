@@ -128,10 +128,17 @@ func (s *dstream) refDDict(d *ddict) error { return zerr(C.ZSTD_DCtx_refDDict(s.
 // reset starts a new session, keeping parameters and dictionaries.
 func (s *dstream) reset() { C.ZSTD_DCtx_reset(s.d, C.ZSTD_reset_session_only) }
 
+// setPtr stores p into a field of C memory as an integer. A pointer-typed store would run the GC write barrier, which reads
+// the field's previous value (uninitialised or stale memory) as a Go pointer and crashes ("found bad pointer in Go heap");
+// the callers keep the buffers alive with runtime.KeepAlive instead.
+func setPtr(field *unsafe.Pointer, p unsafe.Pointer) { *(*uintptr)(unsafe.Pointer(field)) = uintptr(p) }
+
 // step is ZSTD_decompressStream with one input and one output buffer; hint is 0 when a frame is complete.
 func (s *dstream) step(in, out []byte) (nIn, nOut int, hint uint64, err error) {
-	s.in.src, s.in.size, s.in.pos = ptr(in), C.size_t(len(in)), 0
-	s.outb.dst, s.outb.size, s.outb.pos = ptr(out), C.size_t(len(out)), 0
+	setPtr(&s.in.src, ptr(in))
+	s.in.size, s.in.pos = C.size_t(len(in)), 0
+	setPtr(&s.outb.dst, ptr(out))
+	s.outb.size, s.outb.pos = C.size_t(len(out)), 0
 	r := C.ZSTD_decompressStream(s.d, s.outb, s.in)
 	runtime.KeepAlive(in)
 	runtime.KeepAlive(out)

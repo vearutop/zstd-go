@@ -6,7 +6,6 @@ import (
 	"slices"
 
 	"github.com/cespare/xxhash/v2"
-
 	"github.com/vearutop/zstd-go/internal/seekable"
 )
 

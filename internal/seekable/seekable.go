@@ -63,10 +63,10 @@ func SourceSize(r io.Reader) (io.ReaderAt, int64, error) {
 
 // Reader is a random-access view of seekable content.
 type Reader struct {
-	r     io.ReaderAt
-	open_ func(io.Reader) io.Reader // decodes one frame
-	cOff  []int64                   // compressed offset of frame i; len = frames+1
-	dOff  []int64                   // decompressed offset of frame i; len = frames+1
+	r         io.ReaderAt
+	openFrame func(io.Reader) io.Reader // decodes one frame
+	cOff      []int64                   // compressed offset of frame i; len = frames+1
+	dOff      []int64                   // decompressed offset of frame i; len = frames+1
 
 	pos      int64     // Read/Seek cursor
 	cur      io.Reader // decoder of frame curFrame, at decompressed offset curPos
@@ -98,7 +98,7 @@ func Open(r io.ReaderAt, size int64, open func(io.Reader) io.Reader) (*Reader, e
 	if _, err := r.ReadAt(tab, size-9-n*entSize); err != nil {
 		return nil, err
 	}
-	s := &Reader{r: r, open_: open, cOff: make([]int64, n+1), dOff: make([]int64, n+1)}
+	s := &Reader{r: r, openFrame: open, cOff: make([]int64, n+1), dOff: make([]int64, n+1)}
 	for i := int64(0); i < n; i++ {
 		s.cOff[i+1] = s.cOff[i] + int64(binary.LittleEndian.Uint32(tab[i*entSize:]))
 		s.dOff[i+1] = s.dOff[i] + int64(binary.LittleEndian.Uint32(tab[i*entSize+4:]))
@@ -118,7 +118,7 @@ func (s *Reader) frameAt(off int64) int {
 
 // open starts decoding frame i.
 func (s *Reader) open(i int) io.Reader {
-	return s.open_(io.NewSectionReader(s.r, s.cOff[i], s.cOff[i+1]-s.cOff[i]))
+	return s.openFrame(io.NewSectionReader(s.r, s.cOff[i], s.cOff[i+1]-s.cOff[i]))
 }
 
 func shortFrame(err error) error {

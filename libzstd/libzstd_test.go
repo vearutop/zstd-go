@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"math/rand"
+	"runtime"
 	"testing"
 
 	zstd "github.com/vearutop/zstd-go"
@@ -246,5 +247,33 @@ func TestOneShot(t *testing.T) {
 	}
 	if got, err := zstd.Decode(nil, libzstd.Encode(nil, src)); err != nil || !bytes.Equal(got, src) {
 		t.Fatal(err)
+	}
+}
+
+// Decoding hands Go buffers to C while the GC runs; it used to crash with "found bad pointer in Go heap".
+func TestGCStress(t *testing.T) {
+	src := sample(64 << 10)
+	enc := libzstd.Encode(nil, src)
+	d, _ := libzstd.NewDecoder()
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				runtime.GC()
+			}
+		}
+	}()
+	defer close(done)
+	for i := 0; i < 300; i++ {
+		dst := make([]byte, 0, 1+i%7)
+		if got, err := d.Decode(dst, enc); err != nil || !bytes.Equal(got, src) {
+			t.Fatal(err)
+		}
+		if got, err := io.ReadAll(libzstd.NewReader(bytes.NewReader(enc))); err != nil || !bytes.Equal(got, src) {
+			t.Fatal(err)
+		}
 	}
 }

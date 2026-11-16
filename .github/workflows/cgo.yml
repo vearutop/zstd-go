@@ -1,0 +1,53 @@
+name: cgo
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  # The root package must stay free of cgo.
+  nocgo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: CGO_ENABLED=0 go build ./... && CGO_ENABLED=0 go vet ./...
+
+  # libzstd builds from the vendored sources with the platform's C compiler and nothing else installed.
+  libzstd:
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, ubuntu-24.04-arm, macos-latest ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: Test
+        run: go test -race -count=1 ./libzstd
+      - name: Huffman assembly is linked (linux/amd64)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          go test -c -o libzstd.test ./libzstd
+          nm libzstd.test | grep -q fast_asm_loop
+
+  # Fully static binary on musl, the usual no-dependency deployment.
+  alpine-static:
+    runs-on: ubuntu-latest
+    container: golang:alpine
+    steps:
+      - run: apk add --no-cache gcc musl-dev git
+      - uses: actions/checkout@v4
+      - run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          go test -c -o libzstd.test -ldflags '-linkmode external -extldflags "-static"' ./libzstd
+          ./libzstd.test -test.run 'Parity|Stream|Seekable'
