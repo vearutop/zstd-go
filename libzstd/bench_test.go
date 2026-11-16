@@ -173,15 +173,25 @@ func BenchmarkSample(b *testing.B) {
 			b.ReportMetric(float64(size)*100/float64(len(raw)), "%size")
 		})
 	}
-	b.Run("compress/L1/go-concurrency8-1MiBframes", func(b *testing.B) {
-		b.SetBytes(int64(len(raw)))
-		for i := 0; i < b.N; i++ {
-			w := zstd.NewWriter(io.Discard)
-			w.FrameSize, w.Level, w.Concurrency = 1<<20, 1, 8
-			w.Write(raw)
-			w.Close()
+	// Port: independent frames compressed in parallel (Writer.Concurrency), at the same level as cgo-nbworkers above.
+	for _, lvl := range []int{1, 3} {
+		for _, workers := range []int{4, 8} {
+			for _, frame := range []int{1 << 20, 4 << 20} {
+				b.Run(fmt.Sprintf("compress/L%d/go-concurrency%d-%dMiBframes", lvl, workers, frame>>20), func(b *testing.B) {
+					b.SetBytes(int64(len(raw)))
+					var out countWriter
+					for i := 0; i < b.N; i++ {
+						out = 0
+						w := zstd.NewWriter(&out)
+						w.FrameSize, w.Level, w.Concurrency = frame, lvl, workers
+						w.Write(raw)
+						w.Close()
+					}
+					b.ReportMetric(float64(out)*100/float64(len(raw)), "%size")
+				})
+			}
 		}
-	})
+	}
 
 	enc := zstd.EncodeLevel(nil, raw, 3)
 	b.Run("decompress/oneshot/go", func(b *testing.B) {
@@ -221,3 +231,7 @@ func BenchmarkSample(b *testing.B) {
 		}
 	})
 }
+
+type countWriter int
+
+func (c *countWriter) Write(p []byte) (int, error) { *c += countWriter(len(p)); return len(p), nil }

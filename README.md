@@ -22,7 +22,7 @@ go get github.com/vearutop/zstd-go
 ```
 
 
-**Need libzstd itself?** The `libzstd` subpackage has the same API on vendored libzstd 1.5.7 through cgo (a C compiler is the only requirement): faster for large inputs at mid/high levels, see [libzstd/README.md](libzstd/README.md).
+**Need libzstd itself?** The `libzstd` subpackage has the same API on vendored libzstd 1.5.7 through cgo (a C compiler is the only requirement): 1.4 to 2x faster single-stream compression at levels 3 and up; decoding and small values with a dictionary are as fast or faster in this package. See [libzstd/README.md](libzstd/README.md).
 
 ## Usage
 
