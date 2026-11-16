@@ -113,7 +113,7 @@ func (p *wpipe) worker() {
 		default:
 			j.out, j.err = p.cfg.compress(e, j.in, j.out)
 			if j.err == nil && p.cfg.seekable {
-				j.entry = seekEntry{uint32(len(j.out)), uint32(len(j.in)), uint32(xxhash.Sum64(j.in))}
+				j.entry = seekEntry{C: uint32(len(j.out)), D: uint32(len(j.in)), Sum: uint32(xxhash.Sum64(j.in))}
 			}
 		}
 		close(j.done)

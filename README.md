@@ -21,6 +21,9 @@ Why it exists:
 go get github.com/vearutop/zstd-go
 ```
 
+
+**Need libzstd itself?** The `libzstd` subpackage has the same API on vendored libzstd 1.5.7 through cgo (a C compiler is the only requirement): faster for large inputs at mid/high levels, see [libzstd/README.md](libzstd/README.md).
+
 ## Usage
 
 ### Small values with a dictionary
