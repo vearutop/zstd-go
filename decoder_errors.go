@@ -42,6 +42,9 @@ type Error struct {
 
 func (e *Error) Error() string { return e.msg }
 
+// NewError returns an Error with the given code and message; the libzstd package uses it to report libzstd's errors as *Error.
+func NewError(code ErrorCode, msg string) *Error { return &Error{code, msg} }
+
 func newErr(c ErrorCode, format string, a ...any) *Error {
 	return &Error{c, "zstd: " + fmt.Sprintf(format, a...)}
 }

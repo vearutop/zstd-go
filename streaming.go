@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/vearutop/zstd-go/internal/seekable"
 )
 
 // Writer is a streaming compressor: input is cut into independent frames of FrameSize bytes (each uses the
@@ -52,8 +53,6 @@ type Writer struct {
 	fc  int            // compressed bytes of the current frame
 	sum *xxhash.Digest // seek table checksum of the current frame
 }
-
-type seekEntry struct{ c, d, sum uint32 }
 
 // WriterOption configures a Writer in NewWriter.
 type WriterOption func(*Writer)
@@ -197,7 +196,7 @@ func (z *Writer) frame(src []byte) error {
 	}
 	size += len(z.out)
 	if z.Seekable {
-		z.table = append(z.table, seekEntry{uint32(size), uint32(len(src)), uint32(xxhash.Sum64(src))})
+		z.table = append(z.table, seekEntry{C: uint32(size), D: uint32(len(src)), Sum: uint32(xxhash.Sum64(src))})
 	}
 	z.n++
 	_, z.err = z.w.Write(z.out)
@@ -224,14 +223,14 @@ func (z *Writer) Close() error {
 	if z.n == 0 {
 		z.out = z.e.EncodeAll(nil, z.out[:0])
 		if z.Seekable {
-			z.table = append(z.table, seekEntry{c: uint32(len(z.out))})
+			z.table = append(z.table, seekEntry{C: uint32(len(z.out))})
 		}
 		if _, z.err = z.w.Write(z.out); z.err != nil {
 			return z.err
 		}
 	}
 	if z.Seekable {
-		z.out = appendSeekTable(z.out[:0], z.table)
+		z.out = seekable.AppendTable(z.out[:0], z.table)
 		_, z.err = z.w.Write(z.out)
 	}
 	if z.err != nil {
@@ -279,7 +278,7 @@ func (z *Writer) endFrameMT() (err error) {
 		return err
 	}
 	if z.Seekable {
-		z.table = append(z.table, seekEntry{uint32(z.fc), uint32(z.fin), uint32(z.sum.Sum64())})
+		z.table = append(z.table, seekEntry{C: uint32(z.fc), D: uint32(z.fin), Sum: uint32(z.sum.Sum64())})
 		z.sum.Reset()
 	}
 	z.n++
