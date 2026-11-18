@@ -69,6 +69,13 @@ Parallel compression of the same log at level 3 (output size in brackets):
   `CC=/path/to/wrapper CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build ./...`; check the result with
   `go tool nm bin | grep -c fast_asm_loop` (4 when the Huffman assembly is in).
 
+## Vendoring
+
+`go mod vendor` works: the C sources live under `lib/`, which `go mod vendor` would skip (no Go packages there), so
+`update.sh` also generates a `doc.go` in each `lib` directory and `required.go` importing them, all behind the never-set
+build tag `required`. The tag keeps them out of normal builds and `go build ./...`, while vendoring ignores tags and copies the
+directories whole.
+
 ## Updating libzstd
 
 `libzstd/update.sh 1.5.8` re-vendors `lib/` and regenerates the `z_*.c` wrappers. Run the tests: the pure Go port is

@@ -51,3 +51,30 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           go test -c -o libzstd.test -ldflags '-linkmode external -extldflags "-static"' ./libzstd
           ./libzstd.test -test.run 'Parity|Stream|Seekable'
+
+  # `go mod vendor` skips directories without Go packages; the C sources must still reach a consumer's vendor/ directory.
+  vendored:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: |
+          mkdir /tmp/app && cd /tmp/app
+          cat > main.go <<'EOT'
+          package main
+
+          import (
+          	"fmt"
+
+          	"github.com/vearutop/zstd-go/libzstd"
+          )
+
+          func main() { fmt.Println(libzstd.Version()) }
+          EOT
+          go mod init app
+          go mod edit -require github.com/vearutop/zstd-go@v0.0.0 -replace github.com/vearutop/zstd-go=$GITHUB_WORKSPACE
+          go mod tidy
+          go mod vendor
+          go run -mod=vendor .
