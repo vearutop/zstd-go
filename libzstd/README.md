@@ -55,19 +55,52 @@ Parallel compression of the same log at level 3 (output size in brackets):
 - Static binary on Alpine/musl: `go build -ldflags '-linkmode external -extldflags "-static"'`. On glibc the same works with
   warnings about `getaddrinfo`; add `-tags netgo,osusergo` if you use `net` or `os/user`.
 - Cross-compiling: `CC="zig cc -target x86_64-linux-musl" CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build`.
-- Dynamic binary for old glibc (a binary built on a current distro needs glibc 2.34 or newer): target `x86_64-linux-gnu.2.17`
-  with zig (`pip install ziglang`, then `python -m ziglang cc`). zig does not accept the glibc suffix for the `.sx` assembly
-  file, so use a wrapper that builds `*.sx` with plain `-target x86_64-linux-gnu -x assembler-with-cpp`:
+- Linux binaries from a Mac, including for old glibc: see the next section.
 
-  ```sh
-  #!/bin/sh
-  Z="python -m ziglang cc"
-  for a in "$@"; do case "$a" in *.sx) exec $Z -target x86_64-linux-gnu -x assembler-with-cpp "$@";; esac; done
-  exec $Z -target x86_64-linux-gnu.2.17 "$@"
-  ```
+## Linux binaries from a Mac (old glibc)
 
-  `CC=/path/to/wrapper CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build ./...`; check the result with
-  `go tool nm bin | grep -c fast_asm_loop` (4 when the Huffman assembly is in).
+A cgo binary built in a current `golang:*` Debian image, or any recent distro, needs glibc 2.34 or newer and fails on older hosts
+with ``version `GLIBC_2.34' not found``. [zig](https://ziglang.org) cross-compiles C against an older glibc from a Mac, with no
+Docker or sysroot:
+
+```sh
+brew install zig        # or: python3 -m venv ~/.zig && ~/.zig/bin/pip install ziglang  (then ZIG="$HOME/.zig/bin/python -m ziglang")
+```
+
+Go calls the C compiler as a single command, so put zig behind a small wrapper script, `~/bin/zigcc` (`chmod +x` it). zig
+rejects the glibc suffix when assembling the `.sx` file, and does not recognise the `.sx` extension, so that one file is built
+with a plain target (the assembly does not depend on the glibc version):
+
+```sh
+#!/bin/sh
+# zig as the C compiler for Go: ZIG_TARGET (default x86_64-linux-gnu; aarch64-linux-gnu for arm64), ZIG_GLIBC (default 2.17)
+t=${ZIG_TARGET:-x86_64-linux-gnu}
+for a in "$@"; do case "$a" in *.sx) exec ${ZIG:-zig} cc -target "$t" -x assembler-with-cpp "$@";; esac; done
+exec ${ZIG:-zig} cc -target "$t.${ZIG_GLIBC:-2.17}" "$@"
+```
+
+Then build as usual, with the wrapper as `CC`:
+
+```sh
+CC=$HOME/bin/zigcc CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o app ./cmd/app
+CC=$HOME/bin/zigcc ZIG_TARGET=aarch64-linux-gnu CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -o app-arm64 ./cmd/app
+```
+
+Check the result:
+
+```sh
+strings -a app | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1   # highest glibc symbol version needed, about 2.14 for 2.17
+go tool nm app | grep -c fast_asm_loop                          # 4 on amd64 when the Huffman assembly is linked
+```
+
+Test binaries work the same way: `go test -c -o libzstd.test ./libzstd` with the same variables, then copy it to the host.
+Notes:
+
+- Docker Desktop shares only some directories (`/Users` and `/tmp`, not `/var/folders`), so keep a Docker-built tree under your home.
+- For a fully static binary with no glibc at all, prefer `CC="zig cc -target x86_64-linux-musl"` and
+  `-ldflags '-linkmode external -extldflags "-static"'`; glibc is the better match when the allocator and pthread behaviour of
+  the target host matter.
+- Plain `go build` on macOS with no `CC` produces a macOS binary; macOS uses the C Huffman fallback, as upstream does.
 
 ## Vendoring
 
